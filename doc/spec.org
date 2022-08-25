@@ -1,0 +1,182 @@
+#+title: Specification of the Emil Programming Language
+#+author: Matt Rudary
+
+* Introduction
+
+Emil is a programming language in the ML family. Its basic syntax and
+semantics are similar to Standard ML, with a few extensions thrown in.
+Like Standard ML, it is a functional language with strong, static
+types and type inference, it is eagerly evaluated by default, and
+supports imperative programming, side effects, and exception handling.
+It has parametric modules, like Standard ML, but it also supports
+overloading through an implicit module feature that is similar in
+effect to Haskell's type classes.
+
+This specification is far less formal than e.g. [[https://mitpress.mit.edu/9780262631815/][The Definition of
+Standard ML]], but does use a fairly straight-forward BNF to describe
+the grammar of the language. The following conventions are used:
+
+- ~[pattern]~ :: optional
+- ~pattern*~ :: zero or more repetitions
+- ~pattern+~ :: one or more repetitions
+- ~pat1 | pat2~ :: alternatives
+- ~'X'~ :: terminal
+
+Productions have the form
+
+#+begin_src bnf
+  nonterm -> pat1 | pat2 | ... | patn
+#+end_src
+
+* Core Language
+
+** Lexical Structure
+
+*** Reserved words
+
+The following are reserved words used in the core language and may
+not be used as identifiers.
+
+#+begin_src
+  and    as    case    datatype    else    end    exception    fn
+  fun    handle    if    implicit    infix    infixr    let    local
+  nonfix    of    op    open    prefix    raise    rec    then    type
+  val    while    with    (    )    [    ]    ,    :    ;    _    |
+  =>    ->    #    (*    *)
+#+end_src
+
+**** TODO add more reserved words
+
+*** Literals
+
+**** Numeric Literals
+
+#+begin_src bnf
+    iliteral -> ['-'] iliteral-number ['i' | 'I']
+    iliteral-number -> decimal-digit+
+                    |  ('0x' | '0X') hex-digit*
+                    |  ('0o' | '0O') octal-digit*
+                    |  ('0b' | '0B') binary-digit*
+
+    fpliteral -> ['-'] decimal-digit+ '.' decimal-digit* [fpliteral-exponent]
+              |  ['-'] decimal-digit+ fpliteral-exponent
+              |  ['-'] decimal-digit+ ('f' | 'F')
+              |  ['-'] 'Inf'
+              | 'NaN'
+    fpliteral-exponent -> ('e' | 'E') ['-' | '+'] decimal-digit+
+#+end_src
+
+There are two productions for numeric literals: integral and floating
+point.
+
+Integral literals can be specified in decimal, hexadecimal, octal, or
+binary notation. The type of the resulting constant is affected by the
+suffix attached to the literal. Without a suffix, the literal is a
+~bigint~, with ~i~ or ~I~ as a suffix, the literal is an ~int~, and
+with ~b~ or ~B~ as a suffix, the literal is a ~byte~. An integral
+literal whose value cannot be represented by its type is illegal.
+
+Finite floating point literals that are greater than the maximum
+finite value or less than the minimum finite value representable by
+~float~ are illegal, as are non-zero literals that are between the
+maximum negative value and minimum positive value representable by
+~float~.
+
+**** String and Character Literals
+
+#+begin_src bnf
+  f-string -> ('f' | 'F') string
+  string -> '"' (s-char | escape | gap)* '"'
+         |  '"""' (m-char | escape)* '"""'
+         |  'R"' [rp-char-seq] '(' r-char-seq ')' [rp-char-seq] '"'
+  char -> ''' (c-char | escape) '''
+  gap -> '\' whitespace+ '\'
+#+end_src
+
+Characters in Emil are Unicode codepoints. Conceptually, strings are
+sequences of characters, though they may be represented differently.
+
+Escape sequences:
+
+| Escape Sequence | Description                       |
+|-----------------+-----------------------------------|
+| ~\'~            | single quote                      |
+| ~\"~            | double quote                      |
+| ~\\~            | backslash                         |
+| ~\$~            | dollar sign                       |
+| ~\a~            | audible bell                      |
+| ~\b~            | backspace                         |
+| ~\f~            | form feed                         |
+| ~\n~            | line feed                         |
+| ~\r~            | carriage return                   |
+| ~\t~            | horizontal tab                    |
+| ~\v~            | vertical tab                      |
+| ~\^~ c          | control character (see below)     |
+| ~\u~ nnnn       | arbitrary unicode codepoint (hex) |
+| ~\U~ nnnnnnnn   | arbitrary unicode codepoint (hex) |
+
+The "control character" escape uses a character with codepoint between
+U+0040 and U+005F (i.e. capital letters, ~@~, ~[~, ~\~, ~]~, ~^~, and
+~_~) and produces a character with codepoint 64 less. For example,
+~\^@~ produces the null character, ~\^H~ produces backspace, etc.
+
+A character literal is any escape sequence or any character except
+~'~, ~\~, or the newline character, enclosed in single quotes.
+
+There are three productions for string literals. The first is similar
+to Standard ML's or Haskell's string. An ~s-char~ is any character
+except ~"~, ~\~, or the newline character. These literals may contain
+"gaps" (pairs of backslashes enclosing only whitespace) which are
+ignored. This allows long strings to be written on more than one line.
+
+The second production is similar to Python's multiline strings. An
+~m-char~ is any character except ~\~.
+
+The third production is similar to C++'s raw string literals and does
+not permit any escaping. It starts with ~R"~, an optional
+~rp-char-seq~, and ~(~, and ends with ~)~, the same optional
+~rp-char-seq~, and ~"~. An ~rp-char-seq~ is a sequence of characters
+excluding ~(~, ~)~, ~\~, and whitespace. An ~r-char-seq~ is a sequence
+of any characters at all, except that it may not contain the string's
+closing sequence as a substring.
+
+Any of the three types of string literals can be used to create a
+formatted string literal by prepending an ~f~ or ~F~. Formatted string
+literals may contain two kinds of substring that cause a value to be
+interpolated into the string. The first is a ~$~ followed by an
+identifier, which is replaced by the value associated with the
+identifier, which must be printable. The second is an expression
+enclosed by ~${~ and ~}~, which is replaced by the value of the
+expression, which must be printable. The contents of the substring
+representing the expression need not follow the character restrictions
+of the enclosing literal. For example, ~f"Hello, ${"world"}"~ is a
+legal formatted string literal, despite the interpolated expression
+containing ~"~ characters.
+
+***** TODO define printable
+
+** Syntax and Semantics
+
+*** Types
+
+**** Built-in Numeric Types
+
+- bigint
+- int
+- byte
+- float
+
+**** Other Built-in Types
+
+- bool
+- string
+- list
+- tuple
+
+
+* Module Language
+
+* Programs
+
+* Default Prelude and Standard Modules
+
