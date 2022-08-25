@@ -1,0 +1,11 @@
+#+title: The Emil Programming Language
+#+author: Matt Rudary
+
+Emil is a programming language in the ML family. Its basic syntax and
+semantics are similar to Standard ML, with a few extensions thrown in.
+Like Standard ML, it is a functional language with strong, static
+types and type inference, it is eagerly evaluated by default, and
+supports imperative programming, side effects, and exception handling.
+It has parametric modules, like Standard ML, but it also supports
+overloading through an implicit module feature that is similar in
+effect to Haskell's type classes.
