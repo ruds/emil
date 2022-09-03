@@ -1,0 +1,7 @@
+.cache
+build
+CMakeCache.txt
+CMakeFiles
+CMakeScripts
+compile_commands.json
+.dir-locals.el

@@ -1,0 +1,6 @@
+[submodule "extern/fmt"]
+	path = extern/fmt
+	url = ../../fmtlib/fmt.git
+[submodule "extern/utfcpp"]
+	path = extern/utfcpp
+	url = ../../nemtrif/utfcpp

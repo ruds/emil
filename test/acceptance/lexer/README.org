@@ -1,0 +1,23 @@
+These are acceptance tests for Emil lexers. For each test there is an
+input file and a corresponding output file. The input file contains a
+number of tokens. The output is expected to contain one line per
+well-formed token, with some modifications described below.
+
+The line for a well-formed token should start with a 0-padded 4-digit
+line number that the token started on, a space, the token type, a
+space, an additional field that depends on the token, another space,
+and the text of the token, followed by a newline. Spaces are omitted
+when the auxiliary or token text are empty.
+
+| Token type | Auxiliary field                |
+|------------+--------------------------------|
+| CHAR       | 0-padded 6-digit hex codepoint |
+|            |                                |
+
+Hex-formatted numbers should use uppercase letters.
+
+An ill-formed token should have a line that starts with a 0-padded
+4-digit line number, followed by a space and the word "ERROR",
+followed by a newline. After an ill-formed token is detected, the
+lexer should advance past the next instance of the text "(*xx*)" and
+continue scanning the input.

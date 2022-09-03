@@ -89,7 +89,7 @@ maximum negative value and minimum positive value representable by
   string -> '"' (s-char | escape | gap)* '"'
          |  '"""' (m-char | escape)* '"""'
          |  'R"' [rp-char-seq] '(' r-char-seq ')' [rp-char-seq] '"'
-  char -> ''' (c-char | escape) '''
+  char -> '#"' (s-char | escape) '"'
   gap -> '\' whitespace+ '\'
 #+end_src
 
@@ -100,7 +100,6 @@ Escape sequences:
 
 | Escape Sequence | Description                       |
 |-----------------+-----------------------------------|
-| ~\'~            | single quote                      |
 | ~\"~            | double quote                      |
 | ~\\~            | backslash                         |
 | ~\$~            | dollar sign                       |
@@ -113,15 +112,17 @@ Escape sequences:
 | ~\v~            | vertical tab                      |
 | ~\^~ c          | control character (see below)     |
 | ~\u~ nnnn       | arbitrary unicode codepoint (hex) |
-| ~\U~ nnnnnnnn   | arbitrary unicode codepoint (hex) |
+| ~\U~ nnnnnn     | arbitrary unicode codepoint (hex) |
+
 
 The "control character" escape uses a character with codepoint between
 U+0040 and U+005F (i.e. capital letters, ~@~, ~[~, ~\~, ~]~, ~^~, and
 ~_~) and produces a character with codepoint 64 less. For example,
 ~\^@~ produces the null character, ~\^H~ produces backspace, etc.
 
-A character literal is any escape sequence or any character except
-~'~, ~\~, or the newline character, enclosed in single quotes.
+"Unicode codepoint" escapes must correspond to non-surrogate
+codepoints. That is, they must be in the range ~0~-~10FFFF~, excluding
+~D800~-~DFFF~.
 
 There are three productions for string literals. The first is similar
 to Standard ML's or Haskell's string. An ~s-char~ is any character
@@ -139,6 +140,9 @@ not permit any escaping. It starts with ~R"~, an optional
 excluding ~(~, ~)~, ~\~, and whitespace. An ~r-char-seq~ is a sequence
 of any characters at all, except that it may not contain the string's
 closing sequence as a substring.
+
+A character literal is a single ~s-char~ or escape enclosed between
+~#"~ and ~"~.
 
 Any of the three types of string literals can be used to create a
 formatted string literal by prepending an ~f~ or ~F~. Formatted string
