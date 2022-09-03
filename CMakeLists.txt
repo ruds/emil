@@ -42,10 +42,13 @@ find_program(IWYU_PATH NAMES include-what-you-use iwyu REQUIRED)
 set(IWYU "${IWYU_PATH}" -Xiwyu --error
   -Xiwyu "--mapping_file=${CMAKE_CURRENT_LIST_DIR}/iwyu.imp")
 
+find_program(CLANG_TIDY NAMES clang-tidy REQUIRED)
+
 macro(add_emil_options TARGET)
   target_compile_features("${TARGET}" PUBLIC cxx_std_23)
   target_compile_with_warnings("${TARGET}")
   set_property(TARGET "${TARGET}" PROPERTY CXX_INCLUDE_WHAT_YOU_USE "${IWYU}")
+  set_property(TARGET "${TARGET}" PROPERTY CXX_CLANG_TIDY "${CLANG_TIDY}")
 endmacro()
 
 add_subdirectory(src)

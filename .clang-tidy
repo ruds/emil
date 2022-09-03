@@ -1,0 +1,3 @@
+---
+WarningsAsErrors: '*'
+HeaderFilterRegex: (src|include/emil)/[^/]*.h$
