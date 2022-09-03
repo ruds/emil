@@ -362,4 +362,4 @@ inline typename boost::range_iterator<SinglePassRange>::type single_pass_search(
 
 }  // namespace dpx
 
-#endif //__SINGLE_PASS_SEARCH_H__
+#endif  //__SINGLE_PASS_SEARCH_H__

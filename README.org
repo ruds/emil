@@ -17,6 +17,7 @@ To build Emil and run the tests:
 #+begin_src sh
   git clone --recursive https://github.com/ruds/emil
   cd emil
+  pre-commit install
   cmake -S . -B build \
         -DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
         -DCMAKE_BUILD_TYPE=Debug
@@ -36,3 +37,8 @@ but a few dependencies must be provided.
 Emil uses [[https://unicode-org.github.io/icu/userguide/icu4c/][ICU4C]] to process Unicode. When developing on an M1 mac, you
 may need to build your own library. See [[https://github.com/apotocki/icu4c-iosx][icu4c-iosx]] for a project that
 may assist you with that.
+
+*** pre-commit
+
+Pre-commit hooks used by this project require that [[https://pre-commit.com/index.html][pre-commit]] be
+installed.

@@ -8,4 +8,3 @@ add_emil_options(lexer)
 
 target_include_directories(lexer PUBLIC ../include)
 target_link_libraries(lexer PUBLIC fmt utf8cpp ICU::uc ICU::data)
-
