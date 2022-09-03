@@ -9,3 +9,30 @@ supports imperative programming, side effects, and exception handling.
 It has parametric modules, like Standard ML, but it also supports
 overloading through an implicit module feature that is similar in
 effect to Haskell's type classes.
+
+* Building Emil
+
+To build Emil and run the tests:
+
+#+begin_src sh
+  git clone --recursive https://github.com/ruds/emil
+  cd emil
+  cmake -S . -B build \
+        -DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
+        -DCMAKE_BUILD_TYPE=Debug
+  cmake --build build -- all test
+#+end_src
+
+You may need to ensure that the environment contains appropriate
+values for ~ICU_ROOT~, ~LDFLAGS~, ~CPPFLAGS~, and others.
+
+** Dependencies
+
+In most cases, dependencies are included as submodules under ~extern~,
+but a few dependencies must be provided.
+
+*** ICU4C
+
+Emil uses [[https://unicode-org.github.io/icu/userguide/icu4c/][ICU4C]] to process Unicode. When developing on an M1 mac, you
+may need to build your own library. See [[https://github.com/apotocki/icu4c-iosx][icu4c-iosx]] for a project that
+may assist you with that.
