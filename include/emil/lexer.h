@@ -1,18 +1,17 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <istream>
-#include <locale>
 #include <memory>
-#include <optional>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
 
 #include "emil/source.h"
 #include "emil/token.h"
+#include "fmt/core.h"
 
 namespace emil {
 

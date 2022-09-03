@@ -1,5 +1,3 @@
-#include <fmt/core.h>
-
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -8,6 +6,7 @@
 #include "emil/lexer.h"
 #include "emil/source.h"
 #include "emil/token.h"
+#include "fmt/core.h"
 #include "utf8/cpp17.h"
 
 namespace emil {

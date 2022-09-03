@@ -38,6 +38,16 @@ macro(target_compile_with_warnings TARGET)
   endif()
 endmacro()
 
+find_program(IWYU_PATH NAMES include-what-you-use iwyu REQUIRED)
+set(IWYU "${IWYU_PATH}" -Xiwyu --error
+  -Xiwyu "--mapping_file=${CMAKE_CURRENT_LIST_DIR}/iwyu.imp")
+
+macro(add_emil_options TARGET)
+  target_compile_features("${TARGET}" PUBLIC cxx_std_23)
+  target_compile_with_warnings("${TARGET}")
+  set_property(TARGET "${TARGET}" PROPERTY CXX_INCLUDE_WHAT_YOU_USE "${IWYU}")
+endmacro()
+
 add_subdirectory(src)
 
 if (EMIL_TESTS)

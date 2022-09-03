@@ -1,10 +1,12 @@
 #include "emil/lexer.h"
 
+#include <unicode/uchar.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <istream>
 #include <iterator>
-#include <stdexcept>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -13,8 +15,6 @@
 #include "emil/token.h"
 #include "fmt/core.h"
 #include "single_pass_search.h"
-#include "unicode/uchar.h"
-#include "utf8.h"
 #include "utf8/cpp17.h"
 
 namespace emil {
@@ -187,7 +187,8 @@ char32_t Lexer::match_escape() {
       val += match_hex_digit() << 4;
       val += match_hex_digit();
       if (0xD800 <= val && val <= 0xDFFF) {
-        error(fmt::format("Illegal unicode codepoint {:04X}", (uint)val));
+        error(
+            fmt::format("Illegal unicode codepoint {:04X}", (unsigned int)val));
       }
       return val;
     }
@@ -199,7 +200,8 @@ char32_t Lexer::match_escape() {
       val += match_hex_digit() << 4;
       val += match_hex_digit();
       if ((0xD800 <= val && val <= 0xDFFF) || 0x10FFFF < val) {
-        error(fmt::format("Illegal unicode codepoint {:04X}", (uint)val));
+        error(
+            fmt::format("Illegal unicode codepoint {:04X}", (unsigned int)val));
       }
       return val;
     }
