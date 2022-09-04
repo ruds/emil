@@ -50,6 +50,14 @@ set(CPPCHECK "${CPPCHECK_PATH}" --enable=style --inconclusive --inline-suppr
 
 find_program(CPPLINT NAMES cpplint REQUIRED)
 
+set(SANITIZER_CHOICES none address leak thread undefined memory)
+set(SANITIZER none CACHE STRING "Which sanitizer to build with")
+set_property(CACHE SANITIZER PROPERTY STRINGS "${SANITIZER_CHOICES}")
+
+if(NOT SANITIZER IN_LIST SANITIZER_CHOICES)
+  message(FATAL_ERROR "SANITIZER must be one of ${SANITIZER_CHOICES}")
+endif()
+
 macro(add_emil_options TARGET)
   target_compile_features("${TARGET}" PUBLIC cxx_std_23)
   target_compile_with_warnings("${TARGET}")
