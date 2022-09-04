@@ -1,6 +1,8 @@
 #include "emil/lexer.h"
 
+#include <fmt/core.h>
 #include <unicode/uchar.h>
+#include <utf8/cpp17.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -13,9 +15,7 @@
 
 #include "emil/source.h"
 #include "emil/token.h"
-#include "fmt/core.h"
-#include "single_pass_search.h"
-#include "utf8/cpp17.h"
+#include "private/single_pass_search.h"
 
 namespace emil {
 

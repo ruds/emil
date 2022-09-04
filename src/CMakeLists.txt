@@ -7,4 +7,5 @@ add_library(lexer STATIC lexer.cc source.cc)
 add_emil_options(lexer)
 
 target_include_directories(lexer PUBLIC ../include)
+target_include_directories(lexer PRIVATE ./private)
 target_link_libraries(lexer PUBLIC fmt::fmt utf8cpp ICU::uc ICU::data)

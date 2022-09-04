@@ -1,5 +1,7 @@
 #pragma once
 
+#include <fmt/core.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -11,10 +13,8 @@
 
 #include "emil/source.h"
 #include "emil/token.h"
-#include "fmt/core.h"
 
 namespace emil {
-
 class LexingError : public std::exception {
  public:
   LexingError(std::string msg, std::string filename, int line,
