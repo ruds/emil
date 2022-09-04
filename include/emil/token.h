@@ -42,6 +42,7 @@ ENUM_WITH_TEXT_FORMATTER(emil::TokenType)
 
 template <>
 struct fmt::formatter<emil::Token> {
+  // cppcheck-suppress functionStatic
   constexpr auto parse(format_parse_context& ctx) -> decltype(ctx.begin()) {
     auto it = ctx.begin(), end = ctx.end();
     if (it != end && *it != '}') throw format_error("invalid format");

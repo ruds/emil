@@ -22,7 +22,7 @@ class LexingError : public std::exception {
       : msg(std::move(msg)),
         filename(std::move(filename)),
         line(line),
-        partial_token_text(partial_token_text),
+        partial_token_text(std::move(partial_token_text)),
         full_msg(
             fmt::format("{}:{}: error: {}", this->filename, line, this->msg)) {}
 
@@ -44,7 +44,7 @@ class Lexer {
   Token next_token();
 
   /** Advances past the given substring. Used for testing. */
-  void advance_past(std::u32string_view substring);
+  void advance_past(std::u32string_view substr);
 
  private:
   const std::string filename_;
