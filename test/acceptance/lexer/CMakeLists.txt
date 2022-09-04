@@ -32,3 +32,4 @@ macro(lexer_golden_test TESTNAME)
 endmacro()
 
 lexer_golden_test(char char.in)
+lexer_golden_test(string string.in)

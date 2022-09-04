@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -64,6 +65,14 @@ struct fmt::formatter<emil::Token> {
       case TokenType::CHAR:
         aux = format("{:06X}", (std::uint32_t)get<char32_t>(t.aux));
         break;
+
+      case TokenType::STRING: {
+        auto it = back_inserter(aux);
+        for (char8_t c : get<std::u8string>(t.aux)) {
+          fmt::format_to(it, "{:02X}", (unsigned int)c);
+        }
+        break;
+      }
 
       default:
         throw std::runtime_error("Unhandled token type.");

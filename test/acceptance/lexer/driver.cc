@@ -44,5 +44,6 @@ int main(int argc, char** argv) {
   std::ostreambuf_iterator<char> out(outstream);
 
   while (emil::testing::process_next_token(lexer, out)) {
+    outstream.flush();
   }
 }

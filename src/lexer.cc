@@ -2,15 +2,17 @@
 
 #include <fmt/core.h>
 #include <unicode/uchar.h>
-#include <utf8/cpp17.h>
+#include <utf8.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <istream>
 #include <iterator>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 #include "emil/source.h"
@@ -20,6 +22,11 @@
 namespace emil {
 
 namespace {
+
+bool is_whitespace(char32_t c) {
+  return u_hasBinaryProperty(c, UCHAR_PATTERN_WHITE_SPACE);
+}
+
 std::string char32_to_string(char32_t c) {
   std::u32string_view s(&c, 1);
   return utf8::utf32to8(s);
@@ -72,13 +79,29 @@ Token Lexer::next_token() {
   current_token_.clear();
   start_line_ = next_line_;
 
-  if (source_->at_end()) return make_token(TokenType::END);
+  if (at_end()) return make_token(TokenType::END);
 
   char32_t c = advance();
 
   switch (c) {
     case '#':
       if (match('"')) return match_char();
+
+    case '"':
+      if (peek() == '"' && peek(1) == '"') {
+        advance();
+        advance();
+        return match_string(StringType::TRIPLE);
+      }
+      return match_string(StringType::SIMPLE);
+
+    case 'r':
+    case 'R':
+      if (match('"')) {
+        std::u32string delimiter = match_raw_delimiter();
+        return match_string(StringType::RAW, delimiter);
+      }
+      break;
   }
 
   error(fmt::format("Illegal token starting with '{}'", char32_to_string(c)));
@@ -102,9 +125,19 @@ void Lexer::error(std::string msg) {
   throw LexingError(std::move(msg), filename_, start_line_, current_token_);
 }
 
+bool Lexer::at_end() const { return source_->at_end(); }
+
 char32_t Lexer::advance() {
   current_token_.push_back(source_->advance());
   return current_token_.back();
+}
+
+char32_t Lexer::advance_safe(const char* part_of_speech) {
+  if (at_end()) {
+    error(
+        fmt::format("End of file reached while tokenizing {}", part_of_speech));
+  }
+  return advance();
 }
 
 char32_t Lexer::peek(size_t lookahead) const {
@@ -125,7 +158,7 @@ bool Lexer::match(char32_t expected) {
 
 void Lexer::skip_whitespace() {
   while (const char32_t c = peek()) {
-    if (u_hasBinaryProperty(c, UCHAR_PATTERN_WHITE_SPACE)) {
+    if (is_whitespace(c)) {
       source_->advance();
       if (c == '\n') ++next_line_;
     } else {
@@ -136,7 +169,7 @@ void Lexer::skip_whitespace() {
 
 Token Lexer::match_char() {
   char32_t value;
-  switch (char32_t c = advance()) {
+  switch (char32_t c = advance_safe("character")) {
     case '"':
       error("Empty character constant.");
 
@@ -153,8 +186,91 @@ Token Lexer::match_char() {
   return make_token(TokenType::CHAR, value);
 }
 
+Token Lexer::match_string(StringType type, std::u32string_view raw_delimiter) {
+  std::u8string contents;
+  auto it = back_inserter(contents);
+  while (!match_end_of_string(type, raw_delimiter)) {
+    char32_t c = advance_safe("string");
+    if (c == '\\' && type != StringType::RAW) {
+      if (is_whitespace(peek())) {
+        match_gap(type);
+      } else {
+        utf8::append(match_escape(), it);
+      }
+    } else {
+      if (c == '\n') {
+        ++next_line_;
+        if (type == StringType::SIMPLE) {
+          error(
+              "Line breaks are not permitted in strings delimited with a "
+              "single "
+              "'\"' except in a gap.");
+        }
+      }
+      utf8::append(c, it);
+    }
+  }
+  return make_token(TokenType::STRING, std::move(contents));
+}
+
+void Lexer::match_gap(StringType type) {
+  if (type != StringType::SIMPLE) {
+    error("Gaps only permitted in strings delimited with a single '\"'");
+  }
+  for (char32_t c = peek(); is_whitespace(c); c = peek()) {
+    advance_safe("gap in string");
+    if (c == '\n') ++next_line_;
+  }
+  if (!match('\\')) {
+    error("Gap must begin and end with '\\' and contain only whitespace.");
+  }
+}
+
+std::u32string Lexer::match_raw_delimiter() {
+  for (char32_t c = advance_safe("raw string delimiter"); c != '(';
+       c = advance_safe("raw string delimiter")) {
+    if (c == ')' || c == '\\' || c == 0 || is_whitespace(c)) {
+      error(fmt::format("Illegal character '{}' in raw string delimiter",
+                        char32_to_string(c)));
+    }
+  }
+  return current_token_.substr(2, current_token_.size() - 3);
+}
+
+bool Lexer::match_end_of_string(StringType type,
+                                std::u32string_view raw_delimiter) {
+  switch (type) {
+    case StringType::SIMPLE:
+      return match('"');
+
+    case StringType::TRIPLE:
+      if (peek() == '"' && peek(1) == '"' && peek(2) == '"') {
+        advance();
+        advance();
+        advance();
+        return true;
+      }
+      return false;
+
+    case StringType::RAW:
+      if (peek() == ')') {
+        for (std::size_t i = 0; i < raw_delimiter.size(); ++i) {
+          if (peek(i + 1) != raw_delimiter[i]) return false;
+        }
+        if (peek(1 + raw_delimiter.size()) == '"') {
+          for (std::size_t i = 0; i < 2 + raw_delimiter.size(); ++i) {
+            advance();
+          }
+          return true;
+        }
+      }
+      return false;
+  }
+  throw std::logic_error("Illegal value for StringType (match_end_of_string)");
+}
+
 char32_t Lexer::match_escape() {
-  switch (char32_t c = advance()) {
+  switch (char32_t c = advance_safe("character escape")) {
     case '"':
     case '\\':
     case '$':
@@ -175,7 +291,7 @@ char32_t Lexer::match_escape() {
     case 'v':
       return '\v';
     case '^': {
-      char32_t cc = advance();
+      char32_t cc = advance_safe("character escape");
       if (cc < 64 || 95 < cc)
         error(
             fmt::format("Illegal escape code '\\^{}'.", char32_to_string(cc)));
@@ -211,7 +327,7 @@ char32_t Lexer::match_escape() {
 }
 
 uint_fast8_t Lexer::match_hex_digit() {
-  char32_t c = advance();
+  char32_t c = advance_safe("hexadecimal constant");
   if ('0' <= c && c <= '9') {
     return c - '0';
   } else if ('a' <= c && c <= 'f') {

@@ -88,7 +88,7 @@ maximum negative value and minimum positive value representable by
   f-string -> ('f' | 'F') string
   string -> '"' (s-char | escape | gap)* '"'
          |  '"""' (m-char | escape)* '"""'
-         |  'R"' [rp-char-seq] '(' r-char-seq ')' [rp-char-seq] '"'
+         |  'R"' [rd-char-seq] '(' r-char-seq ')' [rd-char-seq] '"'
   char -> '#"' (s-char | escape) '"'
   gap -> '\' whitespace+ '\'
 #+end_src
@@ -135,11 +135,12 @@ The second production is similar to Python's multiline strings. An
 
 The third production is similar to C++'s raw string literals and does
 not permit any escaping. It starts with ~R"~, an optional
-~rp-char-seq~, and ~(~, and ends with ~)~, the same optional
-~rp-char-seq~, and ~"~. An ~rp-char-seq~ is a sequence of characters
-excluding ~(~, ~)~, ~\~, and whitespace. An ~r-char-seq~ is a sequence
-of any characters at all, except that it may not contain the string's
-closing sequence as a substring.
+~rd-char-seq~, and ~(~, and ends with ~)~, the same optional
+~rd-char-seq~, and ~"~. An ~rd-char-seq~ is a sequence of characters
+excluding ~(~, ~)~, ~\~, the null character, and whitespace. An
+~r-char-seq~ is a sequence of any characters at all, except that it
+may not contain the string's closing sequence as a substring (that is,
+~)~ followed by the initial ~rd-char-seq~ and ~"~).
 
 A character literal is a single ~s-char~ or escape enclosed between
 ~#"~ and ~"~.

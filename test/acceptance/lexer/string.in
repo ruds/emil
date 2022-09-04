@@ -1,0 +1,19 @@
+"this is a string"
+"this is a string \   \ with a gap"
+"this string splits lines \
+   \across a gap."
+"this string has a \  \ \"gap\" and some \aescapes😃"
+""
+"No line breaks allowed without a gap
+(*xx*)
+""""""
+"""This is
+a triple string
+with \nescapes like \U01f603"""
+"""No gaps \ \ allowed"""
+(*xx*)
+r"(raw strings \  \ don't \" escape characters \U01f603)"
+r"==(if I have delimiters I can put )" in the
+middle of my string)=="
+R"(The capital R also works, but R"(raw strings don't nest)"
+R"(This string never terminates

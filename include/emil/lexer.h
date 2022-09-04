@@ -56,7 +56,9 @@ class Lexer {
   Token make_token(TokenType type, token_auxiliary_t aux = {}) const;
   [[noreturn]] void error(std::string msg);
 
+  bool at_end() const;
   char32_t advance();
+  char32_t advance_safe(const char* part_of_speech);
   char32_t peek(size_t lookahead = 0) const;
   bool match(char32_t expected);
 
@@ -65,14 +67,39 @@ class Lexer {
   /**
    * Matches a character literal.
    *
-   * @invariant current_token_ contains `$=`.
+   * @invariant requires that current_token_ contains `$=`.
    */
   Token match_char();
+
+  enum class StringType {
+    SIMPLE,  // "string"
+    TRIPLE,  // """string"""
+    RAW,     // r"delim(string)delim"
+  };
+
+  /**
+   * Matches a string literal.
+   *
+   * @invariant requires that current_token_ contains the initial
+   * delimiter.
+   */
+  Token match_string(StringType type, std::u32string_view raw_delimiter = U"");
+
+  void match_gap(StringType type);
+
+  std::u32string match_raw_delimiter();
+
+  /**
+   * Matches the end of a string literal.
+   *
+   * Advances the stream if and only if the end of literal matches.
+   */
+  bool match_end_of_string(StringType type, std::u32string_view raw_delimiter);
 
   /**
    * Matches a character escape.
    *
-   * @invariant current_token_ ends with `\`.
+   * @invariant requires that current_token_ ends with `\`.
    */
   char32_t match_escape();
 

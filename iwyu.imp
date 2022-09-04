@@ -2,5 +2,7 @@
     { include: ["@<__memory/.*>", "private", "<memory>", "public"] },
     { include: ["@<__iterator/.*>", "private", "<iterator>", "public"] },
     { include: ["@<__utility/.*>", "private", "<utility>", "public"] },
+    { include: ["@<utf8/.*>", "private", "<utf8.h>", "public"] },
+    { include: ["@\"utf8/.*\"", "private", "<utf8.h>", "public"] },
     { symbol: ["u_hasBinaryProperty", "private", "<unicode/uchar.h>", "public"]}
 ]
