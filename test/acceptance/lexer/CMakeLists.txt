@@ -1,4 +1,4 @@
-add_executable(driver EXCLUDE_FROM_ALL driver.cc)
+add_executable(driver driver.cc)
 target_link_libraries(driver lexer)
 target_compile_with_warnings(driver)
 add_test(driver_build

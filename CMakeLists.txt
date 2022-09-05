@@ -54,7 +54,7 @@ set(CLANG_TIDY "${CLANG_TIDY_DEFAULT}"
 find_program(CPPCHECK_PATH NAMES cppcheck)
 if (CPPCHECK_PATH)
   set(CPPCHECK_DEFAULT "${CPPCHECK_PATH}" --enable=style
-    --inconclusive --inline-suppr
+    --inconclusive --inline-suppr --library=googletest
     "--suppressions-list=${CMAKE_CURRENT_LIST_DIR}/.cppcheck-suppressions")
 else()
   set(CPPCHECK_DEFAULT "")
@@ -94,5 +94,7 @@ endmacro()
 add_subdirectory(src)
 
 if (EMIL_TESTS)
+  enable_testing()
+  include(GoogleTest)
   add_subdirectory(test)
 endif()
