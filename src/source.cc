@@ -15,10 +15,10 @@ using std::cbegin;
 using std::cend;
 
 namespace {
-template <typename It>
+template <typename It, std::sentinel_for<It> Sen = It>
 class IteratorSource : public Source {
  public:
-  IteratorSource(It begin, It end) : container_(), in_(begin), end_(end) {}
+  IteratorSource(It begin, Sen end) : container_(), in_(begin), end_(end) {}
   template <typename T>
   explicit IteratorSource(T&& container)
       : container_(std::forward<T>(container)),
@@ -52,7 +52,7 @@ class IteratorSource : public Source {
  private:
   std::any container_;
   It in_;
-  It end_;
+  Sen end_;
   std::deque<char32_t> lookahead_buffer_;
 };
 }  // namespace
