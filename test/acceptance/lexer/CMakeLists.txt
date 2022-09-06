@@ -13,6 +13,7 @@
 # limitations under the License.
 
 add_executable(driver driver.cc)
+add_emil_options(driver)
 target_link_libraries(driver lexer)
 target_compile_with_warnings(driver)
 add_test(driver_build
@@ -45,5 +46,7 @@ macro(lexer_golden_test TESTNAME)
     PROPERTIES FIXTURES_REQUIRED "${TESTNAME}_fixture")
 endmacro()
 
+lexer_golden_test(iliteral iliteral.in)
+lexer_golden_test(fpliteral fpliteral.in)
 lexer_golden_test(char char.in)
 lexer_golden_test(string string.in)

@@ -9,11 +9,12 @@ space, an additional field that depends on the token, another space,
 and the text of the token, followed by a newline. Spaces are omitted
 when the auxiliary or token text are empty.
 
-| Token type | Auxiliary field                                   |
-|------------+---------------------------------------------------|
-| CHAR       | 0-padded 6-digit hex codepoint                    |
-| STRING     | 0-padded 2-digit hex codepoint per byte of string |
-|            |                                                   |
+| Token type | Auxiliary field                                      |
+|------------+------------------------------------------------------|
+| CHAR       | 0-padded 6-digit hex codepoint                       |
+| STRING     | 0-padded 2-digit hex codepoint per byte of string    |
+| ILITERAL   | Decimal repr, with 'i' suffix when number is an int. |
+| FPLITERAL  | printf format %.13e                                  |
 
 Hex-formatted numbers should use uppercase letters.
 

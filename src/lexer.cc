@@ -15,17 +15,23 @@
 #include "emil/lexer.h"
 
 #include <fmt/core.h>
+#include <gmpxx.h>
+#include <sys/errno.h>
 #include <unicode/uchar.h>
 #include <utf8.h>
 
+#include <charconv>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <istream>
 #include <iterator>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <type_traits>
 #include <utility>
 
@@ -37,9 +43,25 @@ namespace emil {
 
 namespace {
 
+bool can_start_operator(char32_t) {
+  // TODO
+  return false;
+}
+
 bool is_whitespace(char32_t c) {
   return u_hasBinaryProperty(c, UCHAR_PATTERN_WHITE_SPACE);
 }
+
+bool is_decimal_digit(char32_t c) { return '0' <= c && c <= '9'; }
+
+bool is_hex_digit(char32_t c) {
+  return is_decimal_digit(c) || ('a' <= c && c <= 'f') ||
+         ('A' <= c && c <= 'F');
+}
+
+bool is_octal_digit(char32_t c) { return '0' <= c && c <= '7'; }
+
+bool is_binary_digit(char32_t c) { return c == '0' || c == '1'; }
 
 std::string char32_to_string(char32_t c) {
   std::u32string_view s(&c, 1);
@@ -97,9 +119,26 @@ Token Lexer::next_token() {
 
   char32_t c = advance();
 
+  if (is_decimal_digit(c)) {
+    return match_number(c);
+  }
+
   switch (c) {
+    case '-':
+      if (is_decimal_digit(peek())) {
+        return match_number(c);
+      } else if (peek() == 'I' && peek(1) == 'n' && peek(2) == 'f') {
+        advance();
+        advance();
+        advance();
+        return make_token(TokenType::FPLITERAL,
+                          -std::numeric_limits<double>::infinity());
+      }
+      break;
+
     case '#':
       if (match('"')) return match_char();
+      break;
 
     case '"':
       if (peek() == '"' && peek(1) == '"') {
@@ -116,6 +155,23 @@ Token Lexer::next_token() {
         return match_string(StringType::RAW, delimiter);
       }
       break;
+
+    case 'I':
+      if (peek() == 'n' && peek(1) == 'f') {
+        advance();
+        advance();
+        return make_token(TokenType::FPLITERAL,
+                          std::numeric_limits<double>::infinity());
+      }
+      break;
+
+    case 'N':
+      if (peek() == 'a' && peek(1) == 'N') {
+        advance();
+        advance();
+        return make_token(TokenType::FPLITERAL,
+                          std::numeric_limits<double>::quiet_NaN());
+      }
   }
 
   error(fmt::format("Illegal token starting with '{}'", char32_to_string(c)));
@@ -179,6 +235,138 @@ void Lexer::skip_whitespace() {
       return;
     }
   }
+}
+
+Token Lexer::match_number(char32_t first_char) {
+  std::string number;
+  if (first_char == '-') {
+    number += '-';
+    first_char = advance();
+  }
+  if (first_char == '0') {
+    if (match('x') || match('X')) {
+      return match_integer(number, is_hex_digit, 16);
+    } else if (match('o') || match('O')) {
+      return match_integer(number, is_octal_digit, 8);
+    } else if (match('b') || match('B')) {
+      return match_integer(number, is_binary_digit, 2);
+    }
+  }
+  number += first_char;
+  consume_digits(number, is_decimal_digit);
+
+  if (match('.')) {
+    return match_fp_from_decimal(number);
+  } else if (match('e') || match('E')) {
+    return match_fp_from_exponent(number);
+  } else if (match('f') || match('F')) {
+    return match_fp(number);
+  }
+  return match_integer(number, is_decimal_digit, 10);
+}
+
+template <typename Pred>
+void Lexer::consume_digits(std::string& number, Pred is_digit) {
+  enum { DIGIT, UNDERSCORE, NONE } state = NONE;
+  if (!number.empty()) {
+    if (is_digit(number.back())) {
+      state = DIGIT;
+    } else if (number.back() == '_') {
+      state = UNDERSCORE;
+    }
+  }
+  while (!at_end()) {
+    char32_t c = peek();
+    if (is_digit(c)) {
+      state = DIGIT;
+      number += static_cast<char>(advance());
+    } else if (c == '_') {
+      if (state != DIGIT) {
+        error("In numeric literal, '_' must follow a digit.");
+      }
+      state = UNDERSCORE;
+      advance();
+    } else {
+      break;
+    }
+  }
+  if (state == UNDERSCORE) {
+    error("Numeric constant may not end with '_'");
+  }
+}
+
+template <typename Pred>
+Token Lexer::match_integer(std::string& number, Pred is_digit, int base) {
+  consume_digits(number, is_digit);
+  const bool is_int = match('i') || match('I');
+
+  if (!at_end()) {
+    char32_t c = peek();
+    if (!is_whitespace(c) && !can_start_operator(c)) {
+      error(fmt::format("Illegal digit '{}' in literal with base {}",
+                        char32_to_string(peek()), base));
+    }
+  }
+  if (is_int) {
+    int64_t value;
+    const char* last = number.data() + number.size();
+    auto result = std::from_chars(number.data(), last, value, base);
+    if (result.ec != std::errc{}) {
+      if (result.ec == std::errc::result_out_of_range) {
+        error(
+            "Integer constant could not be represented by a 64-bit signed "
+            "integer.");
+      }
+    }
+    if (result.ptr != last) {
+      throw std::logic_error("Error parsing integer constant.");
+    }
+    return make_token(TokenType::ILITERAL, value);
+  } else {
+    return make_token(TokenType::ILITERAL, mpz_class{number, base});
+  }
+}
+
+Token Lexer::match_fp_from_decimal(std::string& number) {
+  number += '.';
+  consume_digits(number, is_decimal_digit);
+  if (match('e') || match('E')) {
+    return match_fp_from_exponent(number);
+  } else {
+    match('f') || match('F');
+    return match_fp(number);
+  }
+}
+
+Token Lexer::match_fp_from_exponent(std::string& number) {
+  number += 'e';
+  int has_digit = false;
+  if (match('-')) {
+    number += '-';
+  } else if (match('+')) {
+    number += '+';
+  }
+  while (!at_end() && is_decimal_digit(peek())) {
+    has_digit = true;
+    number += advance();
+  }
+  if (!has_digit) {
+    error("Floating point exponent has no digits.");
+  }
+  return match_fp(number);
+}
+
+Token Lexer::match_fp(std::string& number) {
+  char* last;
+  errno = 0;
+  double value = std::strtod(number.data(), &last);
+  if (errno == ERANGE) {
+    error("Floating point constant could not be represented by double.");
+  }
+  if (last != number.data() + number.size()) {
+    throw std::logic_error("Error parsing floating point constant.");
+  }
+  return make_token(TokenType::FPLITERAL, value);
 }
 
 Token Lexer::match_char() {

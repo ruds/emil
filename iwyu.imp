@@ -1,7 +1,9 @@
 [
+    { include: ["@<__charconv/.*>", "private", "<charconv>", "public"] },
     { include: ["@<__memory/.*>", "private", "<memory>", "public"] },
     { include: ["@<__iterator/.*>", "private", "<iterator>", "public"] },
     { include: ["@<__utility/.*>", "private", "<utility>", "public"] },
+    { include: ["<__errc>", "private", "<system_error>", "public"]},
     { include: ["@<utf8/.*>", "private", "<utf8.h>", "public"] },
     { include: ["@\"utf8/.*\"", "private", "<utf8.h>", "public"] },
     { include: ["\"gtest/gtest.h\"", "private", "<gtest/gtest.h>", "public"]},

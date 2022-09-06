@@ -52,18 +52,19 @@ not be used as identifiers.
 **** Numeric Literals
 
 #+begin_src bnf
-    iliteral -> ['-'] iliteral-number ['i' | 'I']
-    iliteral-number -> decimal-digit+
-                    |  ('0x' | '0X') hex-digit*
-                    |  ('0o' | '0O') octal-digit*
-                    |  ('0b' | '0B') binary-digit*
+  iliteral -> ['-'] iliteral-number ['i' | 'I']
+  iliteral-number -> digit-seq
+                  |  ('0x' | '0X') hex-digit+ ('_' hex-digit+)*
+                  |  ('0o' | '0O') octal-digit+ ('_' octal-digit+)*
+                  |  ('0b' | '0B') binary-digit+ ('_' binary-digit+)*
+  digit-seq -> decimal-digit+ ('_' decimal-digit+)*
 
-    fpliteral -> ['-'] decimal-digit+ '.' decimal-digit* [fpliteral-exponent]
-              |  ['-'] decimal-digit+ fpliteral-exponent
-              |  ['-'] decimal-digit+ ('f' | 'F')
-              |  ['-'] 'Inf'
-              | 'NaN'
-    fpliteral-exponent -> ('e' | 'E') ['-' | '+'] decimal-digit+
+  fpliteral -> ['-'] digit-seq '.' [digit-seq] [fpliteral-exponent]
+            |  ['-'] digit-seq fpliteral-exponent
+            |  ['-'] digit-seq ('f' | 'F')
+            |  ['-'] 'Inf'
+            | 'NaN'
+  fpliteral-exponent -> ('e' | 'E') ['-' | '+'] decimal-digit+
 #+end_src
 
 There are two productions for numeric literals: integral and floating
@@ -76,11 +77,16 @@ suffix attached to the literal. Without a suffix, the literal is a
 with ~b~ or ~B~ as a suffix, the literal is a ~byte~. An integral
 literal whose value cannot be represented by its type is illegal.
 
-Finite floating point literals that are greater than the maximum
-finite value or less than the minimum finite value representable by
-~float~ are illegal, as are non-zero literals that are between the
-maximum negative value and minimum positive value representable by
-~float~.
+Floating point numbers must have at least one digit before the decimal
+point. Finite floating point literals that are greater than the
+maximum finite value or less than the minimum finite value
+representable by ~float~ are illegal, as are non-zero literals that
+are between the maximum negative value and minimum positive value
+representable by ~float~.
+
+All numeric literals may contain underscores to separate groups of
+digits. Each underscore must be preceded and followed by at least one
+digit.
 
 **** String and Character Literals
 

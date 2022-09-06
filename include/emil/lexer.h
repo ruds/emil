@@ -79,6 +79,26 @@ class Lexer {
   void skip_whitespace();
 
   /**
+   * Matches an integer or floating-point literal.
+   *
+   * @invariant requires that current_token_ contains `first_char`. If
+   * `first_char` is `-`, `peek()` must be a decimal digit.
+   */
+  Token match_number(char32_t first_char);
+
+  template <typename Pred>
+  void consume_digits(std::string& number, Pred is_digit);
+
+  template <typename Pred>
+  Token match_integer(std::string& number, Pred is_digit, int base);
+
+  Token match_fp_from_decimal(std::string& number);
+
+  Token match_fp_from_exponent(std::string& number);
+
+  Token match_fp(std::string& number);
+
+  /**
    * Matches a character literal.
    *
    * @invariant requires that current_token_ contains `$=`.

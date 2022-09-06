@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include <gmpxx.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <stdexcept>
@@ -21,7 +23,6 @@
 #include <string_view>
 #include <variant>
 
-#include "bigint.h"
 #include "enum.h"
 #include "utf8.h"
 
@@ -41,8 +42,8 @@ namespace emil {
 
 ENUM_WITH_TEXT(TokenType, TOKEN_TYPE_LIST)
 
-using token_auxiliary_t = std::variant<std::monostate, int64_t, bigint, double,
-                                       char32_t, std::u8string>;
+using token_auxiliary_t = std::variant<std::monostate, int64_t, mpz_class,
+                                       double, char32_t, std::u8string>;
 
 struct Token {
   const std::u32string text;
@@ -57,6 +58,13 @@ ENUM_WITH_TEXT_FORMATTER(emil::TokenType)
 
 template <>
 struct fmt::formatter<emil::Token> {
+  template <typename... Ts>
+  struct overload : Ts... {
+    using Ts::operator()...;
+  };
+  template <typename... Ts>
+  overload(Ts...) -> overload<Ts...>;
+
   // cppcheck-suppress functionStatic
   constexpr auto parse(format_parse_context& ctx) -> decltype(ctx.begin()) {
     auto it = ctx.begin(), end = ctx.end();
@@ -76,6 +84,21 @@ struct fmt::formatter<emil::Token> {
         aux = "";
         break;
 
+      case TokenType::ILITERAL: {
+        aux = visit(
+            overload{[](int64_t i) { return format("{}i", i); },
+                     [](const mpz_class& n) { return n.get_str(); },
+                     [](const auto&) -> std::string {
+                       throw std::logic_error("Bad aux type for ILITERAL");
+                     }},
+            t.aux);
+        break;
+      }
+
+      case TokenType::FPLITERAL:
+        aux = format("{:.13e}", get<double>(t.aux));
+        break;
+
       case TokenType::CHAR:
         aux = format("{:06X}", (std::uint32_t)get<char32_t>(t.aux));
         break;
@@ -89,7 +112,7 @@ struct fmt::formatter<emil::Token> {
       }
 
       default:
-        throw std::runtime_error("Unhandled token type.");
+        throw std::logic_error("Unhandled token type.");
     }
     return fmt::format_to(ctx.out(), "{:04} {}{}{}{}{}", t.line, t.type,
                           aux.empty() ? "" : " ", aux,

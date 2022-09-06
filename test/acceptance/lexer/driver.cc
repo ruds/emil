@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <fmt/format.h>
+#include <utf8.h>
+
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -21,7 +25,6 @@
 #include "emil/source.h"
 #include "emil/token.h"
 #include "fmt/core.h"
-#include "utf8/cpp17.h"
 
 namespace emil {
 namespace testing {
