@@ -35,7 +35,8 @@ macro(emil_add_gtest TESTNAME FILES LIBRARIES)
   add_executable(${TESTNAME} "${FILES}")
   add_emil_options(${TESTNAME})
   target_link_libraries(${TESTNAME} gtest gmock gtest_main "${LIBRARIES}")
-  gtest_discover_tests(${TESTNAME})
+  gtest_discover_tests(${TESTNAME} PROPERTIES ENVIRONMENT
+    "TEST_DATA_DIR=${PROJECT_SOURCE_DIR}/test/data")
   set_target_properties(${TESTNAME} PROPERTIES FOLDER test)
 endmacro()
 

@@ -22,6 +22,7 @@
 
 namespace emil {
 
+/** A source of characters to feed into the lexer. */
 class Source {
  public:
   virtual ~Source() = default;
@@ -29,6 +30,12 @@ class Source {
   virtual std::optional<char32_t> peek(std::size_t lookahead = 0) = 0;
   virtual bool at_end() const = 0;
 };
+
+/** Advances `s` past the next grapheme cluster and returns it. */
+std::u32string next_grapheme_cluster(Source& s);
+
+/** Advances `s` past the next grapheme cluster and appends it to `out`. */
+void next_grapheme_cluster(Source& s, std::u32string& out);
 
 std::unique_ptr<Source> make_source(std::basic_istream<char32_t>& in);
 std::unique_ptr<Source> make_source(std::u32string in);
