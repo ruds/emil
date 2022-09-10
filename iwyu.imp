@@ -1,4 +1,5 @@
 [
+    { include: ["@<__algorithm/.*>", "private", "<algorithm>", "public"] },
     { include: ["@<__charconv/.*>", "private", "<charconv>", "public"] },
     { include: ["@<__memory/.*>", "private", "<memory>", "public"] },
     { include: ["@<__iterator/.*>", "private", "<iterator>", "public"] },

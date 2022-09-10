@@ -66,6 +66,8 @@ class IteratorSource : public Source {
     return empty(lookahead_buffer_) && in_ == end_;
   }
 
+  void putback(char32_t c) override { lookahead_buffer_.push_front(c); }
+
  private:
   std::any container_;
   It in_;

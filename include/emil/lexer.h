@@ -29,6 +29,8 @@
 #include "emil/token.h"
 
 namespace emil {
+
+/** An error detected during lexing. */
 class LexingError : public std::exception {
  public:
   LexingError(std::string msg, std::string filename, int line,
@@ -51,6 +53,7 @@ class LexingError : public std::exception {
   const std::string full_msg;
 };
 
+/** Converts a stream of characters to a stream of tokens. */
 class Lexer {
  public:
   Lexer(std::string filename, std::unique_ptr<Source> source);
@@ -61,6 +64,8 @@ class Lexer {
   void advance_past(std::u32string_view substr);
 
  private:
+  friend class UnicodeError;
+
   const std::string filename_;
   const std::unique_ptr<Source> source_;
   std::u32string current_token_;
@@ -137,8 +142,23 @@ class Lexer {
    */
   char32_t match_escape();
 
+  char32_t match_short_unicode_escape();
+
+  char32_t match_long_unicode_escape();
+
   /** Matches and converts a hex digit or throws an error. */
   uint_fast8_t match_hex_digit();
+
+  Token match_identifier(char32_t first_char);
+
+  Token match_id_word(char32_t first_char);
+
+  Token match_id_op(char32_t first_char);
+
+  bool can_start_word(char32_t c);
+  bool can_continue_word(char32_t c);
+
+  std::u8string normalize(std::u8string&& s);
 };
 
 }  // namespace emil

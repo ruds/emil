@@ -38,8 +38,8 @@ The following are reserved words used in the core language and may
 not be used as identifiers.
 
 #+begin_src
-  and    as    case    datatype    else    end    exception    fn
-  fun    handle    if    implicit    infix    infixr    let    local
+  Inf    NaN    and    as    case    datatype    else    end    exception
+  fn    fun    handle    if    implicit    infix    infixr    let    local
   nonfix    of    op    open    prefix    raise    rec    then    type
   val    while    with    (    )    [    ]    ,    :    ;    _    |
   =>    ->    #    (*    *)
@@ -165,6 +165,48 @@ legal formatted string literal, despite the interpolated expression
 containing ~"~ characters.
 
 ***** TODO define printable
+
+*** Identifiers
+
+#+begin_src bnf
+  word-id -> word-start word-continue*
+  operator-id -> symbol-grapheme-cluster+
+  q-word-id -> (word-id '.')* word-id
+  q-operator-id -> (word-id '.')* operator-id
+  symbol -> ascii-symbol | unicode-symbol
+  ascii-symbol -> '!' | '#' | '$' | '%' | '&' | '*' | '+' | '-'
+               |  '/' | ':' | '<' | '=' | '>' | '?' | '@' | '\'
+               |  '^' | '|' | '~'
+#+end_src
+
+Emil permits two types of identifier. In many contexts where an
+identifier is permitted, a qualified identifier is also permitted. A
+qualified identifer is a dot-separated sequence of identifiers; all
+but the last must be word identifiers, and the last may be a word or
+operator identifer. Reserved words may not be used as identifiers.
+
+An operator identifier consists of one or more symbols, which are
+grapheme clusters that start with a character taken from a restricted
+subset of ascii symbols or a non-ascii unicode codepoint in the
+general categories of Symbol or Punctuation.
+
+Emil's use of word identifiers conforms to Unicode Standard Annex #31,
+[[https://www.unicode.org/reports/tr31/tr31-35.html]["Unicode Identifer and Pattern Syntax"]], Revision 35, observing R1
+(with a profile) and R4 (with normalization form C). Word identifiers
+start with a character from one of the [[https://www.unicode.org/reports/tr31/tr31-35.html#Table_Recommended_Scripts][recommended scripts]] with the
+unicode property ~XID_Start~, or ~_~ or ~'~. In the ascii range, the
+~XID_Start~ property corresponds to the letters, and this more or less
+holds in the other unicode blocks. Characters after the first may
+be any starting character, or a character from one of the recommended
+scripts with the unicode property ~XID_Continue~. In the ascii range,
+this adds the numbers; in other blocks it also adds modifier letters,
+combining diacritical marks, etc.
+
+Word identifiers are case sensitive but decomposition-insensitive:
+Identifiers with the same value after applying [[https://www.unicode.org/reports/tr15/][Normalization Form C]]
+are treated as equivalent. For example, the identifer ~à~ would be the
+same whether the source file encoded it as ~U+00E0~ or
+~U+0061~~U+0300~.
 
 ** Syntax and Semantics
 

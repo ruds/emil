@@ -29,6 +29,13 @@ class Source {
   virtual char32_t advance() = 0;
   virtual std::optional<char32_t> peek(std::size_t lookahead = 0) = 0;
   virtual bool at_end() const = 0;
+  /**
+   * Implementations must permit at least one character of putback.
+   *
+   * Behavior is unspecified if `c` is not the same as the character
+   * most recently returned by `advance`.
+   */
+  virtual void putback(char32_t c) = 0;
 };
 
 /** Advances `s` past the next grapheme cluster and returns it. */

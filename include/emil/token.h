@@ -38,7 +38,9 @@ namespace emil {
   DECLARE(FSTRING_CONT, X)          \
   DECLARE(FSTRING_IVAR, X)          \
   DECLARE(FSTRING_IEXPR_S, X)       \
-  DECLARE(FSTRING_IEXPR_F, X)
+  DECLARE(FSTRING_IEXPR_F, X)       \
+  DECLARE(ID_WORD, X)               \
+  DECLARE(ID_OP, X)
 
 ENUM_WITH_TEXT(TokenType, TOKEN_TYPE_LIST)
 
@@ -103,7 +105,9 @@ struct fmt::formatter<emil::Token> {
         aux = format("{:06X}", (std::uint32_t)get<char32_t>(t.aux));
         break;
 
-      case TokenType::STRING: {
+      case TokenType::STRING:
+      case TokenType::ID_WORD:
+      case TokenType::ID_OP: {
         auto it = back_inserter(aux);
         for (char8_t c : get<std::u8string>(t.aux)) {
           fmt::format_to(it, "{:02X}", (unsigned int)c);

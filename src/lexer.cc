@@ -17,9 +17,16 @@
 #include <fmt/core.h>
 #include <gmpxx.h>
 #include <sys/errno.h>
+#include <unicode/bytestream.h>
+#include <unicode/errorcode.h>
+#include <unicode/normalizer2.h>
 #include <unicode/uchar.h>
+#include <unicode/urename.h>
+#include <unicode/uscript.h>
+#include <unicode/utypes.h>
 #include <utf8.h>
 
+#include <algorithm>
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
@@ -41,12 +48,36 @@
 
 namespace emil {
 
+class UnicodeError : public icu::ErrorCode {
+ public:
+  explicit UnicodeError(Lexer& lexer) : lexer_(lexer) {}
+  ~UnicodeError() override {
+    // This will cause the program to terminate, so handle your failures.
+    if (isFailure()) handleFailure();
+  }
+
+  void handleFailure() const final {
+    lexer_.error(fmt::format("Unicode error: {}", u_errorName(errorCode)));
+  }
+
+ private:
+  Lexer& lexer_;
+};
+
 namespace {
 
-bool can_start_operator(char32_t) {
-  // TODO
-  return false;
-}
+template <typename It>
+class U8ByteSink : public icu::ByteSink {
+ public:
+  explicit U8ByteSink(It sink) : sink_(sink) {}
+
+  void Append(const char* data, int32_t n) override {
+    sink_ = std::copy_n(data, n, sink_);
+  }
+
+ private:
+  It sink_;
+};
 
 bool is_whitespace(char32_t c) {
   return u_hasBinaryProperty(c, UCHAR_PATTERN_WHITE_SPACE);
@@ -62,6 +93,38 @@ bool is_hex_digit(char32_t c) {
 bool is_octal_digit(char32_t c) { return '0' <= c && c <= '7'; }
 
 bool is_binary_digit(char32_t c) { return c == '0' || c == '1'; }
+
+bool can_start_operator(char32_t c) {
+  if (c > 127) {
+    const auto mask = U_GET_GC_MASK(c);
+    return mask & (U_GC_P_MASK | U_GC_S_MASK);
+  } else {
+    switch (c) {
+      case '!':
+      case '#':
+      case '$':
+      case '%':
+      case '&':
+      case '*':
+      case '+':
+      case '-':
+      case '/':
+      case ':':
+      case '<':
+      case '=':
+      case '>':
+      case '?':
+      case '@':
+      case '\\':
+      case '^':
+      case '|':
+      case '~':
+        return true;
+      default:
+        return false;
+    }
+  }
+}
 
 std::string char32_to_string(char32_t c) {
   std::u32string_view s(&c, 1);
@@ -172,9 +235,10 @@ Token Lexer::next_token() {
         return make_token(TokenType::FPLITERAL,
                           std::numeric_limits<double>::quiet_NaN());
       }
+      break;
   }
 
-  error(fmt::format("Illegal token starting with '{}'", char32_to_string(c)));
+  return match_identifier(c);
 }
 
 void Lexer::advance_past(std::u32string_view substr) {
@@ -499,33 +563,37 @@ char32_t Lexer::match_escape() {
             fmt::format("Illegal escape code '\\^{}'.", char32_to_string(cc)));
       return cc - 64;
     }
-    case 'u': {
-      char32_t val = match_hex_digit() << 12;
-      val += match_hex_digit() << 8;
-      val += match_hex_digit() << 4;
-      val += match_hex_digit();
-      if (0xD800 <= val && val <= 0xDFFF) {
-        error(
-            fmt::format("Illegal unicode codepoint {:04X}", (unsigned int)val));
-      }
-      return val;
-    }
-    case 'U': {
-      char32_t val = match_hex_digit() << 20;
-      val += match_hex_digit() << 16;
-      val += match_hex_digit() << 12;
-      val += match_hex_digit() << 8;
-      val += match_hex_digit() << 4;
-      val += match_hex_digit();
-      if ((0xD800 <= val && val <= 0xDFFF) || 0x10FFFF < val) {
-        error(
-            fmt::format("Illegal unicode codepoint {:04X}", (unsigned int)val));
-      }
-      return val;
-    }
+    case 'u':
+      return match_short_unicode_escape();
+    case 'U':
+      return match_long_unicode_escape();
     default:
       error(fmt::format("Illegal escape character '{}'", char32_to_string(c)));
   }
+}
+
+char32_t Lexer::match_short_unicode_escape() {
+  char32_t val = match_hex_digit() << 12;
+  val += match_hex_digit() << 8;
+  val += match_hex_digit() << 4;
+  val += match_hex_digit();
+  if (0xD800 <= val && val <= 0xDFFF) {
+    error(fmt::format("Illegal unicode codepoint {:04X}", (unsigned int)val));
+  }
+  return val;
+}
+
+char32_t Lexer::match_long_unicode_escape() {
+  char32_t val = match_hex_digit() << 20;
+  val += match_hex_digit() << 16;
+  val += match_hex_digit() << 12;
+  val += match_hex_digit() << 8;
+  val += match_hex_digit() << 4;
+  val += match_hex_digit();
+  if ((0xD800 <= val && val <= 0xDFFF) || 0x10FFFF < val) {
+    error(fmt::format("Illegal unicode codepoint {:04X}", (unsigned int)val));
+  }
+  return val;
 }
 
 uint_fast8_t Lexer::match_hex_digit() {
@@ -539,6 +607,76 @@ uint_fast8_t Lexer::match_hex_digit() {
   } else {
     error(fmt::format("Illegal hex digit '{}'.", char32_to_string(c)));
   }
+}
+
+Token Lexer::match_identifier(char32_t first_char) {
+  if (can_start_word(first_char)) return match_id_word(first_char);
+  if (can_start_operator(first_char)) return match_id_op(first_char);
+
+  error(fmt::format("Illegal token starting with '{}'",
+                    char32_to_string(first_char)));
+}
+
+Token Lexer::match_id_word(char32_t first_char) {
+  std::u8string identifier;
+  auto it = back_inserter(identifier);
+  it = utf8::append(first_char, it);
+  while (can_continue_word(peek())) {
+    utf8::append(advance(), it);
+  }
+  return make_token(TokenType::ID_WORD, normalize(std::move(identifier)));
+}
+
+Token Lexer::match_id_op(char32_t first_char) {
+  source_->putback(first_char);
+  current_token_.pop_back();
+  while (can_start_operator(peek())) {
+    next_grapheme_cluster(*source_, current_token_);
+  }
+  std::u8string identifier;
+  utf8::utf32to8(begin(current_token_), end(current_token_),
+                 back_inserter(identifier));
+  return make_token(TokenType::ID_OP, normalize(std::move(identifier)));
+}
+
+bool Lexer::can_start_word(char32_t c) {
+  UnicodeError err(*this);
+
+  if (c == '_' || c == '\'') return true;
+  if (u_hasBinaryProperty(c, UCHAR_XID_START) &&
+      uscript_getUsage(uscript_getScript(c, err)) ==
+          USCRIPT_USAGE_RECOMMENDED) {
+    return true;
+  }
+  err.assertSuccess();
+  return false;
+}
+
+bool Lexer::can_continue_word(char32_t c) {
+  UnicodeError err(*this);
+  if (can_start_word(c)) return true;
+  if (u_hasBinaryProperty(c, UCHAR_XID_CONTINUE) &&
+      uscript_getUsage(uscript_getScript(c, err)) ==
+          USCRIPT_USAGE_RECOMMENDED) {
+    return true;
+  }
+  err.assertSuccess();
+  return false;
+}
+
+std::u8string Lexer::normalize(std::u8string&& s) {
+  UnicodeError err(*this);
+  const icu::Normalizer2* const normalizer =
+      icu::Normalizer2::getNFCInstance(err);
+  err.assertSuccess();
+  if (normalizer->isNormalizedUTF8(s, err)) {
+    return std::move(s);
+  }
+  std::u8string n;
+  U8ByteSink sink(back_inserter(n));
+  normalizer->normalizeUTF8(0, s, sink, nullptr, err);
+  err.assertSuccess();
+  return n;
 }
 
 }  // namespace emil
