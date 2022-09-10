@@ -41,6 +41,7 @@
 #include <system_error>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 #include "emil/source.h"
 #include "emil/token.h"
@@ -168,6 +169,188 @@ class line_counting_source_iterator {
 
 static_assert(std::input_iterator<line_counting_source_iterator>);
 
+constexpr std::u8string_view KW_INF = u8"Inf";
+constexpr std::u8string_view KW_NAN = u8"NaN";
+constexpr std::u8string_view KW_AND = u8"and";
+constexpr std::u8string_view KW_AS = u8"as";
+constexpr std::u8string_view KW_CASE = u8"case";
+constexpr std::u8string_view KW_DATATYPE = u8"datatype";
+constexpr std::u8string_view KW_ELSE = u8"else";
+constexpr std::u8string_view KW_END = u8"end";
+constexpr std::u8string_view KW_EXCEPTION = u8"exception";
+constexpr std::u8string_view KW_FN = u8"fn";
+constexpr std::u8string_view KW_FUN = u8"fun";
+constexpr std::u8string_view KW_HANDLE = u8"handle";
+constexpr std::u8string_view KW_IF = u8"if";
+constexpr std::u8string_view KW_IMPLICIT = u8"implicit";
+constexpr std::u8string_view KW_INFIX = u8"infix";
+constexpr std::u8string_view KW_INFIXR = u8"infixr";
+constexpr std::u8string_view KW_LET = u8"let";
+constexpr std::u8string_view KW_LOCAL = u8"local";
+constexpr std::u8string_view KW_NONFIX = u8"nonfix";
+constexpr std::u8string_view KW_OF = u8"of";
+constexpr std::u8string_view KW_OP = u8"op";
+constexpr std::u8string_view KW_OPEN = u8"open";
+constexpr std::u8string_view KW_PREFIX = u8"prefix";
+constexpr std::u8string_view KW_RAISE = u8"raise";
+constexpr std::u8string_view KW_REC = u8"rec";
+constexpr std::u8string_view KW_THEN = u8"then";
+constexpr std::u8string_view KW_TYPE = u8"type";
+constexpr std::u8string_view KW_UNDERSCORE = u8"_";
+constexpr std::u8string_view KW_VAL = u8"val";
+constexpr std::u8string_view KW_WHILE = u8"while";
+constexpr std::u8string_view KW_WITH = u8"with";
+
+bool match_rest(std::u8string_view keyword, const std::u8string& token,
+                std::size_t prefix) {
+  return keyword.size() == token.size() &&
+         token.ends_with(keyword.substr(prefix));
+}
+
+void match_keyword_in_id_word(Token& token) {
+#define REPLACE(kw, prefix)           \
+  if (match_rest(kw, name, prefix)) { \
+    token.type = TokenType::kw;       \
+    token.aux = {};                   \
+    return;                           \
+  }
+  const auto& name = get<std::u8string>(token.aux);
+  switch (name[0]) {
+    case 'I':
+      if (match_rest(KW_INF, name, 1)) {
+        token.type = TokenType::FPLITERAL;
+        token.aux = std::numeric_limits<double>::infinity();
+      }
+      return;
+
+    case 'N':
+      if (match_rest(KW_NAN, name, 1)) {
+        token.type = TokenType::FPLITERAL;
+        token.aux = std::numeric_limits<double>::quiet_NaN();
+      }
+      return;
+
+    case 'a':
+      REPLACE(KW_AND, 1);
+      REPLACE(KW_AS, 1);
+      return;
+
+    case 'c':
+      REPLACE(KW_CASE, 1);
+      return;
+
+    case 'd':
+      REPLACE(KW_DATATYPE, 1);
+      return;
+
+    case 'e':
+      REPLACE(KW_ELSE, 1);
+      REPLACE(KW_END, 1);
+      REPLACE(KW_EXCEPTION, 1);
+      return;
+
+    case 'f':
+      REPLACE(KW_FN, 1);
+      REPLACE(KW_FUN, 1);
+      return;
+
+    case 'h':
+      REPLACE(KW_HANDLE, 1);
+      return;
+
+    case 'i':
+      if (name.starts_with(u8"infix")) {
+        REPLACE(KW_INFIX, 5);
+        REPLACE(KW_INFIXR, 5);
+      } else {
+        REPLACE(KW_IF, 1);
+        REPLACE(KW_IMPLICIT, 1);
+      }
+      return;
+
+    case 'l':
+      REPLACE(KW_LET, 1);
+      REPLACE(KW_LOCAL, 1);
+      return;
+
+    case 'n':
+      REPLACE(KW_NONFIX, 1);
+      return;
+
+    case 'o':
+      REPLACE(KW_OF, 1);
+      REPLACE(KW_OP, 1);
+      REPLACE(KW_OPEN, 1);
+      return;
+
+    case 'p':
+      REPLACE(KW_PREFIX, 1);
+      return;
+
+    case 'r':
+      REPLACE(KW_RAISE, 1);
+      REPLACE(KW_REC, 1);
+      return;
+
+    case 't':
+      REPLACE(KW_THEN, 1);
+      REPLACE(KW_TYPE, 1);
+      return;
+
+    case 'v':
+      REPLACE(KW_VAL, 1);
+      return;
+
+    case 'w':
+      REPLACE(KW_WHILE, 1);
+      REPLACE(KW_WITH, 1);
+      return;
+
+    case '_':
+      REPLACE(KW_UNDERSCORE, 1);
+      return;
+  }
+#undef REPLACE
+}
+
+constexpr std::u8string_view COLON = u8":";
+constexpr std::u8string_view PIPE = u8"|";
+constexpr std::u8string_view TO_EXPR = u8"=>";
+constexpr std::u8string_view TO_TYPE = u8"->";
+constexpr std::u8string_view HASH = u8"#";
+
+void match_keyword_in_id_op(Token& token) {
+#define REPLACE(kw)              \
+  if (match_rest(kw, name, 1)) { \
+    token.type = TokenType::kw;  \
+    token.aux = {};              \
+    return;                      \
+  }
+  const std::u8string& name = get<std::u8string>(token.aux);
+  switch (name[0]) {
+    case ':':
+      REPLACE(COLON);
+      return;
+
+    case '|':
+      REPLACE(PIPE);
+      return;
+
+    case '=':
+      REPLACE(TO_EXPR);
+      return;
+
+    case '-':
+      REPLACE(TO_TYPE);
+      return;
+
+    case '#':
+      REPLACE(HASH);
+      return;
+  }
+#undef REPLACE
+}
+
 }  // namespace
 
 Lexer::Lexer(std::string filename, std::unique_ptr<Source> source)
@@ -178,7 +361,7 @@ Token Lexer::next_token() {
   current_token_.clear();
   start_line_ = next_line_;
 
-  if (at_end()) return make_token(TokenType::END);
+  if (at_end()) return make_token(TokenType::END_OF_FILE);
 
   char32_t c = advance();
 
@@ -216,24 +399,6 @@ Token Lexer::next_token() {
       if (match('"')) {
         std::u32string delimiter = match_raw_delimiter();
         return match_string(StringType::RAW, delimiter);
-      }
-      break;
-
-    case 'I':
-      if (peek() == 'n' && peek(1) == 'f') {
-        advance();
-        advance();
-        return make_token(TokenType::FPLITERAL,
-                          std::numeric_limits<double>::infinity());
-      }
-      break;
-
-    case 'N':
-      if (peek() == 'a' && peek(1) == 'N') {
-        advance();
-        advance();
-        return make_token(TokenType::FPLITERAL,
-                          std::numeric_limits<double>::quiet_NaN());
       }
       break;
   }
@@ -624,7 +789,9 @@ Token Lexer::match_id_word(char32_t first_char) {
   while (can_continue_word(peek())) {
     utf8::append(advance(), it);
   }
-  return make_token(TokenType::ID_WORD, normalize(std::move(identifier)));
+  auto t = make_token(TokenType::ID_WORD, normalize(std::move(identifier)));
+  match_keyword_in_id_word(t);
+  return t;
 }
 
 Token Lexer::match_id_op(char32_t first_char) {
@@ -636,7 +803,9 @@ Token Lexer::match_id_op(char32_t first_char) {
   std::u8string identifier;
   utf8::utf32to8(begin(current_token_), end(current_token_),
                  back_inserter(identifier));
-  return make_token(TokenType::ID_OP, normalize(std::move(identifier)));
+  auto t = make_token(TokenType::ID_OP, normalize(std::move(identifier)));
+  match_keyword_in_id_op(t);
+  return t;
 }
 
 bool Lexer::can_start_word(char32_t c) {

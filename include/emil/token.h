@@ -29,7 +29,7 @@
 namespace emil {
 
 #define TOKEN_TYPE_LIST(DECLARE, X) \
-  DECLARE(END, X)                   \
+  DECLARE(END_OF_FILE, X)           \
   DECLARE(ILITERAL, X)              \
   DECLARE(FPLITERAL, X)             \
   DECLARE(CHAR, X)                  \
@@ -40,7 +40,49 @@ namespace emil {
   DECLARE(FSTRING_IEXPR_S, X)       \
   DECLARE(FSTRING_IEXPR_F, X)       \
   DECLARE(ID_WORD, X)               \
-  DECLARE(ID_OP, X)
+  DECLARE(ID_OP, X)                 \
+  DECLARE(KW_AND, X)                \
+  DECLARE(KW_AS, X)                 \
+  DECLARE(KW_CASE, X)               \
+  DECLARE(KW_DATATYPE, X)           \
+  DECLARE(KW_ELSE, X)               \
+  DECLARE(KW_END, X)                \
+  DECLARE(KW_EXCEPTION, X)          \
+  DECLARE(KW_FN, X)                 \
+  DECLARE(KW_FUN, X)                \
+  DECLARE(KW_HANDLE, X)             \
+  DECLARE(KW_IF, X)                 \
+  DECLARE(KW_IMPLICIT, X)           \
+  DECLARE(KW_INFIX, X)              \
+  DECLARE(KW_INFIXR, X)             \
+  DECLARE(KW_LET, X)                \
+  DECLARE(KW_LOCAL, X)              \
+  DECLARE(KW_NONFIX, X)             \
+  DECLARE(KW_OF, X)                 \
+  DECLARE(KW_OP, X)                 \
+  DECLARE(KW_OPEN, X)               \
+  DECLARE(KW_PREFIX, X)             \
+  DECLARE(KW_RAISE, X)              \
+  DECLARE(KW_REC, X)                \
+  DECLARE(KW_THEN, X)               \
+  DECLARE(KW_TYPE, X)               \
+  DECLARE(KW_UNDERSCORE, X)         \
+  DECLARE(KW_VAL, X)                \
+  DECLARE(KW_WHILE, X)              \
+  DECLARE(KW_WITH, X)               \
+  DECLARE(COLON, X)                 \
+  DECLARE(PIPE, X)                  \
+  DECLARE(TO_EXPR, X)               \
+  DECLARE(TO_TYPE, X)               \
+  DECLARE(HASH, X)                  \
+  DECLARE(LPAREN, X)                \
+  DECLARE(RPAREN, X)                \
+  DECLARE(LBRACKET, X)              \
+  DECLARE(RBRACKET, X)              \
+  DECLARE(LBRACE, X)                \
+  DECLARE(RBRACE, X)                \
+  DECLARE(COMMA, X)                 \
+  DECLARE(SEMICOLON, X)
 
 ENUM_WITH_TEXT(TokenType, TOKEN_TYPE_LIST)
 
@@ -50,8 +92,8 @@ using token_auxiliary_t = std::variant<std::monostate, int64_t, mpz_class,
 struct Token {
   const std::u32string text;
   const int line;
-  const TokenType type;
-  const token_auxiliary_t aux;
+  TokenType type;
+  token_auxiliary_t aux;
 };
 
 }  // namespace emil
@@ -82,10 +124,6 @@ struct fmt::formatter<emil::Token> {
 
     std::string aux;
     switch (t.type) {
-      case TokenType::END:
-        aux = "";
-        break;
-
       case TokenType::ILITERAL: {
         aux = visit(
             overload{[](int64_t i) { return format("{}i", i); },
@@ -116,7 +154,8 @@ struct fmt::formatter<emil::Token> {
       }
 
       default:
-        throw std::logic_error("Unhandled token type.");
+        aux = "";
+        break;
     }
     return fmt::format_to(ctx.out(), "{:04} {}{}{}{}{}", t.line, t.type,
                           aux.empty() ? "" : " ", aux,

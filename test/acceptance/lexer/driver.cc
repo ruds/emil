@@ -33,7 +33,7 @@ bool process_next_token(Lexer& lexer, std::ostreambuf_iterator<char>& out) {
   try {
     auto token = lexer.next_token();
     fmt::format_to(out, "{}\n", token);
-    return token.type != TokenType::END;
+    return token.type != TokenType::END_OF_FILE;
   } catch (LexingError& err) {
     std::cerr << err.full_msg << "\n"
               << utf8::utf32to8(err.partial_token_text) << "\n";
