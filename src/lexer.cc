@@ -401,6 +401,30 @@ Token Lexer::next_token() {
         return match_string(StringType::RAW, delimiter);
       }
       break;
+
+    case '(':
+      return make_token(TokenType::LPAREN);
+
+    case ')':
+      return make_token(TokenType::RPAREN);
+
+    case '[':
+      return make_token(TokenType::LBRACKET);
+
+    case ']':
+      return make_token(TokenType::RBRACKET);
+
+    case '{':
+      return make_token(TokenType::LBRACE);
+
+    case '}':
+      return make_token(TokenType::RBRACE);
+
+    case ',':
+      return make_token(TokenType::COMMA);
+
+    case ';':
+      return make_token(TokenType::SEMICOLON);
   }
 
   return match_identifier(c);
@@ -531,7 +555,7 @@ Token Lexer::match_integer(std::string& number, Pred is_digit, int base) {
 
   if (!at_end()) {
     char32_t c = peek();
-    if (!is_whitespace(c) && !can_start_operator(c)) {
+    if (c == '.' || can_continue_word(c)) {
       error(fmt::format("Illegal digit '{}' in literal with base {}",
                         char32_to_string(peek()), base));
     }
