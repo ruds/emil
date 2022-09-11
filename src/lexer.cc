@@ -425,6 +425,12 @@ Token Lexer::next_token() {
 
     case ';':
       return make_token(TokenType::SEMICOLON);
+
+    case '.':
+      if (is_decimal_digit(peek())) {
+        error("Floating point constants must start with a digit.");
+      }
+      return make_token(TokenType::DOT);
   }
 
   return match_identifier(c);

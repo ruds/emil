@@ -28,28 +28,11 @@ Productions have the form
   nonterm -> pat1 | pat2 | ... | patn
 #+end_src
 
-* Core Language
+* Lexical Structure
 
-** Lexical Structure
+** Literals
 
-*** Reserved words
-
-The following are reserved words used in the core language and may
-not be used as identifiers.
-
-#+begin_src
-  Inf    NaN    and    as    case    datatype    else    end    exception
-  fn    fun    handle    if    implicit    infix    infixr    let    local
-  nonfix    of    op    open    prefix    raise    rec    then    type
-  val    while    with    (    )    [    ]    ,    :    ;    _    |
-  =>    ->    #    (*    *)
-#+end_src
-
-**** TODO add more reserved words
-
-*** Literals
-
-**** Numeric Literals
+*** Numeric Literals
 
 #+begin_src bnf
   iliteral -> ['-'] iliteral-number ['i' | 'I']
@@ -88,7 +71,7 @@ All numeric literals may contain underscores to separate groups of
 digits. Each underscore must be preceded and followed by at least one
 digit.
 
-**** String and Character Literals
+*** String and Character Literals
 
 #+begin_src bnf
   f-string -> ('f' | 'F') string
@@ -164,26 +147,22 @@ of the enclosing literal. For example, ~f"Hello, ${"world"}"~ is a
 legal formatted string literal, despite the interpolated expression
 containing ~"~ characters.
 
-***** TODO define printable
+**** TODO define printable
 
-*** Identifiers
+** Identifiers
 
 #+begin_src bnf
   word-id -> word-start word-continue*
   operator-id -> symbol-grapheme-cluster+
-  q-word-id -> (word-id '.')* word-id
-  q-operator-id -> (word-id '.')* operator-id
   symbol -> ascii-symbol | unicode-symbol
   ascii-symbol -> '!' | '#' | '$' | '%' | '&' | '*' | '+' | '-'
                |  '/' | ':' | '<' | '=' | '>' | '?' | '@' | '\'
                |  '^' | '|' | '~'
 #+end_src
 
-Emil permits two types of identifier. In many contexts where an
-identifier is permitted, a qualified identifier is also permitted. A
-qualified identifer is a dot-separated sequence of identifiers; all
-but the last must be word identifiers, and the last may be a word or
-operator identifer. Reserved words may not be used as identifiers.
+Emil permits two types of identifier, word-like identifiers and
+operator-like identifiers. Reserved words ([[#reserved-identifiers][listed below]]) may not be
+used as identifiers.
 
 An operator identifier consists of one or more symbols, which are
 grapheme clusters that start with a character taken from a restricted
@@ -208,7 +187,32 @@ are treated as equivalent. For example, the identifer ~à~ would be the
 same whether the source file encoded it as ~U+00E0~ or
 ~U+0061~~U+0300~.
 
-** Syntax and Semantics
+*** Reserved Identifiers
+#+PROPERTY: CUSTOM_ID: reserved-identifiers
+
+The following are reserved words used in the core language and may
+not be used as identifiers.
+
+#+begin_src
+  Inf    NaN    and    as    case    datatype    else    end    exception
+  fn    fun    handle    if    implicit    infix    infixr    let    local
+  nonfix    of    op    open    prefix    raise    rec    then    type
+  val    while    with    :    _    |    =>    ->    #
+#+end_src
+
+**** TODO add more reserved words
+
+** Other syntactic elements
+
+The following tokens are used for various syntactic purposes:
+
+#+begin_src
+  (    )    [    ]    ,    ;    .
+#+end_src
+
+* Syntax and Semantics
+
+** Core Language
 
 *** Types
 
