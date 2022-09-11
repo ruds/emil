@@ -193,12 +193,13 @@ same whether the source file encoded it as ~U+00E0~ or
 The following are reserved words used in the core language and may
 not be used as identifiers.
 
-#+begin_src
-  Inf    NaN    and    as    case    datatype    else    end    exception
-  fn    fun    handle    if    implicit    infix    infixr    let    local
-  nonfix    of    op    open    prefix    raise    rec    then    type
-  val    while    with    :    _    |    =>    ->    #
-#+end_src
+#+begin_example
+  Inf    NaN    and    as    case    datatype    else    end
+  exception    fn    fun    handle    if    implicit    in    infix
+  infixr    let    local    nonfix    of    op    open    prefix
+  raise    rec    then    type    val    while    with
+  :    _    |    =>    ->    #
+#+end_example
 
 **** TODO add more reserved words
 

@@ -53,6 +53,7 @@ namespace emil {
   DECLARE(KW_HANDLE, X)             \
   DECLARE(KW_IF, X)                 \
   DECLARE(KW_IMPLICIT, X)           \
+  DECLARE(KW_IN, X)                 \
   DECLARE(KW_INFIX, X)              \
   DECLARE(KW_INFIXR, X)             \
   DECLARE(KW_LET, X)                \

@@ -183,6 +183,7 @@ constexpr std::u8string_view KW_FUN = u8"fun";
 constexpr std::u8string_view KW_HANDLE = u8"handle";
 constexpr std::u8string_view KW_IF = u8"if";
 constexpr std::u8string_view KW_IMPLICIT = u8"implicit";
+constexpr std::u8string_view KW_IN = u8"in";
 constexpr std::u8string_view KW_INFIX = u8"infix";
 constexpr std::u8string_view KW_INFIXR = u8"infixr";
 constexpr std::u8string_view KW_LET = u8"let";
@@ -265,6 +266,7 @@ void match_keyword_in_id_word(Token& token) {
       } else {
         REPLACE(KW_IF, 1);
         REPLACE(KW_IMPLICIT, 1);
+        REPLACE(KW_IN, 1);
       }
       return;
 
