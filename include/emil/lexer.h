@@ -82,6 +82,7 @@ class Lexer {
   bool match(char32_t expected);
 
   void skip_whitespace();
+  void skip_comment();
 
   /**
    * Matches an integer or floating-point literal.

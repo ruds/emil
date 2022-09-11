@@ -202,6 +202,13 @@ not be used as identifiers.
 
 **** TODO add more reserved words
 
+** Comments
+
+Comments begin with ~(*~ that is not in a string literal and end with
+~)*~. They may be nested, so the number of ~)*~ must match the number
+of ~(*~ in a well-formed program. Comments are treated as whitespace
+for the purpose of lexical analysis.
+
 ** Other syntactic elements
 
 The following tokens are used for various syntactic purposes:

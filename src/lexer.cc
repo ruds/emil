@@ -402,7 +402,16 @@ Token Lexer::next_token() {
       }
       break;
 
+    case '*':
+      if (peek() == ')') error("Comment end outside of comment.");
+      break;
+
     case '(':
+      if (peek() == '*') {
+        advance();
+        skip_comment();
+        return next_token();
+      }
       return make_token(TokenType::LPAREN);
 
     case ')':
@@ -494,6 +503,25 @@ void Lexer::skip_whitespace() {
       return;
     }
   }
+}
+
+void Lexer::skip_comment() {
+  int level = 1;
+  while (!at_end()) {
+    char32_t c = advance();
+    if (c == '*') {
+      if (peek() == ')') {
+        advance();
+        if (!--level) return;
+      }
+    } else if (c == '(' && peek() == '*') {
+      advance();
+      ++level;
+    } else if (c == '\n') {
+      ++next_line_;
+    }
+  }
+  error("File ended mid-comment.");
 }
 
 Token Lexer::match_number(char32_t first_char) {
