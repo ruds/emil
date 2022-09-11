@@ -359,11 +359,24 @@ Lexer::Lexer(std::string filename, std::unique_ptr<Source> source)
     : filename_(std::move(filename)), source_(std::move(source)) {}
 
 Token Lexer::next_token() {
-  skip_whitespace();
   current_token_.clear();
+
+  if (continuing_format_string()) {
+    const auto& s = format_string_state_.top();
+    return match_string(s.string_type, s.raw_delimiter, FormatString::CONTINUE);
+  }
+  skip_whitespace();
   start_line_ = next_line_;
 
-  if (at_end()) return make_token(TokenType::END_OF_FILE);
+  if (at_end()) {
+    if (!empty(format_string_state_)) {
+      int line = format_string_state_.top().start_line;
+      format_string_state_.pop();
+      error(fmt::format(
+          "End of file while processing format string starting at {}", line));
+    }
+    return make_token(TokenType::END_OF_FILE);
+  }
 
   char32_t c = advance();
 
@@ -396,6 +409,23 @@ Token Lexer::next_token() {
       }
       return match_string(StringType::SIMPLE);
 
+    case 'f':
+    case 'F':
+      if ((peek() == 'r' || peek() == 'R') && peek(1) == '"') {
+        advance();
+        advance();
+        std::u32string delimiter = match_raw_delimiter();
+        return match_string(StringType::RAW, delimiter, FormatString::START);
+      } else if (match('"')) {
+        if (peek() == '"' && peek(1) == '"') {
+          advance();
+          advance();
+          return match_string(StringType::TRIPLE, U"", FormatString::START);
+        } else {
+          return match_string(StringType::SIMPLE, U"", FormatString::START);
+        }
+      }
+
     case 'r':
     case 'R':
       if (match('"')) {
@@ -426,10 +456,14 @@ Token Lexer::next_token() {
       return make_token(TokenType::RBRACKET);
 
     case '{':
+      inc_brace_depth();
       return make_token(TokenType::LBRACE);
 
     case '}':
-      return make_token(TokenType::RBRACE);
+      if (dec_brace_depth())
+        return make_token(TokenType::FSTRING_IEXPR_F);
+      else
+        return make_token(TokenType::RBRACE);
 
     case ',':
       return make_token(TokenType::COMMA);
@@ -524,6 +558,22 @@ void Lexer::skip_comment() {
     }
   }
   error("File ended mid-comment.");
+}
+
+bool Lexer::continuing_format_string() const {
+  return !format_string_state_.empty() &&
+         format_string_state_.top().brace_depth == 0;
+}
+
+void Lexer::inc_brace_depth() {
+  if (!format_string_state_.empty()) {
+    ++format_string_state_.top().brace_depth;
+  }
+}
+
+bool Lexer::dec_brace_depth() {
+  if (format_string_state_.empty()) return false;
+  return --format_string_state_.top().brace_depth == 0;
 }
 
 Token Lexer::match_number(char32_t first_char) {
@@ -677,7 +727,41 @@ Token Lexer::match_char() {
   return make_token(TokenType::CHAR, value);
 }
 
-Token Lexer::match_string(StringType type, std::u32string_view raw_delimiter) {
+Token Lexer::match_string(StringType type, std::u32string_view raw_delimiter,
+                          FormatString format_string) {
+  if (format_string == FormatString::CONTINUE) {
+    switch (format_string_state_.top().next) {
+      case FormatStringNext::CONTINUATION:
+        break;
+
+      case FormatStringNext::DOLLAR: {
+        if (!match('$')) {
+          throw std::logic_error(
+              fmt::format("Next character is '{}' instead of '$'",
+                          char32_to_string(peek())));
+        }
+        format_string_state_.top().next = FormatStringNext::CONTINUATION;
+        if (match('{')) {
+          inc_brace_depth();
+          return make_token(TokenType::FSTRING_IEXPR_S);
+        }
+        char32_t id_first = advance();
+        Token t = match_id_word(id_first);
+        if (t.type != TokenType::ID_WORD) {
+          error(
+              "Identifier following '$' in format string must not be a "
+              "keyword.");
+        }
+        t.type = TokenType::FSTRING_IVAR;
+        return t;
+      }
+
+      default:
+        throw std::logic_error(
+            fmt::format("Unknown FormatStringNext {}",
+                        static_cast<int>(format_string_state_.top().next)));
+    }
+  }
   std::u8string contents;
   auto it = back_inserter(contents);
   while (!match_end_of_string(type, raw_delimiter)) {
@@ -688,10 +772,25 @@ Token Lexer::match_string(StringType type, std::u32string_view raw_delimiter) {
       } else {
         utf8::append(match_escape(), it);
       }
+    } else if (format_string != FormatString::NO && c == '$') {
+      current_token_.pop_back();
+      source_->putback(c);
+      if (format_string == FormatString::START) {
+        format_string_state_.push(
+            FormatStringState{.start_line = start_line_,
+                              .string_type = type,
+                              .next = FormatStringNext::DOLLAR,
+                              .raw_delimiter = std::u32string{raw_delimiter}});
+      } else {
+        format_string_state_.top().next = FormatStringNext::DOLLAR;
+      }
+      return make_token(to_token_type(format_string), std::move(contents));
     } else {
       if (c == '\n') {
         ++next_line_;
         if (type == StringType::SIMPLE) {
+          if (format_string == FormatString::CONTINUE)
+            format_string_state_.pop();
           error(
               "Line breaks are not permitted in strings delimited with a "
               "single "
@@ -701,7 +800,8 @@ Token Lexer::match_string(StringType type, std::u32string_view raw_delimiter) {
       utf8::append(c, it);
     }
   }
-  return make_token(TokenType::STRING, std::move(contents));
+  if (format_string == FormatString::CONTINUE) format_string_state_.pop();
+  return make_token(to_token_type(format_string), std::move(contents));
 }
 
 void Lexer::match_gap(StringType type) {
@@ -718,6 +818,7 @@ void Lexer::match_gap(StringType type) {
 }
 
 std::u32string Lexer::match_raw_delimiter() {
+  const auto start = current_token_.size();
   for (char32_t c = advance_safe("raw string delimiter"); c != '(';
        c = advance_safe("raw string delimiter")) {
     if (c == ')' || c == '\\' || c == 0 || is_whitespace(c)) {
@@ -725,7 +826,7 @@ std::u32string Lexer::match_raw_delimiter() {
                         char32_to_string(c)));
     }
   }
-  return current_token_.substr(2, current_token_.size() - 3);
+  return current_token_.substr(start, current_token_.size() - start - 1);
 }
 
 bool Lexer::match_end_of_string(StringType type,
@@ -906,6 +1007,19 @@ std::u8string Lexer::normalize(std::u8string&& s) {
   normalizer->normalizeUTF8(0, s, sink, nullptr, err);
   err.assertSuccess();
   return n;
+}
+
+TokenType Lexer::to_token_type(FormatString fs) {
+  switch (fs) {
+    case FormatString::NO:
+      return TokenType::STRING;
+    case FormatString::START:
+      return TokenType::FSTRING;
+    case FormatString::CONTINUE:
+      return TokenType::FSTRING_CONT;
+  }
+  throw std::logic_error(
+      fmt::format("fs {} not an expected value", static_cast<int>(fs)));
 }
 
 }  // namespace emil

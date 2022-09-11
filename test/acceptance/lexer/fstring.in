@@ -1,0 +1,50 @@
+f""
+F""
+f""""""
+F""""""
+fr"foo()foo"
+fR"foo()foo"
+Fr"foo()foo"
+FR"foo()foo"
+f"\$foo"
+f"$foo"
+f"\${foo}"
+f"${foo}"
+f"""\$foo"""
+f"""$foo"""
+f"""\${foo}"""
+f"""${foo}"""
+fr"(\$foo)"
+fr"($foo)"
+fr"(\${foo})"
+fr"(${foo})"
+"$foo"
+"""$foo"""
+R"($foo)"
+f"${"foo"}"
+f"""${"""foo"""}"""
+fr"foo(${r"foo(foo)foo"})foo"
+f"foo + 1 =${let
+  val a = foo
+  val b = 1
+in
+  a + b (* comments are allowed *)
+end} when foo =$foo."
+f"""foo + 1 =${let
+  val a = foo
+  val b = 1
+in
+  a + b (* comments are allowed *)
+end} when foo =$foo."""
+fr"(foo + 1 =${let
+  val a = foo
+  val b = 1
+in
+  a + b (* comments are allowed *)
+end} when foo =$foo.)"
+f"foo${ { foo, bar } } bar"
+f"foo =
+(*xx*)
+f"foo =$foo.
+(*xx*)
+f"""this is the string that${ " never ends" """ """

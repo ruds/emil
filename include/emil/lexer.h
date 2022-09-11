@@ -21,6 +21,7 @@
 #include <exception>
 #include <istream>
 #include <memory>
+#include <stack>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -66,11 +67,37 @@ class Lexer {
  private:
   friend class UnicodeError;
 
+  enum class StringType {
+    SIMPLE,  // "string"
+    TRIPLE,  // """string"""
+    RAW,     // r"delim(string)delim"
+  };
+
+  enum class FormatString {
+    NO,
+    START,
+    CONTINUE,
+  };
+
+  enum class FormatStringNext {
+    DOLLAR,
+    CONTINUATION,
+  };
+
+  struct FormatStringState {
+    int start_line;
+    int brace_depth = 0;
+    StringType string_type;
+    FormatStringNext next;
+    std::u32string raw_delimiter;
+  };
+
   const std::string filename_;
   const std::unique_ptr<Source> source_;
   std::u32string current_token_;
   int start_line_ = 1;
   int next_line_ = 1;
+  std::stack<FormatStringState> format_string_state_;
 
   Token make_token(TokenType type, token_auxiliary_t aux = {}) const;
   [[noreturn]] void error(std::string msg);
@@ -83,6 +110,12 @@ class Lexer {
 
   void skip_whitespace();
   void skip_comment();
+
+  bool continuing_format_string() const;
+  void inc_brace_depth();
+  /** Returns true if this closing brace ends a format string's embedded
+   * expression. */
+  bool dec_brace_depth();
 
   /**
    * Matches an integer or floating-point literal.
@@ -111,19 +144,14 @@ class Lexer {
    */
   Token match_char();
 
-  enum class StringType {
-    SIMPLE,  // "string"
-    TRIPLE,  // """string"""
-    RAW,     // r"delim(string)delim"
-  };
-
   /**
    * Matches a string literal.
    *
    * @invariant requires that current_token_ contains the initial
    * delimiter.
    */
-  Token match_string(StringType type, std::u32string_view raw_delimiter = U"");
+  Token match_string(StringType type, std::u32string_view raw_delimiter = U"",
+                     FormatString format_string = FormatString::NO);
 
   void match_gap(StringType type);
 
@@ -160,6 +188,8 @@ class Lexer {
   bool can_continue_word(char32_t c);
 
   std::u8string normalize(std::u8string&& s);
+
+  static TokenType to_token_type(FormatString fs);
 };
 
 }  // namespace emil

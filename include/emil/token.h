@@ -146,6 +146,9 @@ struct fmt::formatter<emil::Token> {
         break;
 
       case TokenType::STRING:
+      case TokenType::FSTRING:
+      case TokenType::FSTRING_CONT:
+      case TokenType::FSTRING_IVAR:
       case TokenType::ID_WORD:
       case TokenType::ID_OP: {
         auto it = back_inserter(aux);
