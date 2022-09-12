@@ -190,7 +190,10 @@ same whether the source file encoded it as ~U+00E0~ or
 ~U+0061~~U+0300~.
 
 *** Reserved Identifiers
-#+PROPERTY: CUSTOM_ID: reserved-identifiers
+:PROPERTIES:
+:CUSTOM_ID: reserved-identifiers
+:END:
+
 
 The following are reserved words used in the core language and may
 not be used as identifiers.
@@ -199,7 +202,7 @@ not be used as identifiers.
   Inf    NaN    and    as    case    datatype    else    end
   exception    fn    fun    handle    if    implicit    in    infix
   infixr    let    local    nonfix    of    op    open    prefix
-  raise    rec    then    type    val    while    with
+  raise    rec    then    type    val    while    withtype
   :    _    |    =>    ->    #
 #+end_example
 
@@ -220,27 +223,204 @@ The following tokens are used for various syntactic purposes:
 
 * Syntax and Semantics
 
+As Standard ML does, Emil divides the language into three parts. The
+core language provides the nuts and bolts, like variable declarations,
+function definitions, expressions, etc. Modules provide facilities for
+organizing large programs and for function overloading. Finally,
+Programs deal with specifying what is actually executed at runtime.
+
 ** Core Language
 
 *** Types
 
+Every expression has an associated type expression. In most cases, a
+(possibly polymorphic) type expression can be inferred by the
+compiler, but the programmer may provide a type expression to resolve
+an ambiguity or for documentation purposes.
+
+**** Type Expressions
+
+#+begin_src bnf
+  ty -> type-id
+      | { [tyrow (',' tyrow)*] }
+      | tyseq qual-word-id
+      | ty ('*' ty)+
+      | ty '->' ty
+      | '(' ty ')'
+  tyrow -> word-id ':' ty
+  tyseq -> [ty]
+         | '(' ty (',' ty)+ ')'
+  type-id-seq -> [type-id]
+               | '(' type-id (',' type-id)+ ')'
+  qual-word-id -> (word-id '.')* word-id
+#+end_src
+
+A type expression describes a type or a polymorphic family of types. A
+type variable (e.g. ~'a~, ~'key~) stands in for any type. Record type
+expressions (~{...}~), tuple type expressions (~ty1 * ty2 * ...~), and
+function type expressions (~ty1 -> ty2~) are described below when
+those types are introduced.
+
+A type constructor is a (possibly qualified) word-like identifier that
+accepts zero or more type parameters. Conventionally, the identifier
+begins with a lowercase letter. For example, ~bigint~ is a nullary
+type constructor for a built-in numeric type. ~list~ is a unary type
+constructor for the built-in linked list type. ~'a list~ is a
+type scheme that can be instantiated as a list of any type, such as
+~bigint list~ or ~bigint list list~. You could imagine a binary type
+constructor ~Map.map~, which would be defined in a module called
+~Map~. This could be used in type expressions like ~('k, 'v) Map.map~,
+~(string, 'v) Map.map~, or ~(string, bigint) Map.map~.
+
+Type expressions may be added to expressions and match patterns by
+appending a ~:~ and the type expression.
+
 **** Built-in Numeric Types
 
-- bigint
-- int
-- byte
-- float
+The built-in numeric types are the following:
+
+- ~bigint~ :: A multiprecision signed integer whose size is limited only
+  by the memory of the machine. This is the type of an integer
+  constant with no ~i~ suffix.
+- ~int~ :: A 64-bit signed integer.
+- ~byte~ :: An 8-bit unsigned integer.
+- ~float~ :: An IEEE-754 ~binary64~ floating-point number.
+
+Standard mathematical operations are provided by
+[[#default-prelude][the default prelude]].
 
 **** Other Built-in Types
 
-- bool
-- string
-- list
-- tuple
+Emil provides several more built-in types that have syntax support or
+are used by the constructs of the language. Additional types are
+provided by the [[#default-prelude][default prelude]].
 
+~bool~ has two values, ~true~ and ~false~. It is used in ~if~
+expressions.
 
-* Module Language
+~char~ is a Unicode codepoint (but not a surrogate in the range from
+~U+D800~ to ~U+DFFF~). The language supports character literals
+starting with ~#"~ and ending with ~"~.
 
-* Programs
+~string~ is conceptually a sequence of ~char~, and may be represented
+internally using any Unicode encoding.
+
+~'a list~ is a linked list with elements of type ~'a~. Lists can be
+constructed in two ways. The first is ~el1 :: el2 :: ... :: eln ::
+nil~, and the second is ~[el1, el2, ..., eln]~ (which is syntactic
+sugar for the first). Using either syntax, expressions in a list value
+are evaluated in the order they appear. Lists must have elements of
+the same type.
+
+Tuples are a family of types. The elements of tuples may have
+different types. Tuple types are ~unit~ (a 0-tuple), ~'a * 'b~ (a pair
+whose first element has type ~'a~ and whose second element has type
+~'b~), ~'a * 'b * 'c~ (a 3-tuple with elements of types ~'a~, ~'b~,
+and ~'c~), etc. There are no 1-tuples; use a value instead. Tuple
+values are written ~()~ (the unique value of ~unit~ type), ~(el1,
+el2)~ (a pair), etc. Expressions in tuple values are evaluated in the
+order they appear.
+
+Records are another family of types. Like tuples, elements of records
+may have different types. Unlike tuples, records' elements are
+unordered and have names. Records have zero or more labels. Record
+types expressions look like ~{ label1: type1, label2: type2, ... }~.
+Record types ignore the order of the labels, so ~{ foo: int, bar:
+string }~ and ~{ bar: string, foo: int }~ are the same type. Record
+values are written ~{ label1=expr1, label2=expr2 }~. The expressions
+in a record value are evaluated in the order they appear.
+
+**** User-defined types
+
+#+begin_src bnf
+  type-decl -> 'type' type-bind
+  dtype-decl -> 'datatype' dtype-bind [withtype type-bind]
+  dtype-alias-decl -> 'datatype' word-id '=' 'datatype' qual-word-id
+
+  type-bind -> one-type-bind ('and' one-type-bind)*
+  one-type-bind -> type-id-seq word-id '=' ty
+
+  dtype-bind -> one-dtype-bind ('and' one-dtype-bind)*
+  one-dtype-bind -> type-id-seq word-id '=' con-bind
+
+  con-bind -> one-con-bind ('|' one-con-bind)*
+  one-con-bind -> word-id ['of' ty]
+                | op-id ty
+                | ty op-id ty
+#+end_src
+
+Types may be defined by users in three ways.
+
+A type alias introduces a new type constructor for an existing type.
+The new type is entirely equivalent to the aliased type, and in fact
+the compiler may refer to the aliased type in error messages even when
+the program refers to the new type. Mutually dependent type aliases
+can be joined with the ~and~ keyword. A few examples:
+
+#+begin_src emil
+  type int64 = int
+  type intlist = int list
+  type 'v strmap = (string, 'v) Map.map
+  type ('k, 'v') dict = ('k, 'v) Map.map
+  (* The next declaration could be rewritten as
+
+     type str = string
+     type sstable = (str, str) Map.map
+
+     but this feature is important when combined with datatypes.
+   ,*)
+  type sstable = (str, str) Map.map
+   and str = string
+#+end_src
+
+A datatype declaration introduces a type constructor for a new sum
+type along with one or more value constructors. Value constructors are
+word-like identifiers and they conventionally start with capital
+letters. After being declared in a datatype declaration, value
+constructors behave like functions; when they are called, they
+evaluate to a value of the new type. Mutually dependent datatypes can
+be joined with the ~and~ keyword; datatypes can be joined with
+mutually dependent type aliases with the ~withtype~ keyword. A few
+examples:
+
+#+begin_src emil
+  datatype suit = Spades | Hearts | Diamonds | Clubs
+
+  datatype 'a tree = Empty | Node of 'a * 'a forest
+       and 'a forest = Nil | Cons of 'a tree * 'a forest
+
+  datatype 'a StreamCell = Nil | Cons of 'a * 'a Stream
+  withtype 'a Stream = 'a StreamCell susp
+
+  datatype arith_expr = Number bigint
+         | bigint ~+ bigint
+         | bigint ~- bigint
+         | ~- bigint
+
+  datatype declaration = Val of var * expression
+                       | Func of var list * expression
+       and expression = Int of int
+                      | FuncApp of var * expression list
+                      | Let of declaration list * expression
+       and ty = TyVar of string
+              | TyCon of tyseq * string
+  withtype var = { name: string, typename: ty }
+       and tyseq = ty list
+#+end_src
+
+The third way to declare a type is datatype replication. This
+introduces an alias for a type constructor and its value constructors.
+For example, if the ~Cards~ module contains the ~suit~ datatype in the
+previous example, then ~datatype color = datatype Cards.suit~
+introduces ~color~ as an alias for ~Cards.suit~ as well as ~Spades~,
+~Hearts~, ~Diamonds~, and ~Clubs~ as aliases for the corresponding
+value constructors from ~Cards~.
+
+** Modules
+
+** Programs
 
 * Default Prelude and Standard Modules
+:PROPERTIES:
+:CUSTOM_ID: default-prelude
+:END:

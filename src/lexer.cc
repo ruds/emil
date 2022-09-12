@@ -200,7 +200,7 @@ constexpr std::u8string_view KW_TYPE = u8"type";
 constexpr std::u8string_view KW_UNDERSCORE = u8"_";
 constexpr std::u8string_view KW_VAL = u8"val";
 constexpr std::u8string_view KW_WHILE = u8"while";
-constexpr std::u8string_view KW_WITH = u8"with";
+constexpr std::u8string_view KW_WITHTYPE = u8"withtype";
 
 bool match_rest(std::u8string_view keyword, const std::u8string& token,
                 std::size_t prefix) {
@@ -1017,7 +1017,7 @@ void Lexer::match_keyword_and_tyvar_in_id_word(Token& token) {
 
     case 'w':
       REPLACE(KW_WHILE, 1);
-      REPLACE(KW_WITH, 1);
+      REPLACE(KW_WITHTYPE, 1);
       return;
 
     case '_':

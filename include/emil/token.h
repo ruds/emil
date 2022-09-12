@@ -71,7 +71,7 @@ namespace emil {
   DECLARE(KW_UNDERSCORE, X)         \
   DECLARE(KW_VAL, X)                \
   DECLARE(KW_WHILE, X)              \
-  DECLARE(KW_WITH, X)               \
+  DECLARE(KW_WITHTYPE, X)           \
   DECLARE(COLON, X)                 \
   DECLARE(PIPE, X)                  \
   DECLARE(TO_EXPR, X)               \

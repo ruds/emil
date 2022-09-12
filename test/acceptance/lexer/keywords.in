@@ -3,5 +3,5 @@ cases case
 datatype else end exception
 fn fun handle if implicit in infix infixr infixl
 let local nonfix of op open prefix raise rec then type
-val while with : ::++:: _ __ _::_
+val while withtype : ::++:: _ __ _::_
 | || |-| = => <= <=> -> --> # ## #=
