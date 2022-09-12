@@ -40,6 +40,7 @@ namespace emil {
   DECLARE(FSTRING_IEXPR_S, X)       \
   DECLARE(FSTRING_IEXPR_F, X)       \
   DECLARE(ID_WORD, X)               \
+  DECLARE(ID_TYPE, X)               \
   DECLARE(ID_OP, X)                 \
   DECLARE(KW_AND, X)                \
   DECLARE(KW_AS, X)                 \
@@ -150,6 +151,7 @@ struct fmt::formatter<emil::Token> {
       case TokenType::FSTRING_CONT:
       case TokenType::FSTRING_IVAR:
       case TokenType::ID_WORD:
+      case TokenType::ID_TYPE:
       case TokenType::ID_OP: {
         auto it = back_inserter(aux);
         for (char8_t c : get<std::u8string>(t.aux)) {

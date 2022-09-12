@@ -153,6 +153,7 @@ containing ~"~ characters.
 
 #+begin_src bnf
   word-id -> word-start word-continue*
+  type-id -> ''' word-continue+
   operator-id -> symbol-grapheme-cluster+
   symbol -> ascii-symbol | unicode-symbol
   ascii-symbol -> '!' | '#' | '$' | '%' | '&' | '*' | '+' | '-'
@@ -160,9 +161,9 @@ containing ~"~ characters.
                |  '^' | '|' | '~'
 #+end_src
 
-Emil permits two types of identifier, word-like identifiers and
-operator-like identifiers. Reserved words ([[#reserved-identifiers][listed below]]) may not be
-used as identifiers.
+Emil permits three types of identifier: type variable identifiers,
+word-like identifiers, and operator-like identifiers. Reserved words
+([[#reserved-identifiers][listed below]]) may not be used as identifiers.
 
 An operator identifier consists of one or more symbols, which are
 grapheme clusters that start with a character taken from a restricted
@@ -173,13 +174,14 @@ Emil's use of word identifiers conforms to Unicode Standard Annex #31,
 [[https://www.unicode.org/reports/tr31/tr31-35.html]["Unicode Identifer and Pattern Syntax"]], Revision 35, observing R1
 (with a profile) and R4 (with normalization form C). Word identifiers
 start with a character from one of the [[https://www.unicode.org/reports/tr31/tr31-35.html#Table_Recommended_Scripts][recommended scripts]] with the
-unicode property ~XID_Start~, or ~_~ or ~'~. In the ascii range, the
-~XID_Start~ property corresponds to the letters, and this more or less
-holds in the other unicode blocks. Characters after the first may
-be any starting character, or a character from one of the recommended
-scripts with the unicode property ~XID_Continue~. In the ascii range,
-this adds the numbers; in other blocks it also adds modifier letters,
-combining diacritical marks, etc.
+unicode property ~XID_Start~, or ~_~ (underscore). In the ascii range,
+the ~XID_Start~ property corresponds to the letters, and this more or
+less holds in the other unicode blocks. Characters after the first may
+be any starting character, ~'~ (apostrophe), or a character from one
+of the recommended scripts with the unicode property ~XID_Continue~.
+In the ascii range, this adds the numbers; in other blocks it also
+adds modifier letters, combining diacritical marks, etc. Type variable
+identifiers start with ~'~ and continue as word-like identifiers.
 
 Word identifiers are case sensitive but decomposition-insensitive:
 Identifiers with the same value after applying [[https://www.unicode.org/reports/tr15/][Normalization Form C]]
@@ -200,8 +202,6 @@ not be used as identifiers.
   raise    rec    then    type    val    while    with
   :    _    |    =>    ->    #
 #+end_example
-
-**** TODO add more reserved words
 
 ** Comments
 

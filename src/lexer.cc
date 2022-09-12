@@ -208,113 +208,6 @@ bool match_rest(std::u8string_view keyword, const std::u8string& token,
          token.ends_with(keyword.substr(prefix));
 }
 
-void match_keyword_in_id_word(Token& token) {
-#define REPLACE(kw, prefix)           \
-  if (match_rest(kw, name, prefix)) { \
-    token.type = TokenType::kw;       \
-    token.aux = {};                   \
-    return;                           \
-  }
-  const auto& name = get<std::u8string>(token.aux);
-  switch (name[0]) {
-    case 'I':
-      if (match_rest(KW_INF, name, 1)) {
-        token.type = TokenType::FPLITERAL;
-        token.aux = std::numeric_limits<double>::infinity();
-      }
-      return;
-
-    case 'N':
-      if (match_rest(KW_NAN, name, 1)) {
-        token.type = TokenType::FPLITERAL;
-        token.aux = std::numeric_limits<double>::quiet_NaN();
-      }
-      return;
-
-    case 'a':
-      REPLACE(KW_AND, 1);
-      REPLACE(KW_AS, 1);
-      return;
-
-    case 'c':
-      REPLACE(KW_CASE, 1);
-      return;
-
-    case 'd':
-      REPLACE(KW_DATATYPE, 1);
-      return;
-
-    case 'e':
-      REPLACE(KW_ELSE, 1);
-      REPLACE(KW_END, 1);
-      REPLACE(KW_EXCEPTION, 1);
-      return;
-
-    case 'f':
-      REPLACE(KW_FN, 1);
-      REPLACE(KW_FUN, 1);
-      return;
-
-    case 'h':
-      REPLACE(KW_HANDLE, 1);
-      return;
-
-    case 'i':
-      if (name.starts_with(u8"infix")) {
-        REPLACE(KW_INFIX, 5);
-        REPLACE(KW_INFIXR, 5);
-      } else {
-        REPLACE(KW_IF, 1);
-        REPLACE(KW_IMPLICIT, 1);
-        REPLACE(KW_IN, 1);
-      }
-      return;
-
-    case 'l':
-      REPLACE(KW_LET, 1);
-      REPLACE(KW_LOCAL, 1);
-      return;
-
-    case 'n':
-      REPLACE(KW_NONFIX, 1);
-      return;
-
-    case 'o':
-      REPLACE(KW_OF, 1);
-      REPLACE(KW_OP, 1);
-      REPLACE(KW_OPEN, 1);
-      return;
-
-    case 'p':
-      REPLACE(KW_PREFIX, 1);
-      return;
-
-    case 'r':
-      REPLACE(KW_RAISE, 1);
-      REPLACE(KW_REC, 1);
-      return;
-
-    case 't':
-      REPLACE(KW_THEN, 1);
-      REPLACE(KW_TYPE, 1);
-      return;
-
-    case 'v':
-      REPLACE(KW_VAL, 1);
-      return;
-
-    case 'w':
-      REPLACE(KW_WHILE, 1);
-      REPLACE(KW_WITH, 1);
-      return;
-
-    case '_':
-      REPLACE(KW_UNDERSCORE, 1);
-      return;
-  }
-#undef REPLACE
-}
-
 constexpr std::u8string_view COLON = u8":";
 constexpr std::u8string_view PIPE = u8"|";
 constexpr std::u8string_view TO_EXPR = u8"=>";
@@ -951,7 +844,7 @@ Token Lexer::match_id_word(char32_t first_char) {
     utf8::append(advance(), it);
   }
   auto t = make_token(TokenType::ID_WORD, normalize(std::move(identifier)));
-  match_keyword_in_id_word(t);
+  match_keyword_and_tyvar_in_id_word(t);
   return t;
 }
 
@@ -1020,6 +913,118 @@ TokenType Lexer::to_token_type(FormatString fs) {
   }
   throw std::logic_error(
       fmt::format("fs {} not an expected value", static_cast<int>(fs)));
+}
+
+void Lexer::match_keyword_and_tyvar_in_id_word(Token& token) {
+#define REPLACE(kw, prefix)           \
+  if (match_rest(kw, name, prefix)) { \
+    token.type = TokenType::kw;       \
+    token.aux = {};                   \
+    return;                           \
+  }
+  const auto& name = get<std::u8string>(token.aux);
+  switch (name[0]) {
+    case '\'':
+      if (name.size() == 1) error("\"'\" is not a valid identifier.");
+      token.type = TokenType::ID_TYPE;
+      return;
+
+    case 'I':
+      if (match_rest(KW_INF, name, 1)) {
+        token.type = TokenType::FPLITERAL;
+        token.aux = std::numeric_limits<double>::infinity();
+      }
+      return;
+
+    case 'N':
+      if (match_rest(KW_NAN, name, 1)) {
+        token.type = TokenType::FPLITERAL;
+        token.aux = std::numeric_limits<double>::quiet_NaN();
+      }
+      return;
+
+    case 'a':
+      REPLACE(KW_AND, 1);
+      REPLACE(KW_AS, 1);
+      return;
+
+    case 'c':
+      REPLACE(KW_CASE, 1);
+      return;
+
+    case 'd':
+      REPLACE(KW_DATATYPE, 1);
+      return;
+
+    case 'e':
+      REPLACE(KW_ELSE, 1);
+      REPLACE(KW_END, 1);
+      REPLACE(KW_EXCEPTION, 1);
+      return;
+
+    case 'f':
+      REPLACE(KW_FN, 1);
+      REPLACE(KW_FUN, 1);
+      return;
+
+    case 'h':
+      REPLACE(KW_HANDLE, 1);
+      return;
+
+    case 'i':
+      if (name.starts_with(u8"infix")) {
+        REPLACE(KW_INFIX, 5);
+        REPLACE(KW_INFIXR, 5);
+      } else {
+        REPLACE(KW_IF, 1);
+        REPLACE(KW_IMPLICIT, 1);
+        REPLACE(KW_IN, 1);
+      }
+      return;
+
+    case 'l':
+      REPLACE(KW_LET, 1);
+      REPLACE(KW_LOCAL, 1);
+      return;
+
+    case 'n':
+      REPLACE(KW_NONFIX, 1);
+      return;
+
+    case 'o':
+      REPLACE(KW_OF, 1);
+      REPLACE(KW_OP, 1);
+      REPLACE(KW_OPEN, 1);
+      return;
+
+    case 'p':
+      REPLACE(KW_PREFIX, 1);
+      return;
+
+    case 'r':
+      REPLACE(KW_RAISE, 1);
+      REPLACE(KW_REC, 1);
+      return;
+
+    case 't':
+      REPLACE(KW_THEN, 1);
+      REPLACE(KW_TYPE, 1);
+      return;
+
+    case 'v':
+      REPLACE(KW_VAL, 1);
+      return;
+
+    case 'w':
+      REPLACE(KW_WHILE, 1);
+      REPLACE(KW_WITH, 1);
+      return;
+
+    case '_':
+      REPLACE(KW_UNDERSCORE, 1);
+      return;
+  }
+#undef REPLACE
 }
 
 }  // namespace emil

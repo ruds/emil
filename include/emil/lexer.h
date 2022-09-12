@@ -190,6 +190,8 @@ class Lexer {
   std::u8string normalize(std::u8string&& s);
 
   static TokenType to_token_type(FormatString fs);
+
+  void match_keyword_and_tyvar_in_id_word(Token& token);
 };
 
 }  // namespace emil
