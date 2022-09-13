@@ -28,6 +28,12 @@ Productions have the form
   nonterm -> pat1 | pat2 | ... | patn
 #+end_src
 
+In addition to restrictions elaborated in the text, two rules are
+applied to the grammar productions. First, alternatives in a
+production are presented in priority order. Second, productions
+containing repetitions (~*~ or ~+~) match as extensively as possible.
+These rules eliminate abiguities in the grammar.
+
 * Lexical Structure
 
 ** Literals
@@ -147,6 +153,16 @@ of the enclosing literal. For example, ~f"Hello, ${"world"}"~ is a
 legal formatted string literal, despite the interpolated expression
 containing ~"~ characters.
 
+Format string literals actually lex into one or more tokens. The
+initial string segment is a token of type ~fstring-start~. String
+segments following substitutions are tokens of type ~fstring-cont~.
+Identifier substitutions become tokens of type ~fstring-ivar~.
+Expression substitutions become a token of ~fstring-iexpr-s~, followed
+by the tokens of the expression, followed by a token of
+~fstring-iexpr-f~. ~fstring-ivar~ and ~fstring-iexpr-f~ tokens are
+always followed by an ~fstring-cont~ token, even if the string segment
+is empty.
+
 **** TODO define printable
 
 ** Identifiers
@@ -242,13 +258,13 @@ an ambiguity or for documentation purposes.
 
 #+begin_src bnf
   ty -> type-id
-      | { [tyrow (',' tyrow)*] }
-      | tyseq qual-word-id
+      | { [rt-row (',' rt-row)*] }
+      | ty-seq qual-word-id
       | ty ('*' ty)+
       | ty '->' ty
       | '(' ty ')'
-  tyrow -> word-id ':' ty
-  tyseq -> [ty]
+  rt-row -> word-id ':' ty
+  ty-seq -> [ty]
          | '(' ty (',' ty)+ ')'
   type-id-seq -> [type-id]
                | '(' type-id (',' type-id)+ ')'
@@ -290,6 +306,13 @@ Standard mathematical operations are provided by
 [[#default-prelude][the default prelude]].
 
 **** Other Built-in Types
+
+#+begin_src bnf
+  tuple-expr -> '(' [expr (',' expr)+] ')'
+  list-expr -> '[' [expr (',' expr)*] ']'
+  record-expr -> '{' [re-row (',' re-row)*] '}'
+  re-row -> word-id '=' expr
+#+end_src
 
 Emil provides several more built-in types that have syntax support or
 are used by the constructs of the language. Additional types are
@@ -415,6 +438,94 @@ previous example, then ~datatype color = datatype Cards.suit~
 introduces ~color~ as an alias for ~Cards.suit~ as well as ~Spades~,
 ~Hearts~, ~Diamonds~, and ~Clubs~ as aliases for the corresponding
 value constructors from ~Cards~.
+
+*** Expressions
+
+#+begin_src bnf
+  expr -> infix-expr [: ty]
+        | handle-expr
+        | raise-expr
+        | while-expr
+
+  qual-op-id -> (word-id '.')* op-id
+  infix-expr -> left-expr qual-op-id infix-expr
+              | qual-op-id infix-expr
+              | left-expr
+  left-expr -> application-expr
+             | if-expr
+             | case-expr
+             | fn-expr
+  application-expr -> atomic-expr+
+#+end_src
+
+Function application binds tightly in Emil; any sequence of atomic
+expressions is a function application. After that, there are a number
+of "left expressions"; that is, expressions that can be on the
+left-hand side of a binary operator. The precedence of infix and
+prefix operators are determined by fixity declarations (see below).
+Finally, the least tightly binding part of an expression are type
+annotations and a few constructs that don't typically make sense as
+part of a binary expression and would otherwise cause unintuitive
+parses.
+
+**** Atomic Expressions
+
+#+begin_src bnf
+  atomic-expr -> literal
+               | qual-word-id
+               | 'op' ['prefix'] qual-op-id
+               | record-expr
+               | tuple-expr
+               | list-expr
+               | '(' expr (';' expr)+ ')'
+               | 'let' decl 'in' expr (';' expr)* 'end'
+               | '(' expr ')'
+
+  literal -> iliteral
+           | fpliteral
+           | string
+           | char
+           | fstring-literal
+
+  fstring-literal -> fstring-start (fstring-subs fstring-cont)*
+
+  fstring-subs -> fstring-ivar
+                | fstring-iexpr-s expr fstring-expr-f
+#+end_src
+
+Most of the atomic expressions are constructs that have been described
+already. Literals, record expressions, tuple expressions, and list
+expressions evaluate to the appropriate value. Qualified word
+identifiers evaluate to the value they are bound to. Parenthesized
+expressions evaluate to the result of the inner expression.
+
+Qualified operator identifiers evaluate to one of the values they are
+bound to. Operators may have two different bindings: prefix and infix.
+The ~op~ and ~op prefix~ particles change the way operators
+participate in expressions. Without such a particle, the operator is
+parsed as part of an ~infix-expr~ production. Its position determines
+whether the infix or prefix version of the operator is used, and its
+precedence is used to determine how the expression parses. With ~op~,
+the infix version of the operator is used. With ~op prefix~, the
+prefix version of the operator is used. With either particle, the
+operator is parsed as part of an ~atomic-expr~ production and the
+precedence of the operator is not used to parse the expression.
+Precedence and fixity are described more below.
+
+Two or more expressions within parentheses and separated by ~;~ are
+sequenced. They are evaluated in order and the value of the sequenced
+expression is the value of the last exception. All expressions except
+the last must be of type ~unit~.
+
+A let expression has a declaration section and an expression section.
+The declaration section contains one or more declarations whose scope
+extends until the end of the expression section; in particular,
+earlier declarations are available to later declarations in the same
+section and all declarations are available in the expression section.
+The expression section contains one or more expressions separated by
+~;~. As in sequence expressions, the value of the let expression is
+the value of the last expression, and all but the last must be of type
+~unit~.
 
 ** Modules
 
