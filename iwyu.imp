@@ -1,6 +1,8 @@
 [
     { include: ["@<__algorithm/.*>", "private", "<algorithm>", "public"] },
     { include: ["@<__charconv/.*>", "private", "<charconv>", "public"] },
+    { include: ["@<__filesystem/.*>", "private", "<filesystem>", "public"] },
+    { include: ["@<__functional/.*>", "private", "<functional>", "public"] },
     { include: ["@<__memory/.*>", "private", "<memory>", "public"] },
     { include: ["@<__iterator/.*>", "private", "<iterator>", "public"] },
     { include: ["@<__utility/.*>", "private", "<utility>", "public"] },
@@ -10,5 +12,7 @@
     { include: ["\"gtest/gtest.h\"", "private", "<gtest/gtest.h>", "public"]},
     { include: ["\"gmock/gmock.h\"", "private", "<gmock/gmock.h>", "public"]},
     { symbol: ["std::ifstream", "private", "<fstream>", "public"]},
+    { symbol: ["std::ofstream", "private", "<fstream>", "public"]},
+    { symbol: ["std::ostringstream", "private", "<sstream>", "public"]},
     { symbol: ["u_hasBinaryProperty", "private", "<unicode/uchar.h>", "public"]}
 ]

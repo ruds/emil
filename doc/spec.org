@@ -527,6 +527,18 @@ The expression section contains one or more expressions separated by
 the value of the last expression, and all but the last must be of type
 ~unit~.
 
+*** Declarations
+
+#+begin_src bnf
+  decl -> val-decl
+
+  val-decl -> 'val' ['rec'] val-bind
+
+  val-bind -> word-id '=' expr
+#+end_src
+
+**** TODO: val-decl and val-bind are simplified considerably
+
 ** Modules
 
 ** Programs

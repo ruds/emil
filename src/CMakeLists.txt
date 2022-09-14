@@ -20,7 +20,24 @@ add_subdirectory("${PROJECT_SOURCE_DIR}/extern/utfcpp" "extern/utfcpp")
 
 add_library(lexer STATIC lexer.cc source.cc)
 add_emil_options(lexer)
-
 target_include_directories(lexer PUBLIC ../include "${GMPXX_INCLUDE_DIRS}")
 target_include_directories(lexer PRIVATE ./private)
-target_link_libraries(lexer PUBLIC fmt::fmt utf8cpp ICU::uc ICU::data "${GMPXX_LIBRARIES}")
+target_link_libraries(lexer PUBLIC
+  fmt::fmt utf8cpp ICU::uc ICU::data "${GMPXX_LIBRARIES}")
+
+add_custom_command(
+  OUTPUT
+  "${CMAKE_CURRENT_BINARY_DIR}/include/emil/ast.h"
+  "${CMAKE_CURRENT_BINARY_DIR}/ast.cc"
+  COMMAND
+  genast
+  "${CMAKE_CURRENT_BINARY_DIR}/include/emil/ast.h"
+  "${CMAKE_CURRENT_BINARY_DIR}/ast.cc"
+  DEPENDS genast
+)
+
+add_library(parser STATIC parser.cc "${CMAKE_CURRENT_BINARY_DIR}/ast.cc")
+target_link_libraries(parser PUBLIC lexer)
+target_include_directories(parser
+  PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/include" ../include
+  PRIVATE ./private)

@@ -107,6 +107,7 @@ macro(add_emil_options TARGET)
   endif()
 endmacro()
 
+add_subdirectory(tools)
 add_subdirectory(src)
 
 if (EMIL_TESTS)
