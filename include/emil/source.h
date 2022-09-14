@@ -17,17 +17,17 @@
 #include <cstdlib>
 #include <istream>
 #include <memory>
-#include <optional>
 #include <string>
 
 namespace emil {
 
 /** A source of characters to feed into the lexer. */
+template <typename T = char32_t>
 class Source {
  public:
   virtual ~Source() = default;
-  virtual char32_t advance() = 0;
-  virtual std::optional<char32_t> peek(std::size_t lookahead = 0) = 0;
+  virtual T advance() = 0;
+  virtual const T* peek(std::size_t lookahead = 0) = 0;
   virtual bool at_end() const = 0;
   /**
    * Implementations must permit at least one character of putback.
@@ -35,16 +35,16 @@ class Source {
    * Behavior is unspecified if `c` is not the same as the character
    * most recently returned by `advance`.
    */
-  virtual void putback(char32_t c) = 0;
+  virtual void putback(T c) = 0;
 };
 
 /** Advances `s` past the next grapheme cluster and returns it. */
-std::u32string next_grapheme_cluster(Source& s);
+std::u32string next_grapheme_cluster(Source<>& s);
 
 /** Advances `s` past the next grapheme cluster and appends it to `out`. */
-void next_grapheme_cluster(Source& s, std::u32string& out);
+void next_grapheme_cluster(Source<>& s, std::u32string& out);
 
-std::unique_ptr<Source> make_source(std::basic_istream<char32_t>& in);
-std::unique_ptr<Source> make_source(std::u32string in);
+std::unique_ptr<Source<>> make_source(std::basic_istream<char32_t>& in);
+std::unique_ptr<Source<>> make_source(std::u32string in);
 
 }  // namespace emil

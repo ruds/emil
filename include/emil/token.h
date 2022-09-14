@@ -93,8 +93,8 @@ using token_auxiliary_t = std::variant<std::monostate, int64_t, mpz_class,
                                        double, char32_t, std::u8string>;
 
 struct Token {
-  const std::u32string text;
-  const int line;
+  std::u32string text;
+  int line;
   TokenType type;
   token_auxiliary_t aux;
 };

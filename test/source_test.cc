@@ -23,6 +23,7 @@
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -39,7 +40,7 @@ using iss32 = std::basic_istringstream<char32_t>;
 
 struct TestParam {
   std::shared_ptr<iss32> stream;
-  std::shared_ptr<Source> source;
+  std::shared_ptr<Source<>> source;
 
   explicit TestParam(use_stream_t)
       : stream(std::make_shared<iss32>(U"1234")),
@@ -58,7 +59,7 @@ INSTANTIATE_TEST_SUITE_P(Sources, SourceTest,
                                            TestParam{use_stream_t{}}));
 
 TEST_P(SourceTest, Advances) {
-  Source& source = *GetParam().source;
+  Source<>& source = *GetParam().source;
   ASSERT_FALSE(source.at_end());
 
   EXPECT_EQ(source.advance(), '1');
@@ -74,23 +75,33 @@ TEST_P(SourceTest, Advances) {
   EXPECT_TRUE(source.at_end());
 }
 
+MATCHER_P(PeeksAt, c, "") {
+  const char32_t* next = arg->peek();
+  return next && *next == c;
+}
+
+MATCHER_P2(PeeksAheadAtBy, c, n, "") {
+  const char32_t* next = arg->peek(n);
+  return next && *next == c;
+}
+
 TEST_P(SourceTest, PeeksOne) {
-  Source& source = *GetParam().source;
+  Source<>& source = *GetParam().source;
   ASSERT_FALSE(source.at_end());
 
-  EXPECT_EQ(source.peek(), '1');
+  EXPECT_THAT(&source, PeeksAt(U'1'));
   EXPECT_EQ(source.advance(), '1');
   ASSERT_FALSE(source.at_end());
 
-  EXPECT_EQ(source.peek(), '2');
+  EXPECT_THAT(&source, PeeksAt(U'2'));
   EXPECT_EQ(source.advance(), '2');
   ASSERT_FALSE(source.at_end());
 
-  EXPECT_EQ(source.peek(), '3');
+  EXPECT_THAT(&source, PeeksAt(U'3'));
   EXPECT_EQ(source.advance(), '3');
   ASSERT_FALSE(source.at_end());
 
-  EXPECT_EQ(source.peek(), '4');
+  EXPECT_THAT(&source, PeeksAt(U'4'));
   EXPECT_EQ(source.advance(), '4');
   EXPECT_TRUE(source.at_end());
 
@@ -98,25 +109,25 @@ TEST_P(SourceTest, PeeksOne) {
 }
 
 TEST_P(SourceTest, PeeksAll) {
-  Source& source = *GetParam().source;
+  Source<>& source = *GetParam().source;
   ASSERT_FALSE(source.at_end());
 
-  EXPECT_EQ(source.peek(3), '4');
+  EXPECT_THAT(&source, PeeksAheadAtBy(U'4', 3));
   EXPECT_FALSE(source.peek(4));
 
-  EXPECT_EQ(source.peek(), '1');
+  EXPECT_THAT(&source, PeeksAt(U'1'));
   EXPECT_EQ(source.advance(), '1');
   ASSERT_FALSE(source.at_end());
 
-  EXPECT_EQ(source.peek(), '2');
+  EXPECT_THAT(&source, PeeksAt(U'2'));
   EXPECT_EQ(source.advance(), '2');
   ASSERT_FALSE(source.at_end());
 
-  EXPECT_EQ(source.peek(), '3');
+  EXPECT_THAT(&source, PeeksAt(U'3'));
   EXPECT_EQ(source.advance(), '3');
   ASSERT_FALSE(source.at_end());
 
-  EXPECT_EQ(source.peek(), '4');
+  EXPECT_THAT(&source, PeeksAt(U'4'));
   EXPECT_EQ(source.advance(), '4');
   EXPECT_TRUE(source.at_end());
 

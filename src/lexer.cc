@@ -31,10 +31,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <deque>
+#include <fstream>
 #include <istream>
 #include <iterator>
 #include <limits>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -146,7 +147,7 @@ class line_counting_source_iterator {
   using reference = char32_t;
   using pointer = char32_t*;
 
-  Source* source;
+  Source<>* source;
   int* line_number;
 
   char32_t operator*() const { return *source->peek(); }
@@ -248,7 +249,7 @@ void match_keyword_in_id_op(Token& token) {
 
 }  // namespace
 
-Lexer::Lexer(std::string filename, std::unique_ptr<Source> source)
+Lexer::Lexer(std::string filename, std::unique_ptr<Source<>> source)
     : filename_(std::move(filename)), source_(std::move(source)) {}
 
 Token Lexer::next_token() {
@@ -1025,6 +1026,61 @@ void Lexer::match_keyword_and_tyvar_in_id_word(Token& token) {
       return;
   }
 #undef REPLACE
+}
+
+namespace {
+class LexerSource : public Source<Token> {
+ public:
+  explicit LexerSource(const std::string& filename);
+  ~LexerSource() override;
+
+  Token advance() override;
+  const Token* peek(size_t lookahead) override;
+  bool at_end() const override;
+  void putback(Token t) override;
+
+ private:
+  std::basic_ifstream<char32_t> file_;
+  Lexer lexer_;
+  std::deque<Token> buffer_;
+  bool at_end_ = false;
+};
+
+LexerSource::LexerSource(const std::string& filename)
+    : file_(filename), lexer_(filename, make_source(file_)) {}
+
+LexerSource::~LexerSource() = default;
+
+Token LexerSource::advance() {
+  if (empty(buffer_)) {
+    Token t = lexer_.next_token();
+    if (t.type == TokenType::END_OF_FILE) at_end_ = true;
+    return t;
+  }
+  Token t = std::move(buffer_.front());
+  if (t.type == TokenType::END_OF_FILE) at_end_ = true;
+  buffer_.pop_front();
+  return t;
+}
+
+const Token* LexerSource::peek(size_t lookahead) {
+  while (size(buffer_) <= lookahead && !at_end_) {
+    buffer_.push_back(lexer_.next_token());
+    if (buffer_.back().type == TokenType::END_OF_FILE) at_end_ = true;
+  }
+  if (size(buffer_) <= lookahead) {
+    return nullptr;
+  }
+  return &buffer_[lookahead];
+}
+
+bool LexerSource::at_end() const { return at_end_ && empty(buffer_); }
+
+void LexerSource::putback(Token t) { buffer_.push_front(std::move(t)); }
+}  // namespace
+
+std::unique_ptr<Source<Token>> make_lexer(const std::string& filename) {
+  return std::make_unique<LexerSource>(filename);
 }
 
 }  // namespace emil

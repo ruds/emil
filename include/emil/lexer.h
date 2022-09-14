@@ -57,7 +57,7 @@ class LexingError : public std::exception {
 /** Converts a stream of characters to a stream of tokens. */
 class Lexer {
  public:
-  Lexer(std::string filename, std::unique_ptr<Source> source);
+  Lexer(std::string filename, std::unique_ptr<Source<>> source);
 
   Token next_token();
 
@@ -93,7 +93,7 @@ class Lexer {
   };
 
   const std::string filename_;
-  const std::unique_ptr<Source> source_;
+  const std::unique_ptr<Source<>> source_;
   std::u32string current_token_;
   int start_line_ = 1;
   int next_line_ = 1;
@@ -193,5 +193,7 @@ class Lexer {
 
   void match_keyword_and_tyvar_in_id_word(Token& token);
 };
+
+std::unique_ptr<Source<Token>> make_lexer(const std::string& filename);
 
 }  // namespace emil

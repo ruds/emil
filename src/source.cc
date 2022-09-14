@@ -22,7 +22,6 @@
 #include <istream>
 #include <iterator>
 #include <memory>
-#include <optional>
 #include <string>
 #include <utility>
 
@@ -33,7 +32,7 @@ using std::cend;
 
 namespace {
 template <typename It, std::sentinel_for<It> Sen = It>
-class IteratorSource : public Source {
+class IteratorSource : public Source<> {
  public:
   IteratorSource(It begin, Sen end) : container_(), in_(begin), end_(end) {}
   template <typename T>
@@ -52,14 +51,14 @@ class IteratorSource : public Source {
     return c;
   }
 
-  std::optional<char32_t> peek(size_t lookahead) override {
+  const char32_t* peek(size_t lookahead) override {
     while (size(lookahead_buffer_) <= lookahead && in_ != end_) {
       lookahead_buffer_.push_back(*in_++);
     }
     if (size(lookahead_buffer_) <= lookahead) {
-      return {};
+      return nullptr;
     }
-    return lookahead_buffer_[lookahead];
+    return &lookahead_buffer_[lookahead];
   }
 
   bool at_end() const override {
@@ -77,18 +76,18 @@ class IteratorSource : public Source {
 
 }  // namespace
 
-std::unique_ptr<Source> make_source(std::basic_istream<char32_t>& in) {
+std::unique_ptr<Source<>> make_source(std::basic_istream<char32_t>& in) {
   return std::make_unique<IteratorSource<std::istreambuf_iterator<char32_t>>>(
       std::istreambuf_iterator<char32_t>{in},
       std::istreambuf_iterator<char32_t>{});
 }
 
-std::unique_ptr<Source> make_source(std::u32string in) {
+std::unique_ptr<Source<>> make_source(std::u32string in) {
   return std::make_unique<IteratorSource<std::u32string::const_iterator>>(
       std::move(in));
 }
 
-std::u32string next_grapheme_cluster(Source& s) {
+std::u32string next_grapheme_cluster(Source<>& s) {
   std::u32string out;
   next_grapheme_cluster(s, out);
   return out;
@@ -96,14 +95,14 @@ std::u32string next_grapheme_cluster(Source& s) {
 
 namespace {
 
-bool is_gcb(const std::optional<char32_t>& c, UGraphemeClusterBreak cat) {
+bool is_gcb(const char32_t* c, UGraphemeClusterBreak cat) {
   return c && u_getIntPropertyValue(*c, UCHAR_GRAPHEME_CLUSTER_BREAK) == cat;
 }
 
-bool match_crlf(Source& s, std::u32string& out) {
+bool match_crlf(Source<>& s, std::u32string& out) {
   const auto c1 = s.peek();
   const auto c2 = s.peek(1);
-  if (c1 && c2 && is_gcb(c1, U_GCB_CR) && is_gcb(c2, U_GCB_LF)) {
+  if (is_gcb(c1, U_GCB_CR) && is_gcb(c2, U_GCB_LF)) {
     out += s.advance();
     out += s.advance();
     return true;
@@ -111,7 +110,7 @@ bool match_crlf(Source& s, std::u32string& out) {
   return false;
 }
 
-bool match_precore_seq(Source& s, std::u32string& out) {
+bool match_precore_seq(Source<>& s, std::u32string& out) {
   bool matched = false;
   while (is_gcb(s.peek(), U_GCB_PREPEND)) {
     matched = true;
@@ -120,7 +119,7 @@ bool match_precore_seq(Source& s, std::u32string& out) {
   return matched;
 }
 
-bool match_hangul_syllable(Source& s, std::u32string& out) {
+bool match_hangul_syllable(Source<>& s, std::u32string& out) {
   bool matched_l = false;
   while (is_gcb(s.peek(), U_GCB_L)) {
     out += s.advance();
@@ -150,7 +149,7 @@ bool match_hangul_syllable(Source& s, std::u32string& out) {
   return false;
 }
 
-bool match_ri_sequence(Source& s, std::u32string& out) {
+bool match_ri_sequence(Source<>& s, std::u32string& out) {
   if (is_gcb(s.peek(), U_GCB_REGIONAL_INDICATOR) &&
       is_gcb(s.peek(1), U_GCB_REGIONAL_INDICATOR)) {
     out += s.advance();
@@ -160,11 +159,11 @@ bool match_ri_sequence(Source& s, std::u32string& out) {
   return false;
 }
 
-bool is_xpicto(const std::optional<char32_t>& c) {
+bool is_xpicto(const char32_t* c) {
   return c && u_hasBinaryProperty(*c, UCHAR_EXTENDED_PICTOGRAPHIC);
 }
 
-bool match_xpicto_sequence(Source& s, std::u32string& out) {
+bool match_xpicto_sequence(Source<>& s, std::u32string& out) {
   if (!is_xpicto(s.peek())) return false;
   out += s.advance();
   while (1) {
@@ -179,7 +178,7 @@ bool match_xpicto_sequence(Source& s, std::u32string& out) {
   }
 }
 
-bool match_core_noncontrol(Source& s, std::u32string& out) {
+bool match_core_noncontrol(Source<>& s, std::u32string& out) {
   const auto c = s.peek();
   if (!c || is_gcb(c, U_GCB_CONTROL) || is_gcb(c, U_GCB_CR) ||
       is_gcb(c, U_GCB_LF))
@@ -188,7 +187,7 @@ bool match_core_noncontrol(Source& s, std::u32string& out) {
   return true;
 }
 
-bool match_core(Source& s, std::u32string& out) {
+bool match_core(Source<>& s, std::u32string& out) {
   const auto c = s.peek();
   if (!c) return false;
   if (match_hangul_syllable(s, out)) return true;
@@ -197,7 +196,7 @@ bool match_core(Source& s, std::u32string& out) {
   return match_core_noncontrol(s, out);
 }
 
-void match_postcore_seq(Source& s, std::u32string& out) {
+void match_postcore_seq(Source<>& s, std::u32string& out) {
   for (auto c = s.peek(); is_gcb(c, U_GCB_EXTEND) || is_gcb(c, U_GCB_ZWJ) ||
                           is_gcb(c, U_GCB_SPACING_MARK);
        c = s.peek()) {
@@ -206,7 +205,7 @@ void match_postcore_seq(Source& s, std::u32string& out) {
 }
 }  // namespace
 
-void next_grapheme_cluster(Source& s, std::u32string& out) {
+void next_grapheme_cluster(Source<>& s, std::u32string& out) {
   if (match_crlf(s, out)) return;
   if (is_gcb(s.peek(), U_GCB_CONTROL)) {
     out += s.advance();
