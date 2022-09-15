@@ -14,8 +14,6 @@
 
 #pragma once
 
-#include <fmt/core.h>
-
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -24,7 +22,6 @@
 #include <stack>
 #include <string>
 #include <string_view>
-#include <utility>
 
 #include "emil/source.h"
 #include "emil/token.h"
@@ -34,22 +31,15 @@ namespace emil {
 /** An error detected during lexing. */
 class LexingError : public std::exception {
  public:
-  LexingError(std::string msg, std::string filename, int line,
-              std::u32string partial_token_text)
-      : msg(std::move(msg)),
-        filename(std::move(filename)),
-        line(line),
-        partial_token_text(std::move(partial_token_text)),
-        full_msg(
-            fmt::format("{}:{}: error: {}", this->filename, line, this->msg)) {}
+  LexingError(std::string msg, const Location& location,
+              std::u32string partial_token_text);
 
   virtual const char* what() const noexcept override {
     return full_msg.c_str();
   }
 
   const std::string msg;
-  const std::string filename;
-  const int line;
+  const Location location;
   const std::u32string partial_token_text;
   const std::string full_msg;
 };
@@ -57,7 +47,7 @@ class LexingError : public std::exception {
 /** Converts a stream of characters to a stream of tokens. */
 class Lexer {
  public:
-  Lexer(std::string filename, std::unique_ptr<Source<>> source);
+  Lexer(std::string_view filename, std::unique_ptr<Source<>> source);
 
   Token next_token();
 
@@ -92,7 +82,7 @@ class Lexer {
     std::u32string raw_delimiter;
   };
 
-  const std::string filename_;
+  const std::string_view filename_;
   const std::unique_ptr<Source<>> source_;
   std::u32string current_token_;
   int start_line_ = 1;
@@ -194,6 +184,6 @@ class Lexer {
   void match_keyword_and_tyvar_in_id_word(Token& token);
 };
 
-std::unique_ptr<Source<Token>> make_lexer(const std::string& filename);
+std::unique_ptr<Source<Token>> make_lexer(std::string_view filename);
 
 }  // namespace emil

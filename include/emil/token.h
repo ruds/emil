@@ -92,9 +92,14 @@ ENUM_WITH_TEXT(TokenType, TOKEN_TYPE_LIST)
 using token_auxiliary_t = std::variant<std::monostate, int64_t, mpz_class,
                                        double, char32_t, std::u8string>;
 
+struct Location {
+  std::string_view filename;
+  int line;
+};
+
 struct Token {
   std::u32string text;
-  int line;
+  Location location;
   TokenType type;
   token_auxiliary_t aux;
 };
@@ -164,8 +169,8 @@ struct fmt::formatter<emil::Token> {
         aux = "";
         break;
     }
-    return fmt::format_to(ctx.out(), "{:04} {}{}{}{}{}", t.line, t.type,
-                          aux.empty() ? "" : " ", aux,
+    return fmt::format_to(ctx.out(), "{:04} {}{}{}{}{}", t.location.line,
+                          t.type, aux.empty() ? "" : " ", aux,
                           t.text.empty() ? "" : " ", utf8::utf32to8(t.text));
   }
 };

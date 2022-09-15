@@ -1,0 +1,6 @@
+123 ; 123i ; 123f ;
+"hello" ;
+R"(multiline
+literal
+)" ;
+#"\U01f603" ; #"a" ;

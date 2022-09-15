@@ -59,16 +59,38 @@ struct AstNodeSpec {
   std::vector<std::string> params;
 };
 
-const std::vector<AstNodeSpec> EXPRESSIONS{
-    {"BigintLiteral", {"mpz_class val"}},
-    {"IntLiteral", {"int64_t =val"}},
-    {"FpLiteral", {"double =val"}},
-    {"StringLiteral", {"str val"}},
-    {"CharLiteral", {"char32_t =val"}},
-    {"FstringLiteral", {"[str] segments", "[Expr*] substitutions"}},
+struct Category {
+  std::string name;
+  std::string cname;
+  std::vector<AstNodeSpec> types;
 };
 
-const std::vector<AstNodeSpec> DECLARATIONS{{"Val", {"str id", "Expr* val"}}};
+const std::vector<Category> CATEGORIES{
+    {"Expr",
+     "EXPR",
+     {
+         {"BigintLiteral", {"mpz_class val"}},
+         {"IntLiteral", {"int64_t =val"}},
+         {"FpLiteral", {"double =val"}},
+         {"StringLiteral", {"str val"}},
+         {"CharLiteral", {"char32_t =val"}},
+         {"FstringLiteral", {"[str] segments", "[Expr*] substitutions"}},
+     }},
+    {"Decl",
+     "DECL",
+     {
+         {"Val", {"str id", "Expr* val"}},
+     }},
+    {"TopDecl",
+     "TOPDECL",
+     {
+         {"Empty", {}},
+         {"EndOfFile", {}},
+         {"Expr", {"Expr* expr"}},
+     }},
+};
+
+const std::vector<AstNodeSpec> DECLARATIONS{};
 
 const std::string COPYRIGHT = R"(// Copyright 2022 Matt Rudary
 
@@ -97,39 +119,10 @@ const std::string HEADER_TEMPLATE = R"(%COPYRIGHT%
 #include <vector>
 #include <utility>
 
+#include "emil/token.h"
+
 namespace emil {
-%EXPR_FWD_DECLS%
-
-class Expr {
- public:
-  class Visitor {
-   public:
-    virtual ~Visitor();
-%EXPR_V_FUNCS%
-  };
-
-  virtual ~Expr();
-
-  virtual void accept(Visitor& visitor) const = 0;
-};
-%EXPR_DECLS%
-%DECL_FWD_DECLS%
-
-class Decl {
- public:
-  class Visitor {
-   public:
-    virtual ~Visitor();
-%DECL_V_FUNCS%
-  };
-
-  virtual ~Decl();
-
-  virtual void accept(Visitor& visitor) const = 0;
-};
-
-%DECL_DECLS%
-
+%ALL_DECLS%
 }  // namespace emil
 )";
 
@@ -145,17 +138,69 @@ const std::string CC_TEMPLATE = R"(%COPYRIGHT%
 #include <vector>
 #include <utility>
 
+#include "ast_printer.h"
+
 namespace emil {
-
-Expr::~Expr() = default;
-Expr::Visitor::~Visitor() = default;
-%EXPR_IMPLS%
-Decl::~Decl() = default;
-Decl::Visitor::~Visitor() = default;
-%DECL_IMPLS%
-
+%ALL_IMPLS%
 }  // namespace emil
 )";
+
+const std::string CATEGORY_DECL_TEMPLATE = R"(%FWD_DECLS%
+
+class %BASE% {
+ public:
+  class Visitor {
+   public:
+    virtual ~Visitor();
+%V_FUNCS%
+  };
+
+  Location location;
+
+  explicit %BASE%(const Location& location);
+  virtual ~%BASE%();
+
+  virtual void accept(Visitor& visitor) const = 0;
+};
+%DECLS%
+std::string print_ast(const %BASE%& v, int indent = 0);
+void print_ast(const %BASE%& v, std::string& out, int indent = 0);
+
+#define DECLARE_%CBASE%_V_FUNCS \%V_FUNC_DECLS%
+)";
+
+const std::string CATEGORY_IMPL_TEMPLATE = R"(
+%BASE%::%BASE%(const Location& location) : location(location) {}
+%BASE%::~%BASE%() = default;
+%BASE%::Visitor::~Visitor() = default;
+
+namespace {
+
+class %BASE%Printer : public %BASE%::Visitor {
+ public:
+  %BASE%Printer(std::string* out, int indent) : out_(out), indent_(indent) {}
+  ~%BASE%Printer() override = default;
+
+  DECLARE_%CBASE%_V_FUNCS;
+
+ private:
+  std::string* out_;
+  int indent_;
+};
+
+}
+
+std::string print_ast(const %BASE%& v, int indent) {
+  std::string out;
+  print_ast(v, out, indent);
+  return out;
+}
+
+void print_ast(const %BASE%& v, std::string& out, int indent) {
+  %BASE%Printer printer(&out, indent);
+  v.accept(printer);
+}
+%IMPLS%)";
 
 const std::string FWD_DECL_TEMPLATE = R"(
 class %NAME%;)";
@@ -163,27 +208,35 @@ class %NAME%;)";
 const std::string VISITOR_FUNC_TEMPLATE = R"(
     virtual void visit%NAME%(const %NAME%& node) = 0;)";
 
+const std::string VISITOR_FUNC_DECL_TEMPLATE = R"(
+    void visit%NAME%(const %NAME%& node) override; \)";
+
 const std::string DECL_TEMPLATE = R"(
 class %NAME% : public %BASE% {
  public:
-  %NAME%(%FIELDLIST%);
+  %EXPLICIT%%NAME%(%FIELDLIST%);
   ~%NAME%() override;
 
   void accept(Visitor& visitor) const override;
-
- private:
-%FIELDS%
-};
+%FIELDS%};
 )";
 
 const std::string IMPL_TEMPLATE = R"(
 %NAME%::%NAME%(%FIELDLIST%)
-  : %INITIALIZERS% {}
+  : %BASE%(location)%INITIALIZERS% {}
 
 %NAME%::~%NAME%() = default;
 
 void %NAME%::accept(Visitor& visitor) const {
   visitor.visit%NAME%(*this);
+}
+
+namespace {
+
+void %BASE%Printer::visit%NAME%(const %NAME%& node) {
+  astprinter::print_sexp(*out_, indent_, %SEXPLIST%);
+}
+
 }
 )";
 
@@ -225,6 +278,7 @@ Dict build_node_dict(const std::string& base, const AstNodeSpec& spec) {
   Dict dict;
   dict["BASE"] = base;
   dict["NAME"] = spec.name + base;
+  dict["EXPLICIT"] = size(spec.params) == 0 ? "explicit " : "";
   std::ostringstream field_list;
   auto field_list_out =
       std::experimental::make_ostream_joiner(field_list, ",\n    ");
@@ -233,7 +287,12 @@ Dict build_node_dict(const std::string& base, const AstNodeSpec& spec) {
   std::ostringstream initializers;
   auto initializers_out =
       std::experimental::make_ostream_joiner(initializers, ",\n    ");
+  std::ostringstream sexp_list;
+  auto sexp_list_out =
+      std::experimental::make_ostream_joiner(sexp_list, ",\n      ");
 
+  *field_list_out++ = "const Location& location";
+  *sexp_list_out++ = fmt::format(R"("{}")", dict["NAME"]);
   for (const auto& param : spec.params) {
     auto space = param.find(' ');
     if (space == std::string::npos || param.size() < space + 2)
@@ -247,11 +306,43 @@ Dict build_node_dict(const std::string& base, const AstNodeSpec& spec) {
     *initializers_out++ =
         fmt::format("{}({})", name,
                     is_copyable ? name : fmt::format("std::move({})", name));
+    *sexp_list_out++ = fmt::format(R"(":{}")", name);
+    *sexp_list_out++ = fmt::format("node.{}", name);
   }
 
   dict["FIELDLIST"] = field_list.str();
-  dict["FIELDS"] = fields.str();
-  dict["INITIALIZERS"] = initializers.str();
+  if (empty(spec.params)) {
+    dict["INITIALIZERS"] = "";
+    dict["FIELDS"] = "";
+  } else {
+    dict["INITIALIZERS"] = fmt::format(",\n  {}", initializers.str());
+    dict["FIELDS"] = fmt::format("\n  {}\n", fields.str());
+  }
+  dict["SEXPLIST"] = sexp_list.str();
+  return dict;
+}
+
+Dict build_category_dict(const Category& cat) {
+  Dict dict;
+  dict["BASE"] = cat.name;
+  dict["CBASE"] = cat.cname;
+  auto fwd_decls = back_inserter(dict["FWD_DECLS"]);
+  auto v_funcs = back_inserter(dict["V_FUNCS"]);
+  auto v_func_decls = back_inserter(dict["V_FUNC_DECLS"]);
+  auto decls = back_inserter(dict["DECLS"]);
+  auto impls = back_inserter(dict["IMPLS"]);
+  for (const auto& t : cat.types) {
+    const Dict node_dict = build_node_dict(cat.name, t);
+    fwd_decls = populate_template(FWD_DECL_TEMPLATE, node_dict, fwd_decls);
+    v_funcs = populate_template(VISITOR_FUNC_TEMPLATE, node_dict, v_funcs);
+    v_func_decls =
+        populate_template(VISITOR_FUNC_DECL_TEMPLATE, node_dict, v_func_decls);
+    decls = populate_template(DECL_TEMPLATE, node_dict, decls);
+    impls = populate_template(IMPL_TEMPLATE, node_dict, impls);
+  }
+  dict["V_FUNC_DECLS"].pop_back();
+  dict["V_FUNC_DECLS"].pop_back();
+  dict["V_FUNC_DECLS"].pop_back();
   return dict;
 }
 
@@ -259,32 +350,13 @@ Dict build_dict() {
   Dict dict;
   dict["COPYRIGHT"] = COPYRIGHT;
 
-  auto expr_fwd_decls = back_inserter(dict["EXPR_FWD_DECLS"]);
-  auto expr_v_funcs = back_inserter(dict["EXPR_V_FUNCS"]);
-  auto expr_decls = back_inserter(dict["EXPR_DECLS"]);
-  auto expr_impls = back_inserter(dict["EXPR_IMPLS"]);
-  for (const auto& expr : EXPRESSIONS) {
-    const Dict node_dict = build_node_dict("Expr", expr);
-    expr_fwd_decls =
-        populate_template(FWD_DECL_TEMPLATE, node_dict, expr_fwd_decls);
-    expr_v_funcs =
-        populate_template(VISITOR_FUNC_TEMPLATE, node_dict, expr_v_funcs);
-    expr_decls = populate_template(DECL_TEMPLATE, node_dict, expr_decls);
-    expr_impls = populate_template(IMPL_TEMPLATE, node_dict, expr_impls);
-  }
+  auto all_decls = back_inserter(dict["ALL_DECLS"]);
+  auto all_impls = back_inserter(dict["ALL_IMPLS"]);
 
-  auto decl_fwd_decls = back_inserter(dict["DECL_FWD_DECLS"]);
-  auto decl_v_funcs = back_inserter(dict["DECL_V_FUNCS"]);
-  auto decl_decls = back_inserter(dict["DECL_DECLS"]);
-  auto decl_impls = back_inserter(dict["DECL_IMPLS"]);
-  for (const auto& decl : DECLARATIONS) {
-    const Dict node_dict = build_node_dict("Decl", decl);
-    decl_fwd_decls =
-        populate_template(FWD_DECL_TEMPLATE, node_dict, decl_fwd_decls);
-    decl_v_funcs =
-        populate_template(VISITOR_FUNC_TEMPLATE, node_dict, decl_v_funcs);
-    decl_decls = populate_template(DECL_TEMPLATE, node_dict, decl_decls);
-    decl_impls = populate_template(IMPL_TEMPLATE, node_dict, decl_impls);
+  for (const auto& cat : CATEGORIES) {
+    const Dict cat_dict = build_category_dict(cat);
+    all_decls = populate_template(CATEGORY_DECL_TEMPLATE, cat_dict, all_decls);
+    all_impls = populate_template(CATEGORY_IMPL_TEMPLATE, cat_dict, all_impls);
   }
 
   return dict;

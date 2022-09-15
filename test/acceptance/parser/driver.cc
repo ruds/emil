@@ -12,39 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <fmt/format.h>
-#include <utf8.h>
+#include <fmt/core.h>
 
 #include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <iterator>
-#include <string>
+#include <memory>
 
+#include "emil/ast.h"
 #include "emil/lexer.h"
-#include "emil/source.h"
+#include "emil/parser.h"
 #include "emil/token.h"
-#include "fmt/core.h"
 
-namespace emil {
-namespace testing {
+namespace emil::testing {
 
-bool process_next_token(Lexer& lexer, std::ostreambuf_iterator<char>& out) {
+void process_next_topdecl(Parser& parser, std::ostreambuf_iterator<char>& out) {
   try {
-    auto token = lexer.next_token();
-    fmt::format_to(out, "{}\n", token);
-    return token.type != TokenType::END_OF_FILE;
-  } catch (LexingError& err) {
-    std::cerr << err.full_msg << "\n"
-              << utf8::utf32to8(err.partial_token_text) << "\n";
+    auto d = parser.next();
+    fmt::format_to(out, "{:04} {}\n", d->location.line, print_ast(*d, 5));
+  } catch (ParsingError& err) {
+    std::cerr << err.full_msg << "\n";
     fmt::format_to(out, "{:04} ERROR\n", err.location.line);
-    lexer.advance_past(U"(*xx*)");
-    return true;
   }
 }
 
-}  // namespace testing
-}  // namespace emil
+}  // namespace emil::testing
 
 int main(int argc, char* argv[]) {
   if (argc != 3) {
@@ -53,14 +46,14 @@ int main(int argc, char* argv[]) {
   }
 
   const std::string infile(argv[1]);
-  std::basic_ifstream<char32_t> stream(infile);
-  emil::Lexer lexer(infile, emil::make_source(stream));
+  emil::Parser parser(emil::make_lexer(infile));
 
   const std::string outfile(argv[2]);
   std::ofstream outstream(outfile);
   std::ostreambuf_iterator<char> out(outstream);
 
-  while (emil::testing::process_next_token(lexer, out)) {
+  while (!parser.at_end()) {
+    emil::testing::process_next_topdecl(parser, out);
     outstream.flush();
   }
 }

@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <deque>
+#include <filesystem>
 #include <fstream>
 #include <istream>
 #include <iterator>
@@ -49,6 +50,14 @@
 #include "private/single_pass_search.h"
 
 namespace emil {
+
+LexingError::LexingError(std::string msg, const Location& location,
+                         std::u32string partial_token_text)
+    : msg(std::move(msg)),
+      location(location),
+      partial_token_text(std::move(partial_token_text)),
+      full_msg(fmt::format("{}:{}: error: {}", this->location.filename,
+                           this->location.line, this->msg)) {}
 
 class UnicodeError : public icu::ErrorCode {
  public:
@@ -249,8 +258,8 @@ void match_keyword_in_id_op(Token& token) {
 
 }  // namespace
 
-Lexer::Lexer(std::string filename, std::unique_ptr<Source<>> source)
-    : filename_(std::move(filename)), source_(std::move(source)) {}
+Lexer::Lexer(std::string_view filename, std::unique_ptr<Source<>> source)
+    : filename_(filename), source_(std::move(source)) {}
 
 Token Lexer::next_token() {
   current_token_.clear();
@@ -384,13 +393,13 @@ void Lexer::advance_past(std::u32string_view substr) {
 
 Token Lexer::make_token(TokenType type, token_auxiliary_t aux) const {
   return Token{.text = std::move(current_token_),
-               .line = start_line_,
+               .location = {filename_, start_line_},
                .type = type,
                .aux = std::move(aux)};
 }
 
 void Lexer::error(std::string msg) {
-  throw LexingError(std::move(msg), filename_, start_line_, current_token_);
+  throw LexingError(std::move(msg), {filename_, start_line_}, current_token_);
 }
 
 bool Lexer::at_end() const { return source_->at_end(); }
@@ -1031,7 +1040,7 @@ void Lexer::match_keyword_and_tyvar_in_id_word(Token& token) {
 namespace {
 class LexerSource : public Source<Token> {
  public:
-  explicit LexerSource(const std::string& filename);
+  explicit LexerSource(std::string_view filename);
   ~LexerSource() override;
 
   Token advance() override;
@@ -1046,7 +1055,7 @@ class LexerSource : public Source<Token> {
   bool at_end_ = false;
 };
 
-LexerSource::LexerSource(const std::string& filename)
+LexerSource::LexerSource(std::string_view filename)
     : file_(filename), lexer_(filename, make_source(file_)) {}
 
 LexerSource::~LexerSource() = default;
@@ -1079,7 +1088,7 @@ bool LexerSource::at_end() const { return at_end_ && empty(buffer_); }
 void LexerSource::putback(Token t) { buffer_.push_front(std::move(t)); }
 }  // namespace
 
-std::unique_ptr<Source<Token>> make_lexer(const std::string& filename) {
+std::unique_ptr<Source<Token>> make_lexer(std::string_view filename) {
   return std::make_unique<LexerSource>(filename);
 }
 

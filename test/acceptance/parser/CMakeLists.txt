@@ -12,19 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-add_golden_driver(lexer-driver driver.cc)
-target_link_libraries(lexer-driver lexer)
+add_golden_driver(parser-driver driver.cc)
+target_link_libraries(parser-driver parser)
 
-macro(lexer_golden_test TESTNAME)
-  add_golden_test(lexer-driver "${TESTNAME}")
+macro(parser_golden_test TESTNAME)
+  add_golden_test(parser-driver "${TESTNAME}")
 endmacro()
 
-lexer_golden_test(iliteral)
-lexer_golden_test(fpliteral)
-lexer_golden_test(char)
-lexer_golden_test(string)
-lexer_golden_test(identifier)
-lexer_golden_test(keywords)
-lexer_golden_test(syntax)
-lexer_golden_test(comment)
-lexer_golden_test(fstring)
+parser_golden_test(literal literal.in)

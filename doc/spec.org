@@ -543,6 +543,13 @@ the value of the last expression, and all but the last must be of type
 
 ** Programs
 
+#+begin_src bnf
+  interactive-program -> [topdecl ';']*
+  topdecl -> expr
+#+end_src
+
+*** TODO: This is hilariously simplified
+
 * Default Prelude and Standard Modules
 :PROPERTIES:
 :CUSTOM_ID: default-prelude
