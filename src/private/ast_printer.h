@@ -23,8 +23,10 @@
 
 namespace emil::astprinter {
 
-void print_ast(std::string& out, int indent, const std::string& arg);
+void print_ast(std::string& out, int indent, std::string_view arg);
+void print_ast(std::string& out, int indent, const char* arg);
 void print_ast(std::string& out, int indent, const mpz_class& arg);
+void print_ast(std::string& out, int indent, bool arg);
 void print_ast(std::string& out, int indent, int64_t arg);
 void print_ast(std::string& out, int indent, double arg);
 void print_ast(std::string& out, int indent, const std::u8string& arg);
@@ -48,9 +50,9 @@ void print_ast(std::string& out, int indent, const std::vector<T>& arg) {
   joiner = "\n" + joiner;
   for (const auto& a : arg) {
     out.append(joiner);
-    print_ast(out, indent + 4, arg);
+    print_ast(out, indent + 4, a);
   }
-  out.append(joiner.data(), indent);
+  out.append(joiner.data(), indent + 1);
   out += ')';
 }
 

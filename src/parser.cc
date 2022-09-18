@@ -14,10 +14,13 @@
 
 #include "emil/parser.h"
 
+#include <algorithm>
+#include <initializer_list>
 #include <memory>
 #include <variant>
 
 #include "emil/ast.h"
+#include "emil/token.h"
 
 namespace emil {
 
@@ -48,25 +51,23 @@ bool Parser::at_end() const { return source_->at_end(); }
 std::unique_ptr<TopDecl> Parser::next() {
   current_.clear();
   Token& t = advance();
-  switch (t.type) {
-    case TokenType::END_OF_FILE:
-      return std::make_unique<EndOfFileTopDecl>(t.location);
+  try {
+    switch (t.type) {
+      case TokenType::END_OF_FILE:
+        return std::make_unique<EndOfFileTopDecl>(t.location);
 
-    case TokenType::SEMICOLON:
-      return std::make_unique<EmptyTopDecl>(t.location);
+      case TokenType::SEMICOLON:
+        return std::make_unique<EmptyTopDecl>(t.location);
 
-    default: {
-      auto decl = std::make_unique<ExprTopDecl>(t.location, match_expr(&t));
-      if (!match(TokenType::SEMICOLON)) {
-        Token next = ensure_token(peek());
-        TokenType next_type = next.type;
-        error(fmt::format("Top-level declaration must be followed by semicolon "
-                          "but was followed by: {}",
-                          next_type),
-              std::move(next));
+      default: {
+        auto decl = std::make_unique<ExprTopDecl>(t.location, match_expr(t));
+        consume(TokenType::SEMICOLON, "top-level declaration");
+        return decl;
       }
-      return decl;
     }
+  } catch (ParsingError&) {
+    synchronize();
+    throw;
   }
   error("Unrecognized token", std::move(t));
 }
@@ -91,13 +92,26 @@ const Token* Parser::peek(std::size_t lookahead) {
   return peeked;
 }
 
-bool Parser::match(TokenType t) {
+bool Parser::match(std::initializer_list<TokenType> ts) {
   const Token* next = peek();
-  if (next && next->type == t) {
+  if (next && std::find(begin(ts), end(ts), next->type) != end(ts)) {
     advance();
     return true;
   }
   return false;
+}
+
+Token& Parser::consume(std::initializer_list<TokenType> ts,
+                       std::string_view production) {
+  if (!match(ts)) {
+    Token next = ensure_token(peek());
+    TokenType next_type = next.type;
+    error(fmt::format(
+              "While parsing {}, expected token of type {} but instead got {}",
+              production, fmt::join(ts, " or "), next_type),
+          std::move(next));
+  }
+  return current_.back();
 }
 
 Token Parser::ensure_token(const Token* t) { return t ? *t : *eof_token_; }
@@ -106,7 +120,19 @@ void Parser::error(std::string message, Token t) {
   throw ParsingError(std::move(message), t.location);
 }
 
-ExprPtr Parser::match_expr(Token* first) { return match_atomic_expr(first); }
+void Parser::synchronize() {
+  while (!at_end()) {
+    const auto& t = advance();
+    switch (t.type) {
+      case TokenType::SEMICOLON:
+        return;
+      default:
+        break;
+    }
+  }
+}
+
+ExprPtr Parser::match_expr(Token& first) { return match_atomic_expr(first); }
 
 namespace {
 
@@ -127,27 +153,58 @@ ExprPtr match_iliteral(Token& t) {
 
 }  // namespace
 
-ExprPtr Parser::match_atomic_expr(Token* first) {
-  Token& t = first ? *first : advance();
-  switch (t.type) {
+ExprPtr Parser::match_atomic_expr(Token& first) {
+  switch (first.type) {
     case TokenType::ILITERAL:
-      return match_iliteral(t);
+      return match_iliteral(first);
 
     case TokenType::FPLITERAL:
-      return std::make_unique<FpLiteralExpr>(t.location, get<double>(t.aux));
+      return std::make_unique<FpLiteralExpr>(first.location,
+                                             get<double>(first.aux));
 
     case TokenType::STRING:
       return std::make_unique<StringLiteralExpr>(
-          t.location, std::move(get<std::u8string>(t.aux)));
+          first.location, std::move(get<std::u8string>(first.aux)));
 
     case TokenType::CHAR:
-      return std::make_unique<CharLiteralExpr>(t.location,
-                                               get<char32_t>(t.aux));
+      return std::make_unique<CharLiteralExpr>(first.location,
+                                               get<char32_t>(first.aux));
+
+    case TokenType::ID_WORD:
+      return match_qual_word_id(first);
+
+    case TokenType::KW_OP: {
+      const bool is_prefix_op = match(TokenType::KW_PREFIX);
+      Token& t =
+          consume({TokenType::ID_WORD, TokenType::ID_OP}, "qualified operator");
+      auto expr = match_qual_op_id(t);
+      expr->is_prefix_op = is_prefix_op;
+      return expr;
+    }
 
     default:
-      throw ParsingError(fmt::format("Bad token to start expression: {}", t),
-                         t.location);
+      error("Bad token to start expression", first);
   }
+}
+
+std::unique_ptr<IdentifierExpr> Parser::match_qual_id(Token& first,
+                                                      bool allow_word,
+                                                      bool allow_op) {
+  Token* t = &first;
+  std::vector<std::u8string> qualifiers;
+  while (t->type == TokenType::ID_WORD && match(TokenType::DOT)) {
+    qualifiers.push_back(std::move(get<std::u8string>(t->aux)));
+    t = &consume({TokenType::ID_WORD, TokenType::ID_OP},
+                 "qualified identifier");
+  }
+  if (t->type == TokenType::ID_WORD) {
+    if (!allow_word) error("Got word identifier when operator expected.", *t);
+  } else if (t->type == TokenType::ID_OP) {
+    if (!allow_op) error("Got operator identifier when word expected.", *t);
+  }
+  return std::make_unique<IdentifierExpr>(first.location, std::move(qualifiers),
+                                          std::move(get<std::u8string>(t->aux)),
+                                          t->type == TokenType::ID_OP);
 }
 
 }  // namespace emil

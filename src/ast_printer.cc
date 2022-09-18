@@ -16,17 +16,26 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 #include "emil/ast.h"
 
 namespace emil::astprinter {
 
-void print_ast(std::string& out, int indent, const std::string& arg) {
+void print_ast(std::string& out, int indent, std::string_view arg) {
+  out.append(arg);
+}
+
+void print_ast(std::string& out, int indent, const char* arg) {
   out.append(arg);
 }
 
 void print_ast(std::string& out, int indent, const mpz_class& arg) {
   out.append(arg.get_str());
+}
+
+void print_ast(std::string& out, int indent, bool arg) {
+  out.append(arg ? "true" : "false");
 }
 
 void print_ast(std::string& out, int indent, int64_t arg) {

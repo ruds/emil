@@ -19,4 +19,5 @@ macro(parser_golden_test TESTNAME)
   add_golden_test(parser-driver "${TESTNAME}")
 endmacro()
 
-parser_golden_test(literal literal.in)
+parser_golden_test(literal)
+parser_golden_test(identifier)

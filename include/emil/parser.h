@@ -15,9 +15,11 @@
 #pragma once
 
 #include <exception>
+#include <initializer_list>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "emil/ast.h"
@@ -54,14 +56,31 @@ class Parser {
 
   Token& advance();
   const Token* peek(std::size_t lookahead = 0);
-  bool match(TokenType t);
+  bool match(TokenType t) { return match({t}); }
+  bool match(std::initializer_list<TokenType> ts);
+  Token& consume(TokenType t, std::string_view production) {
+    return consume({t}, production);
+  }
+  Token& consume(std::initializer_list<TokenType> ts,
+                 std::string_view production);
   Token ensure_token(const Token* t);
 
   [[noreturn]] void error(std::string message, Token t);
+  void synchronize();
 
-  std::unique_ptr<Expr> match_expr(Token* first);
+  std::unique_ptr<Expr> match_expr(Token& first);
 
-  std::unique_ptr<Expr> match_atomic_expr(Token* first);
+  std::unique_ptr<Expr> match_atomic_expr(Token& first);
+
+  std::unique_ptr<IdentifierExpr> match_qual_word_id(Token& first) {
+    return match_qual_id(first, true, false);
+  }
+  std::unique_ptr<IdentifierExpr> match_qual_op_id(Token& first) {
+    return match_qual_id(first, false, true);
+  }
+  std::unique_ptr<IdentifierExpr> match_qual_id(Token& first,
+                                                bool allow_word = true,
+                                                bool allow_op = true);
 };
 
 }  // namespace emil

@@ -1,0 +1,4 @@
+abc ; foo.bar.baz ;
+op ++ ; op prefix \= ; op prefix foo.\ ; op foo.bar.++ ;
+++ ;
+foo.\ ;

@@ -44,7 +44,7 @@ namespace {
 struct AstNodeSpec {
   std::string name;
   /**
-   * Each element is a string "TYPE NAME".
+   * Each element is a string "TYPE NAME" or "TYPE NAME=DEFAULT".
    *
    * Type substitutions:
    * 1. str -> std::u8string
@@ -75,6 +75,9 @@ const std::vector<Category> CATEGORIES{
          {"StringLiteral", {"str val"}},
          {"CharLiteral", {"char32_t =val"}},
          {"FstringLiteral", {"[str] segments", "[Expr*] substitutions"}},
+         {"Identifier",
+          {"[str] qualifiers", "str identifier", "bool is_op",
+           "bool is_prefix_op=false"}},
      }},
     {"Decl",
      "DECL",
@@ -214,7 +217,7 @@ const std::string VISITOR_FUNC_DECL_TEMPLATE = R"(
 const std::string DECL_TEMPLATE = R"(
 class %NAME% : public %BASE% {
  public:
-  %EXPLICIT%%NAME%(%FIELDLIST%);
+  %EXPLICIT%%NAME%(%FIELDLIST_WITH_DEFAULTS%);
   ~%NAME%() override;
 
   void accept(Visitor& visitor) const override;
@@ -282,6 +285,9 @@ Dict build_node_dict(const std::string& base, const AstNodeSpec& spec) {
   std::ostringstream field_list;
   auto field_list_out =
       std::experimental::make_ostream_joiner(field_list, ",\n    ");
+  std::ostringstream field_list_with_defaults;
+  auto field_list_with_defaults_out = std::experimental::make_ostream_joiner(
+      field_list_with_defaults, ",\n    ");
   std::ostringstream fields;
   auto fields_out = std::experimental::make_ostream_joiner(fields, "\n");
   std::ostringstream initializers;
@@ -292,16 +298,28 @@ Dict build_node_dict(const std::string& base, const AstNodeSpec& spec) {
       std::experimental::make_ostream_joiner(sexp_list, ",\n      ");
 
   *field_list_out++ = "const Location& location";
+  *field_list_with_defaults_out++ = "const Location& location";
   *sexp_list_out++ = fmt::format(R"("{}")", dict["NAME"]);
   for (const auto& param : spec.params) {
-    auto space = param.find(' ');
+    const auto space = param.find(' ');
     if (space == std::string::npos || param.size() < space + 2)
       throw std::runtime_error(
           fmt::format("Param should be \"TYPE NAME\" but was {}", param));
     const auto type = transform_type(param.substr(0, space));
     const bool is_copyable = param[space + 1] == '=';
-    const auto name = param.substr(space + (is_copyable ? 2 : 1));
+    const std::size_t name_start = space + (is_copyable ? 2 : 1);
+    const auto equals = param.find('=', name_start);
+    std::size_t name_count = param.size();
+    std::string default_value;
+    if (equals != std::string::npos) {
+      name_count = equals - name_start;
+      default_value += " = ";
+      default_value += param.substr(equals + 1);
+    }
+    const auto name = param.substr(name_start, name_count);
     *field_list_out++ = fmt::format("{} {}", type, name);
+    *field_list_with_defaults_out++ =
+        fmt::format("{} {}{}", type, name, default_value);
     *fields_out++ = fmt::format("  {} {};", type, name);
     *initializers_out++ =
         fmt::format("{}({})", name,
@@ -311,6 +329,7 @@ Dict build_node_dict(const std::string& base, const AstNodeSpec& spec) {
   }
 
   dict["FIELDLIST"] = field_list.str();
+  dict["FIELDLIST_WITH_DEFAULTS"] = field_list_with_defaults.str();
   if (empty(spec.params)) {
     dict["INITIALIZERS"] = "";
     dict["FIELDS"] = "";
