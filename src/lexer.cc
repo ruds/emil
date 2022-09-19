@@ -323,6 +323,7 @@ Token Lexer::next_token() {
           return match_string(StringType::SIMPLE, U"", FormatString::START);
         }
       }
+      break;
 
     case 'r':
     case 'R':
