@@ -34,7 +34,6 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
-#include <istream>
 #include <iterator>
 #include <limits>
 #include <stdexcept>
@@ -46,6 +45,7 @@
 #include <variant>
 
 #include "emil/source.h"
+#include "emil/strconvert.h"
 #include "emil/token.h"
 #include "private/single_pass_search.h"
 
@@ -135,11 +135,6 @@ bool can_start_operator(char32_t c) {
         return false;
     }
   }
-}
-
-std::string char32_to_string(char32_t c) {
-  std::u32string_view s(&c, 1);
-  return utf8::utf32to8(s);
 }
 
 class line_counting_source_iterator {
@@ -546,7 +541,7 @@ Token Lexer::match_integer(std::string& number, Pred is_digit, int base) {
     char32_t c = peek();
     if (c == '.' || can_continue_word(c)) {
       error(fmt::format("Illegal digit '{}' in literal with base {}",
-                        char32_to_string(peek()), base));
+                        to_std_string(peek()), base));
     }
   }
   if (is_int) {
@@ -639,9 +634,8 @@ Token Lexer::match_string(StringType type, std::u32string_view raw_delimiter,
 
       case FormatStringNext::DOLLAR: {
         if (!match('$')) {
-          throw std::logic_error(
-              fmt::format("Next character is '{}' instead of '$'",
-                          char32_to_string(peek())));
+          throw std::logic_error(fmt::format(
+              "Next character is '{}' instead of '$'", to_std_string(peek())));
         }
         format_string_state_.top().next = FormatStringNext::CONTINUATION;
         if (match('{')) {
@@ -726,7 +720,7 @@ std::u32string Lexer::match_raw_delimiter() {
        c = advance_safe("raw string delimiter")) {
     if (c == ')' || c == '\\' || c == 0 || is_whitespace(c)) {
       error(fmt::format("Illegal character '{}' in raw string delimiter",
-                        char32_to_string(c)));
+                        to_std_string(c)));
     }
   }
   return current_token_.substr(start, current_token_.size() - start - 1);
@@ -788,8 +782,7 @@ char32_t Lexer::match_escape() {
     case '^': {
       char32_t cc = advance_safe("character escape");
       if (cc < 64 || 95 < cc)
-        error(
-            fmt::format("Illegal escape code '\\^{}'.", char32_to_string(cc)));
+        error(fmt::format("Illegal escape code '\\^{}'.", to_std_string(cc)));
       return cc - 64;
     }
     case 'u':
@@ -797,7 +790,7 @@ char32_t Lexer::match_escape() {
     case 'U':
       return match_long_unicode_escape();
     default:
-      error(fmt::format("Illegal escape character '{}'", char32_to_string(c)));
+      error(fmt::format("Illegal escape character '{}'", to_std_string(c)));
   }
 }
 
@@ -834,7 +827,7 @@ uint_fast8_t Lexer::match_hex_digit() {
   } else if ('A' <= c && c <= 'F') {
     return 10 + c - 'A';
   } else {
-    error(fmt::format("Illegal hex digit '{}'.", char32_to_string(c)));
+    error(fmt::format("Illegal hex digit '{}'.", to_std_string(c)));
   }
 }
 
@@ -843,7 +836,7 @@ Token Lexer::match_identifier(char32_t first_char) {
   if (can_start_operator(first_char)) return match_id_op(first_char);
 
   error(fmt::format("Illegal token starting with '{}'",
-                    char32_to_string(first_char)));
+                    to_std_string(first_char)));
 }
 
 Token Lexer::match_id_word(char32_t first_char) {

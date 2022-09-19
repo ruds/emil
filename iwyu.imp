@@ -14,5 +14,6 @@
     { symbol: ["std::ifstream", "private", "<fstream>", "public"]},
     { symbol: ["std::ofstream", "private", "<fstream>", "public"]},
     { symbol: ["std::ostringstream", "private", "<sstream>", "public"]},
+    { symbol: ["std::string", "private", "<string>", "public"]},
     { symbol: ["u_hasBinaryProperty", "private", "<unicode/uchar.h>", "public"]}
 ]

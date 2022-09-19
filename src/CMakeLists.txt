@@ -18,7 +18,7 @@ find_package(GMPXX REQUIRED)
 
 add_subdirectory("${PROJECT_SOURCE_DIR}/extern/utfcpp" "extern/utfcpp")
 
-add_library(lexer STATIC lexer.cc source.cc)
+add_library(lexer STATIC lexer.cc source.cc strconvert.cc)
 add_emil_options(lexer)
 target_include_directories(lexer PUBLIC ../include "${GMPXX_INCLUDE_DIRS}")
 target_include_directories(lexer PRIVATE ./private)

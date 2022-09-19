@@ -14,11 +14,14 @@
 
 #include "private/ast_printer.h"
 
+#include <fmt/core.h>
+
 #include <cstdint>
 #include <string>
 #include <string_view>
 
 #include "emil/ast.h"
+#include "emil/strconvert.h"
 
 namespace emil::astprinter {
 
@@ -49,23 +52,14 @@ void print_ast(std::string& out, int indent, double arg) {
 
 void print_ast(std::string& out, int indent, const std::u8string& arg) {
   out += '"';
-  auto it = back_inserter(out);
-  for (char8_t c : arg) {
-    fmt::format_to(it, "{:02X}", (unsigned int)c);
-  }
+  to_hex(arg, out);
   out += '"';
 }
 
 void print_ast(std::string& out, int indent, char32_t arg) {
-  if (arg < 0x10000) {
-    out.append(fmt::format(R"(#"\u{:04X}")", static_cast<std::uint32_t>(arg)));
-  } else {
-    out.append(fmt::format(R"(#"\U{:06X}")", static_cast<std::uint32_t>(arg)));
-  }
-}
-
-void print_ast(std::string& out, int indent, const std::unique_ptr<Expr>& arg) {
-  print_ast(*arg, out, indent);
+  out += R"(#")";
+  to_std_string(arg, out);
+  out += '"';
 }
 
 }  // namespace emil::astprinter

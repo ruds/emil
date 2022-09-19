@@ -32,5 +32,5 @@
          :expr
          (CharLiteralExpr
              :val
-             #"\u0061"))
+             #"a"))
 0007 (EndOfFileTopDecl)

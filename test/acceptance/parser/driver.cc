@@ -19,6 +19,7 @@
 #include <iostream>
 #include <iterator>
 #include <memory>
+#include <string>
 
 #include "emil/ast.h"
 #include "emil/lexer.h"

@@ -23,8 +23,8 @@
 #include <string_view>
 #include <variant>
 
-#include "enum.h"
-#include "utf8.h"
+#include "emil/enum.h"
+#include "emil/strconvert.h"
 
 namespace emil {
 
@@ -157,13 +157,9 @@ struct fmt::formatter<emil::Token> {
       case TokenType::FSTRING_IVAR:
       case TokenType::ID_WORD:
       case TokenType::ID_TYPE:
-      case TokenType::ID_OP: {
-        auto it = back_inserter(aux);
-        for (char8_t c : get<std::u8string>(t.aux)) {
-          fmt::format_to(it, "{:02X}", (unsigned int)c);
-        }
+      case TokenType::ID_OP:
+        emil::to_hex(get<std::u8string>(t.aux), aux);
         break;
-      }
 
       default:
         aux = "";
@@ -171,6 +167,7 @@ struct fmt::formatter<emil::Token> {
     }
     return fmt::format_to(ctx.out(), "{:04} {}{}{}{}{}", t.location.line,
                           t.type, aux.empty() ? "" : " ", aux,
-                          t.text.empty() ? "" : " ", utf8::utf32to8(t.text));
+                          t.text.empty() ? "" : " ",
+                          emil::to_std_string(t.text));
   }
 };

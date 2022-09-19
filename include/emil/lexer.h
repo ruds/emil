@@ -17,7 +17,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
-#include <istream>
 #include <memory>
 #include <stack>
 #include <string>
