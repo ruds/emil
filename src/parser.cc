@@ -80,6 +80,14 @@ Token& Parser::advance() {
   return current_.back();
 }
 
+Token& Parser::advance_safe(std::string_view production) {
+  if (at_end()) {
+    error(fmt::format("End of file while parsing {}.", production),
+          *eof_token_);
+  }
+  return advance();
+}
+
 const Token* Parser::peek(std::size_t lookahead) {
   const Token* peeked = source_->peek(lookahead);
   if (!peeked && !eof_token_) {
@@ -182,6 +190,9 @@ ExprPtr Parser::match_atomic_expr(Token& first) {
       return expr;
     }
 
+    case TokenType::LBRACE:
+      return match_record_expr(first.location);
+
     default:
       error("Bad token to start expression", first);
   }
@@ -205,6 +216,32 @@ std::unique_ptr<IdentifierExpr> Parser::match_qual_id(Token& first,
   return std::make_unique<IdentifierExpr>(first.location, std::move(qualifiers),
                                           std::move(get<std::u8string>(t->aux)),
                                           t->type == TokenType::ID_OP);
+}
+
+std::unique_ptr<RecordExpr> Parser::match_record_expr(
+    const Location& location) {
+  std::vector<std::unique_ptr<RecRowSubexpr>> rows;
+  if (!match(TokenType::RBRACE)) {
+    do {
+      rows.push_back(match_rec_row());
+    } while (consume({TokenType::RBRACE, TokenType::COMMA}, "record expression")
+                 .type == TokenType::COMMA);
+  }
+  return std::make_unique<RecordExpr>(location, std::move(rows));
+}
+
+std::unique_ptr<RecRowSubexpr> Parser::match_rec_row() {
+  auto& label = consume(TokenType::ID_WORD, "record expression row");
+  const auto& assignment = consume(TokenType::ID_OP, "record expression row");
+  const auto& op = get<std::u8string>(assignment.aux);
+  if (op != u8"=") {
+    error(fmt::format("Expected '=' but got {}", to_std_string(op)),
+          assignment);
+  }
+  auto expr = match_expr(advance_safe("record expression row"));
+  return std::make_unique<RecRowSubexpr>(
+      label.location, std::move(get<std::u8string>(label.aux)),
+      std::move(expr));
 }
 
 }  // namespace emil

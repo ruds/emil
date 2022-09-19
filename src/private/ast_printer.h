@@ -31,7 +31,11 @@ void print_ast(std::string& out, int indent, int64_t arg);
 void print_ast(std::string& out, int indent, double arg);
 void print_ast(std::string& out, int indent, const std::u8string& arg);
 void print_ast(std::string& out, int indent, char32_t arg);
-void print_ast(std::string& out, int indent, const std::unique_ptr<Expr>& arg);
+
+template <typename T>
+void print_ast(std::string& out, int indent, const std::unique_ptr<T>& arg) {
+  print_ast(*arg, out, indent);
+}
 
 template <typename T>
 void print_ast(std::string& out, int indent, const std::vector<T>& arg) {

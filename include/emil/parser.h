@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <deque>
 #include <exception>
 #include <initializer_list>
 #include <memory>
@@ -52,9 +53,10 @@ class Parser {
  private:
   std::unique_ptr<Source<Token>> source_;
   std::optional<Token> eof_token_;
-  std::vector<Token> current_;
+  std::deque<Token> current_;
 
   Token& advance();
+  Token& advance_safe(std::string_view production);
   const Token* peek(std::size_t lookahead = 0);
   bool match(TokenType t) { return match({t}); }
   bool match(std::initializer_list<TokenType> ts);
@@ -81,6 +83,10 @@ class Parser {
   std::unique_ptr<IdentifierExpr> match_qual_id(Token& first,
                                                 bool allow_word = true,
                                                 bool allow_op = true);
+
+  std::unique_ptr<RecordExpr> match_record_expr(const Location& location);
+
+  std::unique_ptr<RecRowSubexpr> match_rec_row();
 };
 
 }  // namespace emil

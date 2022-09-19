@@ -66,6 +66,11 @@ struct Category {
 };
 
 const std::vector<Category> CATEGORIES{
+    {"Subexpr",
+     "SUBEXPR",
+     {
+         {"RecRow", {"str label", "Expr* val"}},
+     }},
     {"Expr",
      "EXPR",
      {
@@ -78,6 +83,7 @@ const std::vector<Category> CATEGORIES{
          {"Identifier",
           {"[str] qualifiers", "str identifier", "bool is_op",
            "bool is_prefix_op=false"}},
+         {"Record", {"[RecRowSubexpr*] rows"}},
      }},
     {"Decl",
      "DECL",
@@ -125,6 +131,7 @@ const std::string HEADER_TEMPLATE = R"(%COPYRIGHT%
 #include "emil/token.h"
 
 namespace emil {
+%ALL_FWD_DECLS%
 %ALL_DECLS%
 }  // namespace emil
 )";
@@ -148,8 +155,10 @@ namespace emil {
 }  // namespace emil
 )";
 
-const std::string CATEGORY_DECL_TEMPLATE = R"(%FWD_DECLS%
+const std::string CATEGORY_FWD_DECL_TEMPLATE = R"(
+class %BASE%;%FWD_DECLS%)";
 
+const std::string CATEGORY_DECL_TEMPLATE = R"(
 class %BASE% {
  public:
   class Visitor {
@@ -335,7 +344,7 @@ Dict build_node_dict(const std::string& base, const AstNodeSpec& spec) {
     dict["FIELDS"] = "";
   } else {
     dict["INITIALIZERS"] = fmt::format(",\n  {}", initializers.str());
-    dict["FIELDS"] = fmt::format("\n  {}\n", fields.str());
+    dict["FIELDS"] = fmt::format("\n{}\n", fields.str());
   }
   dict["SEXPLIST"] = sexp_list.str();
   return dict;
@@ -369,11 +378,14 @@ Dict build_dict() {
   Dict dict;
   dict["COPYRIGHT"] = COPYRIGHT;
 
+  auto all_fwd_decls = back_inserter(dict["ALL_FWD_DECLS"]);
   auto all_decls = back_inserter(dict["ALL_DECLS"]);
   auto all_impls = back_inserter(dict["ALL_IMPLS"]);
 
   for (const auto& cat : CATEGORIES) {
     const Dict cat_dict = build_category_dict(cat);
+    all_fwd_decls =
+        populate_template(CATEGORY_FWD_DECL_TEMPLATE, cat_dict, all_fwd_decls);
     all_decls = populate_template(CATEGORY_DECL_TEMPLATE, cat_dict, all_decls);
     all_impls = populate_template(CATEGORY_IMPL_TEMPLATE, cat_dict, all_impls);
   }

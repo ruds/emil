@@ -21,3 +21,4 @@ endmacro()
 
 parser_golden_test(literal)
 parser_golden_test(identifier)
+parser_golden_test(record)

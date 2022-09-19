@@ -310,8 +310,8 @@ Standard mathematical operations are provided by
 #+begin_src bnf
   tuple-expr -> '(' [expr (',' expr)+] ')'
   list-expr -> '[' [expr (',' expr)*] ']'
-  record-expr -> '{' [re-row (',' re-row)*] '}'
-  re-row -> word-id '=' expr
+  record-expr -> '{' [rec-row (',' rec-row)*] '}'
+  rec-row -> word-id '=' expr
 #+end_src
 
 Emil provides several more built-in types that have syntax support or
