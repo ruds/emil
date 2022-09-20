@@ -1,0 +1,7 @@
+f"it's $foo in this $bar!";
+f"Therefore, 'a' is ${let
+  val a = 1
+in
+  a
+end}";
+f"Here's a record: ${{foo=1, bar=2}}";

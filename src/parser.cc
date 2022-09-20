@@ -198,6 +198,10 @@ ExprPtr match_iliteral(Token& t) {
                t.aux);
 }
 
+std::u8string&& move_string(Token& t) {
+  return std::move(get<std::u8string>(t.aux));
+}
+
 }  // namespace
 
 ExprPtr Parser::match_atomic_expr(Token& first) {
@@ -210,12 +214,15 @@ ExprPtr Parser::match_atomic_expr(Token& first) {
                                              get<double>(first.aux));
 
     case TokenType::STRING:
-      return std::make_unique<StringLiteralExpr>(
-          first.location, std::move(get<std::u8string>(first.aux)));
+      return std::make_unique<StringLiteralExpr>(first.location,
+                                                 move_string(first));
 
     case TokenType::CHAR:
       return std::make_unique<CharLiteralExpr>(first.location,
                                                get<char32_t>(first.aux));
+
+    case TokenType::FSTRING:
+      return match_fstring(first);
 
     case TokenType::ID_WORD:
       return match_qual_word_id(first);
@@ -246,13 +253,33 @@ ExprPtr Parser::match_atomic_expr(Token& first) {
   }
 }
 
+std::unique_ptr<FstringLiteralExpr> Parser::match_fstring(Token& first) {
+  std::vector<std::u8string> segments;
+  std::vector<ExprPtr> substitutions;
+  segments.push_back(move_string(first));
+  while (match({TokenType::FSTRING_IEXPR_S, TokenType::FSTRING_IVAR})) {
+    Token& t = current_.back();
+    if (t.type == TokenType::FSTRING_IVAR) {
+      substitutions.push_back(std::make_unique<IdentifierExpr>(
+          t.location, std::vector<std::u8string>{}, move_string(t), false));
+    } else {
+      substitutions.push_back(match_expr(advance_safe("fstring substitution")));
+      consume(TokenType::FSTRING_IEXPR_F, "fstring substitution");
+    }
+    Token& cont = consume(TokenType::FSTRING_CONT, "fstring");
+    segments.push_back(move_string(cont));
+  }
+  return std::make_unique<FstringLiteralExpr>(
+      first.location, std::move(segments), std::move(substitutions));
+}
+
 std::unique_ptr<IdentifierExpr> Parser::match_qual_id(Token& first,
                                                       bool allow_word,
                                                       bool allow_op) {
   Token* t = &first;
   std::vector<std::u8string> qualifiers;
   while (t->type == TokenType::ID_WORD && match(TokenType::DOT)) {
-    qualifiers.push_back(std::move(get<std::u8string>(t->aux)));
+    qualifiers.push_back(move_string(*t));
     t = &consume({TokenType::ID_WORD, TokenType::ID_OP},
                  "qualified identifier");
   }
@@ -262,7 +289,7 @@ std::unique_ptr<IdentifierExpr> Parser::match_qual_id(Token& first,
     if (!allow_op) error("Got operator identifier when word expected.", *t);
   }
   return std::make_unique<IdentifierExpr>(first.location, std::move(qualifiers),
-                                          std::move(get<std::u8string>(t->aux)),
+                                          move_string(*t),
                                           t->type == TokenType::ID_OP);
 }
 
@@ -282,9 +309,8 @@ std::unique_ptr<RecRowSubexpr> Parser::match_rec_row() {
   auto& label = consume(TokenType::ID_WORD, "record expression row");
   consume_eq("record expression row");
   auto expr = match_expr(advance_safe("record expression row"));
-  return std::make_unique<RecRowSubexpr>(
-      label.location, std::move(get<std::u8string>(label.aux)),
-      std::move(expr));
+  return std::make_unique<RecRowSubexpr>(label.location, move_string(label),
+                                         std::move(expr));
 }
 
 std::unique_ptr<Expr> Parser::match_paren_expr(const Location& location) {
@@ -334,8 +360,8 @@ std::unique_ptr<ValDecl> Parser::match_val_decl(Token& first) {
   auto& id = consume(TokenType::ID_WORD, "val declaration");
   consume_eq("val declaration");
   auto expr = match_expr(advance_safe("val declaration"));
-  return std::make_unique<ValDecl>(
-      first.location, std::move(get<std::u8string>(id.aux)), std::move(expr));
+  return std::make_unique<ValDecl>(first.location, move_string(id),
+                                   std::move(expr));
 }
 
 std::unique_ptr<LetExpr> Parser::match_let_expr(const Location& location) {

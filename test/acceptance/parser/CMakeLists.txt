@@ -20,6 +20,7 @@ macro(parser_golden_test TESTNAME)
 endmacro()
 
 parser_golden_test(literal)
+parser_golden_test(fstring)
 parser_golden_test(identifier)
 parser_golden_test(record)
 parser_golden_test(paren)

@@ -78,6 +78,8 @@ class Parser {
 
   std::unique_ptr<Expr> match_atomic_expr(Token& first);
 
+  std::unique_ptr<FstringLiteralExpr> match_fstring(Token& first);
+
   std::unique_ptr<IdentifierExpr> match_qual_word_id(Token& first) {
     return match_qual_id(first, true, false);
   }
