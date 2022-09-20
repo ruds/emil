@@ -84,11 +84,16 @@ const std::vector<Category> CATEGORIES{
           {"[str] qualifiers", "str identifier", "bool is_op",
            "bool is_prefix_op=false"}},
          {"Record", {"[RecRowSubexpr*] rows"}},
+         {"Unit", {}},
+         {"Tuple", {"[Expr*] exprs"}},
+         {"Sequenced", {"[Expr*] exprs"}},
+         {"List", {"[Expr*] exprs"}},
+         {"Let", {"[Decl*] decls", "[Expr*] exprs"}},
      }},
     {"Decl",
      "DECL",
      {
-         {"Val", {"str id", "Expr* val"}},
+         {"Val", {"str identifier", "Expr* expr"}},
      }},
     {"TopDecl",
      "TOPDECL",
@@ -96,6 +101,7 @@ const std::vector<Category> CATEGORIES{
          {"Empty", {}},
          {"EndOfFile", {}},
          {"Expr", {"Expr* expr"}},
+         {"Decl", {"Decl* decl"}},
      }},
 };
 

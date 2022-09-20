@@ -27,6 +27,7 @@ namespace emil {
 namespace {
 
 using ExprPtr = std::unique_ptr<Expr>;
+using DeclPtr = std::unique_ptr<Decl>;
 
 template <typename... Ts>
 struct overload : Ts... {
@@ -34,6 +35,26 @@ struct overload : Ts... {
 };
 template <typename... Ts>
 overload(Ts...) -> overload<Ts...>;
+
+bool starts_decl(TokenType t) {
+  switch (t) {
+    case TokenType::KW_VAL:
+    case TokenType::KW_FUN:
+    case TokenType::KW_TYPE:
+    case TokenType::KW_DATATYPE:
+    case TokenType::KW_EXCEPTION:
+    case TokenType::KW_LOCAL:
+    case TokenType::KW_OPEN:
+    case TokenType::KW_INFIX:
+    case TokenType::KW_INFIXR:
+    case TokenType::KW_NONFIX:
+    case TokenType::KW_PREFIX:
+      return true;
+
+    default:
+      return false;
+  }
+}
 
 }  // namespace
 
@@ -60,9 +81,14 @@ std::unique_ptr<TopDecl> Parser::next() {
         return std::make_unique<EmptyTopDecl>(t.location);
 
       default: {
-        auto decl = std::make_unique<ExprTopDecl>(t.location, match_expr(t));
+        std::unique_ptr<TopDecl> top_decl;
+        if (starts_decl(t.type)) {
+          top_decl = std::make_unique<DeclTopDecl>(t.location, match_decl(t));
+        } else {
+          top_decl = std::make_unique<ExprTopDecl>(t.location, match_expr(t));
+        }
         consume(TokenType::SEMICOLON, "top-level declaration");
-        return decl;
+        return top_decl;
       }
     }
   } catch (ParsingError&) {
@@ -142,6 +168,19 @@ void Parser::synchronize() {
 
 ExprPtr Parser::match_expr(Token& first) { return match_atomic_expr(first); }
 
+DeclPtr Parser::match_decl(Token& first) { return match_val_decl(first); }
+
+Token& Parser::consume_eq(std::string_view production) {
+  auto& t = consume(TokenType::ID_OP, production);
+  const auto& op = get<std::u8string>(t.aux);
+  if (op != u8"=") {
+    error(fmt::format("Expected '=' but got {} in {}", to_std_string(op),
+                      production),
+          t);
+  }
+  return t;
+}
+
 namespace {
 
 ExprPtr match_iliteral(Token& t) {
@@ -193,8 +232,17 @@ ExprPtr Parser::match_atomic_expr(Token& first) {
     case TokenType::LBRACE:
       return match_record_expr(first.location);
 
+    case TokenType::LPAREN:
+      return match_paren_expr(first.location);
+
+    case TokenType::LBRACKET:
+      return match_list_expr(first.location);
+
+    case TokenType::KW_LET:
+      return match_let_expr(first.location);
+
     default:
-      error("Bad token to start expression", first);
+      error(fmt::format("Expression may not start with {}", first.type), first);
   }
 }
 
@@ -232,16 +280,76 @@ std::unique_ptr<RecordExpr> Parser::match_record_expr(
 
 std::unique_ptr<RecRowSubexpr> Parser::match_rec_row() {
   auto& label = consume(TokenType::ID_WORD, "record expression row");
-  const auto& assignment = consume(TokenType::ID_OP, "record expression row");
-  const auto& op = get<std::u8string>(assignment.aux);
-  if (op != u8"=") {
-    error(fmt::format("Expected '=' but got {}", to_std_string(op)),
-          assignment);
-  }
+  consume_eq("record expression row");
   auto expr = match_expr(advance_safe("record expression row"));
   return std::make_unique<RecRowSubexpr>(
       label.location, std::move(get<std::u8string>(label.aux)),
       std::move(expr));
+}
+
+std::unique_ptr<Expr> Parser::match_paren_expr(const Location& location) {
+  if (match(TokenType::RPAREN)) return std::make_unique<UnitExpr>(location);
+  std::vector<std::unique_ptr<Expr>> exprs;
+  exprs.push_back(match_expr(advance_safe("parenthesized expression")));
+  TokenType sep =
+      consume({TokenType::SEMICOLON, TokenType::COMMA, TokenType::RPAREN},
+              "parenthesized expression")
+          .type;
+  std::string production;
+  switch (sep) {
+    case TokenType::SEMICOLON:
+      production = "sequenced expression";
+      break;
+    case TokenType::COMMA:
+      production = "tuple expression";
+      break;
+    default:
+      return std::move(exprs.front());
+  }
+  do {
+    exprs.push_back(match_expr(advance_safe(production)));
+  } while (match(sep));
+  consume(TokenType::RPAREN, production);
+  if (sep == TokenType::SEMICOLON) {
+    return std::make_unique<SequencedExpr>(location, std::move(exprs));
+  } else {
+    return std::make_unique<TupleExpr>(location, std::move(exprs));
+  }
+}
+
+std::unique_ptr<ListExpr> Parser::match_list_expr(const Location& location) {
+  std::vector<std::unique_ptr<Expr>> exprs;
+  if (!match(TokenType::RBRACKET)) do {
+      exprs.push_back(match_expr(advance_safe("list expression")));
+    } while (consume({TokenType::RBRACKET, TokenType::COMMA}, "list expression")
+                 .type != TokenType::RBRACKET);
+  return std::make_unique<ListExpr>(location, std::move(exprs));
+}
+
+std::unique_ptr<ValDecl> Parser::match_val_decl(Token& first) {
+  // TODO: lift this check to match_decl
+  if (first.type != TokenType::KW_VAL)
+    error(fmt::format("Expected 'val' but got token of type {}", first.type),
+          first);
+  auto& id = consume(TokenType::ID_WORD, "val declaration");
+  consume_eq("val declaration");
+  auto expr = match_expr(advance_safe("val declaration"));
+  return std::make_unique<ValDecl>(
+      first.location, std::move(get<std::u8string>(id.aux)), std::move(expr));
+}
+
+std::unique_ptr<LetExpr> Parser::match_let_expr(const Location& location) {
+  std::vector<std::unique_ptr<Decl>> decls;
+  do {
+    decls.push_back(match_decl(advance_safe("let bindings")));
+  } while (!match(TokenType::KW_IN));
+  std::vector<std::unique_ptr<Expr>> exprs;
+  do {
+    exprs.push_back(match_expr(advance_safe("let expression")));
+  } while (consume({TokenType::SEMICOLON, TokenType::KW_END}, "let expression")
+               .type == TokenType::SEMICOLON);
+  return std::make_unique<LetExpr>(location, std::move(decls),
+                                   std::move(exprs));
 }
 
 }  // namespace emil

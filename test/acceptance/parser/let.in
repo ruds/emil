@@ -1,0 +1,13 @@
+let val a = 1 val b = foo in b end ;
+let
+    val a = 1
+    val b = foo
+in
+    () ;
+    b
+end ;
+let in 1 end ;
+let val in b end ;
+let val a = 1 in end ;
+let val a = 1 in () ; ; b end ;
+let val a = 1 in a ; end ;

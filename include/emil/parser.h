@@ -72,6 +72,10 @@ class Parser {
 
   std::unique_ptr<Expr> match_expr(Token& first);
 
+  std::unique_ptr<Decl> match_decl(Token& first);
+
+  Token& consume_eq(std::string_view production);
+
   std::unique_ptr<Expr> match_atomic_expr(Token& first);
 
   std::unique_ptr<IdentifierExpr> match_qual_word_id(Token& first) {
@@ -87,6 +91,14 @@ class Parser {
   std::unique_ptr<RecordExpr> match_record_expr(const Location& location);
 
   std::unique_ptr<RecRowSubexpr> match_rec_row();
+
+  std::unique_ptr<Expr> match_paren_expr(const Location& location);
+
+  std::unique_ptr<ListExpr> match_list_expr(const Location& location);
+
+  std::unique_ptr<LetExpr> match_let_expr(const Location& location);
+
+  std::unique_ptr<ValDecl> match_val_decl(Token& first);
 };
 
 }  // namespace emil

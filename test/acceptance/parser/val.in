@@ -1,0 +1,6 @@
+val foo = bar;
+val foo = bar.baz;
+val;
+val foo;
+val foo =;;
+val quux.foo = bar;

@@ -532,7 +532,7 @@ the value of the last expression, and all but the last must be of type
 #+begin_src bnf
   decl -> val-decl
 
-  val-decl -> 'val' ['rec'] val-bind
+  val-decl -> 'val' val-bind
 
   val-bind -> word-id '=' expr
 #+end_src
@@ -545,7 +545,7 @@ the value of the last expression, and all but the last must be of type
 
 #+begin_src bnf
   interactive-program -> [topdecl ';']*
-  topdecl -> expr
+  topdecl -> decl | expr
 #+end_src
 
 *** TODO: This is hilariously simplified
