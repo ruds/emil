@@ -5,3 +5,6 @@ CMakeFiles
 CMakeScripts
 compile_commands.json
 .dir-locals.el
+/doc/_minted-spec/
+/doc/spec.pdf
+/doc/spec.tex

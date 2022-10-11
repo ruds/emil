@@ -1,3 +1,4 @@
+#+OPTIONS: H:5
 #+title: Specification of the Emil Programming Language
 #+author: Matt Rudary
 
@@ -275,7 +276,7 @@ an ambiguity or for documentation purposes.
   rt-row -> word-id ':' ty
   ty-seq -> [ty]
          | '(' ty (',' ty)+ ')'
-  type-id-seq -> [type-id]
+  type-id-seq -> type-id
                | '(' type-id (',' type-id)+ ')'
 #+end_src
 
@@ -369,10 +370,10 @@ in a record value are evaluated in the order they appear.
   dtype-alias-decl -> 'datatype' word-id '=' 'datatype' qual-word-id
 
   type-bind -> one-type-bind ('and' one-type-bind)*
-  one-type-bind -> type-id-seq word-id '=' ty
+  one-type-bind -> [type-id-seq] word-id '=' ty
 
   dtype-bind -> one-dtype-bind ('and' one-dtype-bind)*
-  one-dtype-bind -> type-id-seq word-id '=' con-bind
+  one-dtype-bind -> [type-id-seq] word-id '=' con-bind
 
   con-bind -> one-con-bind ('|' one-con-bind)*
   one-con-bind -> word-id ['of' ty]
@@ -388,7 +389,7 @@ the compiler may refer to the aliased type in error messages even when
 the program refers to the new type. Mutually dependent type aliases
 can be joined with the ~and~ keyword. A few examples:
 
-#+begin_src emil
+#+begin_src sml
   type int64 = int
   type intlist = int list
   type 'v strmap = (string, 'v) Map.map
@@ -414,7 +415,7 @@ be joined with the ~and~ keyword; datatypes can be joined with
 mutually dependent type aliases with the ~withtype~ keyword. A few
 examples:
 
-#+begin_src emil
+#+begin_src sml
   datatype suit = Spades | Hearts | Diamonds | Clubs
 
   datatype 'a tree = Empty | Node of 'a * 'a forest
@@ -446,6 +447,77 @@ previous example, then ~datatype color = datatype Cards.suit~
 introduces ~color~ as an alias for ~Cards.suit~ as well as ~Spades~,
 ~Hearts~, ~Diamonds~, and ~Clubs~ as aliases for the corresponding
 value constructors from ~Cards~.
+
+*** Match Patterns
+
+#+begin_src bnf
+  pattern -> atomic-pattern
+           | ['op'] qual-op-id atomic-pattern
+           | qual-word-id atomic-pattern
+           | atomic-pattern qual-op-id atomic-pattern
+           | pattern ':' ty
+           | 'op' ['prefix'] op-id [':' ty] 'as' pattern
+           | word-id [':' ty] 'as' pattern
+
+  atomic-pattern -> '_'
+                  | literal
+                  | 'op' ['prefix'] qual-op-id
+                  | qual-word-id
+                  | '{' [ rec-pat-row (',' rec-pat-row)* ] '}'
+                  | '(' [ pattern (',' pattern)+ ] ')'
+                  | '(' pattern ')'
+                  | '[' [ pattern (',' pattern)* ] ']'
+
+  rec-pat-row -> '...'
+               | word-id '=' pattern
+               | word-id [':' ty] ['as' pattern]
+#+end_src
+
+Match patterns are used in several places in the language to determine
+if a value matches a pattern, and if so to (optionally) bind variables
+to various parts of the value. Match patterns are used in exception
+handlers, function values, and case expressions.
+
+**** Atomic Patterns
+
+The wildcard pattern ~_~ matches any value and binds no variables. An
+unqualified identifier, if it is not already bound as a type
+constructor, matches any value and binds the value to the identifier.
+If it is already bound to a zero-argument type constructor, it matches
+that value and binds no variables. If it matches a type constructor
+with one or more arguments, an error is raised. A qualified identifier
+must be bound to a type constructor. A literal matches the given value
+and binds no variables.
+
+Records, tuples, and lists can be matched with appropriately
+structured patterns. In a record pattern without ~...~, the pattern
+matches a record value that has exactly the same labels as the
+pattern. On the other hand, a record pattern that contains ~...~
+matches a record value of any type that has a superset of the labels
+present in the pattern. In all of these structured patterns, each part
+of the value is matched against the corresponding part of the pattern,
+with the appropriate parts of values bound to variables in the
+pattern. For example, if the pattern ~{a=(foo, 1, _), b=[1, b]}~ were
+matched against the value ~{a=("bar", 1, 23), b=[1, 2]}~, the match
+would succeed, ~foo~ would be bound to ~"bar"~, and ~b~ would be bound
+to ~2~. A record row pattern of the form ~id [: ty] [as pat]~ is
+rewritten to ~id=id [: ty] [as pat]~.
+
+**** Compound Patterns
+
+An identifier used as the "function" in a compound expression must be
+bound as a type constructor with the appropriate number of arguments.
+Then each of its arguments is matched as a pattern against the
+arguments of a value constructed by that type constructor.
+
+Patterns can be annotated with type expressions. This may be necessary
+to resolve ambiguities that prevent type inference.
+
+Patterns can be layered in order to bind a value and (some of) its
+parts to separate variables. This is done using the ~as~ keyword. For
+example, matching the expression ~foo as fst :: snd :: rst~ against
+the value ~[1, 2, 3, 4]~ results in ~foo~ being bound to ~[1, 2, 3,
+4]~, ~fst~ to ~1~, ~snd~ to ~2~, and ~rst~ to ~[3, 4]~.
 
 *** Expressions
 
@@ -534,14 +606,24 @@ The expression section contains one or more expressions separated by
 the value of the last expression, and all but the last must be of type
 ~unit~.
 
+**** Case and Function Expressions
+
+#+begin_src bnf
+  fn-expr -> 'fn' match-seq
+  case-expr -> 'case' expr 'of' match-seq
+
+  match-seq -> match ('|' match)*
+  match -> pattern "=>" expr
+#+end_src
+
 *** Declarations
 
 #+begin_src bnf
   decl -> val-decl
 
-  val-decl -> 'val' val-bind
+  val-decl -> 'val' [type-id-seq] val-bind ('and' val-bind)*
 
-  val-bind -> word-id '=' expr
+  val-bind -> ['rec'] pattern '=' expr
 #+end_src
 
 **** TODO: val-decl and val-bind are simplified considerably
