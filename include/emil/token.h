@@ -18,10 +18,13 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <iterator>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <variant>
+#include <vector>
 
 #include "emil/enum.h"
 #include "emil/strconvert.h"
@@ -42,6 +45,8 @@ namespace emil {
   DECLARE(ID_WORD, X)               \
   DECLARE(ID_TYPE, X)               \
   DECLARE(ID_OP, X)                 \
+  DECLARE(QUAL_ID_WORD, X)          \
+  DECLARE(QUAL_ID_OP, X)            \
   DECLARE(KW_AND, X)                \
   DECLARE(KW_AS, X)                 \
   DECLARE(KW_CASE, X)               \
@@ -85,12 +90,27 @@ namespace emil {
   DECLARE(RBRACE, X)                \
   DECLARE(COMMA, X)                 \
   DECLARE(SEMICOLON, X)             \
-  DECLARE(DOT, X)
+  DECLARE(EQUALS, X)
 
 ENUM_WITH_TEXT(TokenType, TOKEN_TYPE_LIST)
 
-using token_auxiliary_t = std::variant<std::monostate, int64_t, mpz_class,
-                                       double, char32_t, std::u8string>;
+struct QualifiedIdentifier {
+  std::vector<std::u8string> qualifiers;
+  std::u8string id;
+
+  std::string to_string() const {
+    std::ostringstream out;
+    std::transform(qualifiers.begin(), qualifiers.end(),
+                   std::ostream_iterator<std::string>(out, "."),
+                   [](std::u8string_view s) { return to_hex(s); });
+    out << to_hex(id);
+    return out.str();
+  }
+};
+
+using token_auxiliary_t =
+    std::variant<std::monostate, int64_t, mpz_class, double, char32_t,
+                 std::u8string, QualifiedIdentifier>;
 
 struct Location {
   std::string_view filename;
@@ -159,6 +179,11 @@ struct fmt::formatter<emil::Token> {
       case TokenType::ID_TYPE:
       case TokenType::ID_OP:
         emil::to_hex(get<std::u8string>(t.aux), aux);
+        break;
+
+      case TokenType::QUAL_ID_WORD:
+      case TokenType::QUAL_ID_OP:
+        aux = get<emil::QualifiedIdentifier>(t.aux).to_string();
         break;
 
       default:

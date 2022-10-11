@@ -170,17 +170,6 @@ ExprPtr Parser::match_expr(Token& first) { return match_atomic_expr(first); }
 
 DeclPtr Parser::match_decl(Token& first) { return match_val_decl(first); }
 
-Token& Parser::consume_eq(std::string_view production) {
-  auto& t = consume(TokenType::ID_OP, production);
-  const auto& op = get<std::u8string>(t.aux);
-  if (op != u8"=") {
-    error(fmt::format("Expected '=' but got {} in {}", to_std_string(op),
-                      production),
-          t);
-  }
-  return t;
-}
-
 namespace {
 
 ExprPtr match_iliteral(Token& t) {
@@ -225,13 +214,15 @@ ExprPtr Parser::match_atomic_expr(Token& first) {
       return match_fstring(first);
 
     case TokenType::ID_WORD:
-      return match_qual_word_id(first);
+    case TokenType::QUAL_ID_WORD:
+      return match_id(first);
 
     case TokenType::KW_OP: {
       const bool is_prefix_op = match(TokenType::KW_PREFIX);
       Token& t =
-          consume({TokenType::ID_WORD, TokenType::ID_OP}, "qualified operator");
-      auto expr = match_qual_op_id(t);
+          consume({TokenType::QUAL_ID_OP, TokenType::ID_OP, TokenType::EQUALS},
+                  "qualified operator");
+      auto expr = match_id(t);
       expr->is_prefix_op = is_prefix_op;
       return expr;
     }
@@ -273,24 +264,26 @@ std::unique_ptr<FstringLiteralExpr> Parser::match_fstring(Token& first) {
       first.location, std::move(segments), std::move(substitutions));
 }
 
-std::unique_ptr<IdentifierExpr> Parser::match_qual_id(Token& first,
-                                                      bool allow_word,
-                                                      bool allow_op) {
-  Token* t = &first;
-  std::vector<std::u8string> qualifiers;
-  while (t->type == TokenType::ID_WORD && match(TokenType::DOT)) {
-    qualifiers.push_back(move_string(*t));
-    t = &consume({TokenType::ID_WORD, TokenType::ID_OP},
-                 "qualified identifier");
+std::unique_ptr<IdentifierExpr> Parser::match_id(Token& t) {
+  switch (t.type) {
+    case TokenType::ID_WORD:
+    case TokenType::ID_OP:
+    case TokenType::EQUALS:
+      return std::make_unique<IdentifierExpr>(
+          t.location, std::vector<std::u8string>{}, move_string(t),
+          t.type != TokenType::ID_WORD);
+
+    case TokenType::QUAL_ID_OP:
+    case TokenType::QUAL_ID_WORD: {
+      auto& qual = get<QualifiedIdentifier>(t.aux);
+      return std::make_unique<IdentifierExpr>(
+          t.location, std::move(qual.qualifiers), std::move(qual.id),
+          t.type == TokenType::QUAL_ID_OP);
+    }
+
+    default:
+      error("Expected identifier", t);
   }
-  if (t->type == TokenType::ID_WORD) {
-    if (!allow_word) error("Got word identifier when operator expected.", *t);
-  } else if (t->type == TokenType::ID_OP) {
-    if (!allow_op) error("Got operator identifier when word expected.", *t);
-  }
-  return std::make_unique<IdentifierExpr>(first.location, std::move(qualifiers),
-                                          move_string(*t),
-                                          t->type == TokenType::ID_OP);
 }
 
 std::unique_ptr<RecordExpr> Parser::match_record_expr(
@@ -307,7 +300,7 @@ std::unique_ptr<RecordExpr> Parser::match_record_expr(
 
 std::unique_ptr<RecRowSubexpr> Parser::match_rec_row() {
   auto& label = consume(TokenType::ID_WORD, "record expression row");
-  consume_eq("record expression row");
+  consume(TokenType::EQUALS, "record expression row");
   auto expr = match_expr(advance_safe("record expression row"));
   return std::make_unique<RecRowSubexpr>(label.location, move_string(label),
                                          std::move(expr));
@@ -358,7 +351,7 @@ std::unique_ptr<ValDecl> Parser::match_val_decl(Token& first) {
     error(fmt::format("Expected 'val' but got token of type {}", first.type),
           first);
   auto& id = consume(TokenType::ID_WORD, "val declaration");
-  consume_eq("val declaration");
+  consume(TokenType::EQUALS, "val declaration");
   auto expr = match_expr(advance_safe("val declaration"));
   return std::make_unique<ValDecl>(first.location, move_string(id),
                                    std::move(expr));

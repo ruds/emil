@@ -168,9 +168,11 @@ is empty.
 ** Identifiers
 
 #+begin_src bnf
+  qual-word-id -> (word-id '.')* word-id
+  qual-op-id -> (word-id '.')* op-id
   word-id -> word-start word-continue*
   type-id -> ''' word-continue+
-  operator-id -> symbol-grapheme-cluster+
+  op-id -> symbol-grapheme-cluster+
   symbol -> ascii-symbol | unicode-symbol
   ascii-symbol -> '!' | '#' | '$' | '%' | '&' | '*' | '+' | '-'
                |  '/' | ':' | '<' | '=' | '>' | '?' | '@' | '\'
@@ -205,6 +207,10 @@ are treated as equivalent. For example, the identifer ~à~ would be the
 same whether the source file encoded it as ~U+00E0~ or
 ~U+0061~~U+0300~.
 
+Both word and operator identifiers may be /qualified/. A qualified
+identifier is a sequence of word identifiers separated by ~.~ and
+ending with either a word or operator identifier.
+
 *** Reserved Identifiers
 :PROPERTIES:
 :CUSTOM_ID: reserved-identifiers
@@ -221,6 +227,9 @@ not be used as identifiers.
   raise    rec    then    type    val    while    withtype
   :    _    |    =>    ->    #
 #+end_example
+
+The equals sign ~=~ is used in the grammar, but may also be used as an
+identifier (and is in fact defined in the default prelude).
 
 ** Comments
 
@@ -268,7 +277,6 @@ an ambiguity or for documentation purposes.
          | '(' ty (',' ty)+ ')'
   type-id-seq -> [type-id]
                | '(' type-id (',' type-id)+ ')'
-  qual-word-id -> (word-id '.')* word-id
 #+end_src
 
 A type expression describes a type or a polymorphic family of types. A
@@ -447,7 +455,6 @@ value constructors from ~Cards~.
         | raise-expr
         | while-expr
 
-  qual-op-id -> (word-id '.')* op-id
   infix-expr -> left-expr qual-op-id infix-expr
               | qual-op-id infix-expr
               | left-expr

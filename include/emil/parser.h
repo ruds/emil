@@ -74,21 +74,11 @@ class Parser {
 
   std::unique_ptr<Decl> match_decl(Token& first);
 
-  Token& consume_eq(std::string_view production);
-
   std::unique_ptr<Expr> match_atomic_expr(Token& first);
 
   std::unique_ptr<FstringLiteralExpr> match_fstring(Token& first);
 
-  std::unique_ptr<IdentifierExpr> match_qual_word_id(Token& first) {
-    return match_qual_id(first, true, false);
-  }
-  std::unique_ptr<IdentifierExpr> match_qual_op_id(Token& first) {
-    return match_qual_id(first, false, true);
-  }
-  std::unique_ptr<IdentifierExpr> match_qual_id(Token& first,
-                                                bool allow_word = true,
-                                                bool allow_op = true);
+  std::unique_ptr<IdentifierExpr> match_id(Token& first);
 
   std::unique_ptr<RecordExpr> match_record_expr(const Location& location);
 

@@ -36,6 +36,7 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -43,6 +44,7 @@
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include "emil/source.h"
 #include "emil/strconvert.h"
@@ -218,12 +220,12 @@ constexpr std::u8string_view PIPE = u8"|";
 constexpr std::u8string_view TO_EXPR = u8"=>";
 constexpr std::u8string_view TO_TYPE = u8"->";
 constexpr std::u8string_view HASH = u8"#";
+constexpr std::u8string_view EQUALS = u8"=";
 
 void match_keyword_in_id_op(Token& token) {
 #define REPLACE(kw)              \
   if (match_rest(kw, name, 1)) { \
     token.type = TokenType::kw;  \
-    token.aux = {};              \
     return;                      \
   }
   const std::u8string& name = get<std::u8string>(token.aux);
@@ -237,6 +239,7 @@ void match_keyword_in_id_op(Token& token) {
       return;
 
     case '=':
+      REPLACE(EQUALS);
       REPLACE(TO_EXPR);
       return;
 
@@ -257,13 +260,13 @@ Lexer::Lexer(std::string_view filename, std::unique_ptr<Source<>> source)
     : filename_(filename), source_(std::move(source)) {}
 
 Token Lexer::next_token() {
-  current_token_.clear();
-
   if (continuing_format_string()) {
+    current_token_.clear();
     const auto& s = format_string_state_.top();
     return match_string(s.string_type, s.raw_delimiter, FormatString::CONTINUE);
   }
   skip_whitespace();
+  current_token_.clear();
   start_line_ = next_line_;
 
   if (at_end()) {
@@ -338,8 +341,7 @@ Token Lexer::next_token() {
       break;
 
     case '(':
-      if (peek() == '*') {
-        advance();
+      if (match('*')) {
         skip_comment();
         return next_token();
       }
@@ -374,7 +376,7 @@ Token Lexer::next_token() {
       if (is_decimal_digit(peek())) {
         error("Floating point constants must start with a digit.");
       }
-      return make_token(TokenType::DOT);
+      error("Stray '.'.");
   }
 
   return match_identifier(c);
@@ -432,7 +434,7 @@ bool Lexer::match(char32_t expected) {
 void Lexer::skip_whitespace() {
   while (const char32_t c = peek()) {
     if (is_whitespace(c)) {
-      source_->advance();
+      advance();
       if (c == '\n') ++next_line_;
     } else {
       return;
@@ -832,12 +834,77 @@ uint_fast8_t Lexer::match_hex_digit() {
   }
 }
 
-Token Lexer::match_identifier(char32_t first_char) {
-  if (can_start_word(first_char)) return match_id_word(first_char);
-  if (can_start_operator(first_char)) return match_id_op(first_char);
+namespace {
+Token make_qualified_id(std::u32string text, const Location& location,
+                        std::vector<std::u8string>& qualifiers, Token id) {
+  text += id.text;
+  TokenType type;
+  switch (id.type) {
+    case TokenType::ID_WORD:
+      type = TokenType::QUAL_ID_WORD;
+      break;
 
-  error(fmt::format("Illegal token starting with '{}'",
-                    to_std_string(first_char)));
+    case TokenType::ID_OP:
+    case TokenType::EQUALS:
+      type = TokenType::QUAL_ID_OP;
+      break;
+
+    default:
+      throw LexingError(
+          fmt::format("Illegal token type in qualified identifier: {}",
+                      id.type),
+          location, text);
+  }
+
+  return {.text = std::move(text),
+          .location = location,
+          .type = type,
+          .aux = QualifiedIdentifier{.qualifiers = std::move(qualifiers),
+                                     .id = get<std::u8string>(id.aux)}};
+}
+}  // namespace
+
+Token Lexer::match_identifier(char32_t first_char) {
+  std::u32string text;
+  std::optional<Location> location;
+  std::vector<std::u8string> qualifiers;
+  while (1) {
+    if (can_start_operator(first_char)) {
+      if (qualifiers.empty()) {
+        return match_id_op(first_char);
+      }
+      return make_qualified_id(std::move(text), *location, qualifiers,
+                               match_id_op(first_char));
+    }
+
+    if (!can_start_word(first_char)) {
+      error(fmt::format("Illegal token starting with '{}'",
+                        to_std_string(first_char)));
+    }
+
+    Token t = match_id_word(first_char);
+    current_token_.clear();
+    skip_whitespace();
+
+    if (!match('.')) {
+      if (qualifiers.empty()) {
+        return t;
+      }
+      return make_qualified_id(std::move(text), *location, qualifiers,
+                               std::move(t));
+    }
+
+    if (t.type != TokenType::ID_WORD) {
+      error("Keywords are illegal as part of qualified identifiers.");
+    }
+    if (!location) location = t.location;
+    qualifiers.push_back(std::move(get<std::u8string>(t.aux)));
+    text += t.text;
+    skip_whitespace();
+    text += current_token_;
+    current_token_.clear();
+    first_char = advance_safe("qualified identifier");
+  }
 }
 
 Token Lexer::match_id_word(char32_t first_char) {

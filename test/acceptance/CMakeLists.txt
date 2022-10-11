@@ -27,22 +27,22 @@ endmacro()
 
 macro(add_golden_test DRIVER TESTNAME)
   add_test(
-    NAME "${TESTNAME}-create-output"
+    NAME "${DRIVER} ${TESTNAME}-create-output"
     COMMAND
     "${DRIVER}" "${CMAKE_CURRENT_SOURCE_DIR}/${TESTNAME}.in" "${TESTNAME}.out"
   )
   add_test(
-    NAME "${TESTNAME}"
+    NAME "${DRIVER} ${TESTNAME}"
     COMMAND
     "${CMAKE_COMMAND}" -E compare_files
     "${TESTNAME}.out"
     "${CMAKE_CURRENT_SOURCE_DIR}/${TESTNAME}.expected"
   )
-  set_tests_properties("${TESTNAME}-create-output"
+  set_tests_properties("${DRIVER} ${TESTNAME}-create-output"
     PROPERTIES FIXTURES_REQUIRED "${DRIVER}_fixture")
-  set_tests_properties("${TESTNAME}-create-output"
+  set_tests_properties("${DRIVER} ${TESTNAME}-create-output"
     PROPERTIES FIXTURES_SETUP "${TESTNAME}_fixture")
-  set_tests_properties("${TESTNAME}"
+  set_tests_properties("${DRIVER} ${TESTNAME}"
     PROPERTIES FIXTURES_REQUIRED "${TESTNAME}_fixture")
 endmacro()
 
