@@ -1,4 +1,4 @@
 abc ; foo.bar.baz ;
-op ++ ; op prefix \= ; op prefix foo.\ ; op foo.bar.++ ;
+(++) ; (prefix \=) ; (prefix foo.\) ; (foo.bar.++) ;
 ++ ;
 foo.\ ;

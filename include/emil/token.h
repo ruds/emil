@@ -66,7 +66,6 @@ namespace emil {
   DECLARE(KW_LOCAL, X)              \
   DECLARE(KW_NONFIX, X)             \
   DECLARE(KW_OF, X)                 \
-  DECLARE(KW_OP, X)                 \
   DECLARE(KW_OPEN, X)               \
   DECLARE(KW_PREFIX, X)             \
   DECLARE(KW_RAISE, X)              \

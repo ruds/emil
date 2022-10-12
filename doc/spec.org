@@ -224,8 +224,8 @@ not be used as identifiers.
 #+begin_example
   Inf    NaN    and    as    case    datatype    else    end
   exception    fn    fun    handle    if    implicit    in    infix
-  infixr    let    local    nonfix    of    op    open    prefix
-  raise    rec    then    type    val    while    withtype
+  infixr    let    local    nonfix    of    open    prefix    raise
+  rec    then    type    val    while    withtype
   :    _    |    =>    ->    #
 #+end_example
 
@@ -451,17 +451,18 @@ value constructors from ~Cards~.
 *** Match Patterns
 
 #+begin_src bnf
-  pattern -> atomic-pattern
-           | ['op'] qual-op-id atomic-pattern
-           | qual-word-id atomic-pattern
-           | atomic-pattern qual-op-id atomic-pattern
-           | pattern ':' ty
-           | 'op' ['prefix'] op-id [':' ty] 'as' pattern
-           | word-id [':' ty] 'as' pattern
+  pattern -> word-id [':' ty] 'as' pattern
+           | left-pattern qual-op-id pattern [':' ty]
+           | left-pattern [':' ty]
+
+  left-pattern -> atomic-pattern
+                | qual-op-id atomic-pattern
+                | '(' ['prefix'] qual-op-id ')' atomic-pattern
+                | qual-word-id atomic-pattern
 
   atomic-pattern -> '_'
                   | literal
-                  | 'op' ['prefix'] qual-op-id
+                  | '(' ['prefix'] op-id ')'
                   | qual-word-id
                   | '{' [ rec-pat-row (',' rec-pat-row)* ] '}'
                   | '(' [ pattern (',' pattern)+ ] ')'
@@ -475,8 +476,8 @@ value constructors from ~Cards~.
 
 Match patterns are used in several places in the language to determine
 if a value matches a pattern, and if so to (optionally) bind variables
-to various parts of the value. Match patterns are used in exception
-handlers, function values, and case expressions.
+to various parts of the value. Match patterns are used in value
+bindings, exception handlers, function values, and case expressions.
 
 **** Atomic Patterns
 
@@ -552,7 +553,7 @@ parses.
 #+begin_src bnf
   atomic-expr -> literal
                | qual-word-id
-               | 'op' ['prefix'] qual-op-id
+               | '(' ['prefix'] qual-op-id ')'
                | record-expr
                | tuple-expr
                | list-expr
@@ -580,16 +581,17 @@ expressions evaluate to the result of the inner expression.
 
 Qualified operator identifiers evaluate to one of the values they are
 bound to. Operators may have two different bindings: prefix and infix.
-The ~op~ and ~op prefix~ particles change the way operators
-participate in expressions. Without such a particle, the operator is
-parsed as part of an ~infix-expr~ production. Its position determines
-whether the infix or prefix version of the operator is used, and its
-precedence is used to determine how the expression parses. With ~op~,
-the infix version of the operator is used. With ~op prefix~, the
-prefix version of the operator is used. With either particle, the
-operator is parsed as part of an ~atomic-expr~ production and the
-precedence of the operator is not used to parse the expression.
-Precedence and fixity are described more below.
+Operators surrounded by parentheses (possibly preceded by a ~prefix~
+particle) participate differently in expressions. Without surrounding
+parentheses, an operator is parsed as part of an ~infix-expr~
+production. Its position determines whether the infix or prefix
+version of the operator is used, and its precedence is used to
+determine how the expression parses. When surrounded by parentheses
+without a ~prefix~ particle, the infix version of the operator is
+used. With ~prefix~, the prefix version of the operator is used. In
+either case, the operator is parsed as part of an ~atomic-expr~
+production and the precedence of the operator is not used to parse the
+expression. Precedence and fixity are described more below.
 
 Two or more expressions within parentheses and separated by ~;~ are
 sequenced. They are evaluated in order and the value of the sequenced

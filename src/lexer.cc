@@ -197,7 +197,6 @@ constexpr std::u8string_view KW_LET = u8"let";
 constexpr std::u8string_view KW_LOCAL = u8"local";
 constexpr std::u8string_view KW_NONFIX = u8"nonfix";
 constexpr std::u8string_view KW_OF = u8"of";
-constexpr std::u8string_view KW_OP = u8"op";
 constexpr std::u8string_view KW_OPEN = u8"open";
 constexpr std::u8string_view KW_PREFIX = u8"prefix";
 constexpr std::u8string_view KW_RAISE = u8"raise";
@@ -1064,7 +1063,6 @@ void Lexer::match_keyword_and_tyvar_in_id_word(Token& token) {
 
     case 'o':
       REPLACE(KW_OF, 1);
-      REPLACE(KW_OP, 1);
       REPLACE(KW_OPEN, 1);
       return;
 

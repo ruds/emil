@@ -217,16 +217,6 @@ ExprPtr Parser::match_atomic_expr(Token& first) {
     case TokenType::QUAL_ID_WORD:
       return match_id(first);
 
-    case TokenType::KW_OP: {
-      const bool is_prefix_op = match(TokenType::KW_PREFIX);
-      Token& t =
-          consume({TokenType::QUAL_ID_OP, TokenType::ID_OP, TokenType::EQUALS},
-                  "qualified operator");
-      auto expr = match_id(t);
-      expr->is_prefix_op = is_prefix_op;
-      return expr;
-    }
-
     case TokenType::LBRACE:
       return match_record_expr(first.location);
 
@@ -308,8 +298,23 @@ std::unique_ptr<RecRowSubexpr> Parser::match_rec_row() {
 
 std::unique_ptr<Expr> Parser::match_paren_expr(const Location& location) {
   if (match(TokenType::RPAREN)) return std::make_unique<UnitExpr>(location);
+  if (match(TokenType::KW_PREFIX)) {
+    Token& t =
+        consume({TokenType::QUAL_ID_OP, TokenType::ID_OP, TokenType::EQUALS},
+                "prefix operator");
+    auto expr = match_id(t);
+    expr->is_prefix_op = true;
+    consume(TokenType::RPAREN, "prefix operator");
+    return expr;
+  }
+  Token& first = advance_safe("parenthesized expression");
+  if ((first.type == TokenType::QUAL_ID_OP || first.type == TokenType::ID_OP ||
+       first.type == TokenType::EQUALS) &&
+      match(TokenType::RPAREN)) {
+    return match_id(first);
+  }
   std::vector<std::unique_ptr<Expr>> exprs;
-  exprs.push_back(match_expr(advance_safe("parenthesized expression")));
+  exprs.push_back(match_expr(first));
   TokenType sep =
       consume({TokenType::SEMICOLON, TokenType::COMMA, TokenType::RPAREN},
               "parenthesized expression")
