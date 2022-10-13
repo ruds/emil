@@ -10,6 +10,8 @@
                          ()
                          :identifier
                          "61"
+                         :is_op
+                         false
                          :is_prefix_op
                          false)
                        . (BigintLiteralExpr
@@ -22,6 +24,8 @@
                          ()
                          :identifier
                          "62"
+                         :is_op
+                         false
                          :is_prefix_op
                          false)
                        . (IdentifierExpr
@@ -56,6 +60,8 @@
                          ()
                          :identifier
                          "61"
+                         :is_op
+                         false
                          :is_prefix_op
                          false)
                        . (BigintLiteralExpr
@@ -68,6 +74,8 @@
                          ()
                          :identifier
                          "62"
+                         :is_op
+                         false
                          :is_prefix_op
                          false)
                        . (IdentifierExpr

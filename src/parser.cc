@@ -424,9 +424,9 @@ bool can_start_atomic_pattern(const Token* t) {
 
 std::unique_ptr<IdentifierPattern> make_id_pattern(
     const Location& location, std::vector<std::u8string> qualifiers,
-    std::u8string id, bool is_prefix) {
+    std::u8string id, bool is_op, bool is_prefix) {
   return std::make_unique<IdentifierPattern>(location, std::move(qualifiers),
-                                             std::move(id), is_prefix);
+                                             std::move(id), is_op, is_prefix);
 }
 
 std::unique_ptr<IdentifierPattern> make_id_pattern(Token& t,
@@ -435,17 +435,17 @@ std::unique_ptr<IdentifierPattern> make_id_pattern(Token& t,
     case TokenType::QUAL_ID_OP:
     case TokenType::QUAL_ID_WORD: {
       auto& qid = get<QualifiedIdentifier>(t.aux);
+      const bool is_op = t.type == TokenType::QUAL_ID_OP;
       return make_id_pattern(t.location, std::move(qid.qualifiers),
-                             std::move(qid.id),
-                             is_prefix && t.type == TokenType::QUAL_ID_OP);
+                             std::move(qid.id), is_op, is_prefix && is_op);
     }
 
     case TokenType::ID_OP:
     case TokenType::EQUALS:
-      return make_id_pattern(t.location, {}, move_string(t), is_prefix);
+      return make_id_pattern(t.location, {}, move_string(t), true, is_prefix);
 
     case TokenType::ID_WORD:
-      return make_id_pattern(t.location, {}, move_string(t), false);
+      return make_id_pattern(t.location, {}, move_string(t), false, false);
 
     default:
       throw std::logic_error(
@@ -458,16 +458,19 @@ std::unique_ptr<IdentifierPattern> make_id_pattern(Token& t,
 PatternPtr Parser::match_left_pattern(Token& first) {
   auto maybe_id =
       maybe_match_parenthesized_op_pattern(first, AllowQualified::YES);
-  if (!maybe_id && first.type == TokenType::QUAL_ID_WORD) {
+  if (!maybe_id && (first.type == TokenType::QUAL_ID_WORD ||
+                    first.type == TokenType::ID_WORD)) {
     maybe_id = make_id_pattern(first);
   }
   if (maybe_id) {
     if (can_start_atomic_pattern(peek())) {
       auto pattern = match_atomic_pattern(advance());
-      return std::make_unique<TyconPattern>(first.location, std::move(maybe_id),
-                                            std::move(pattern));
-    } else {
+      return std::make_unique<DatatypePattern>(
+          first.location, std::move(maybe_id), std::move(pattern));
+    } else if (maybe_id->qualifiers.empty() || !maybe_id->is_op) {
       return maybe_id;
+    } else {
+      error("Qualified operator not permitted as atomic pattern", first);
     }
   }
   return match_atomic_pattern(first);
@@ -523,8 +526,8 @@ PatternPtr Parser::match_record_pattern(const Location& location) {
               label.location, get<std::u8string>(label.aux),
               match_pattern(advance_safe("record row layered pattern")));
         } else {
-          pattern = make_id_pattern(label.location, {},
-                                    get<std::u8string>(label.aux), false);
+          pattern = make_id_pattern(
+              label.location, {}, get<std::u8string>(label.aux), false, false);
         }
         rows.push_back(std::make_unique<RecRowSubpattern>(
             label.location, move_string(label), std::move(pattern)));

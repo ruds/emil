@@ -46,6 +46,8 @@
                          ()
                          :identifier
                          "61"
+                         :is_op
+                         false
                          :is_prefix_op
                          false)
                        . (BigintLiteralExpr

@@ -7,6 +7,8 @@
                  ()
                  :identifier
                  "666F6F"
+                 :is_op
+                 false
                  :is_prefix_op
                  false)
                . (IdentifierExpr
@@ -27,6 +29,8 @@
                  ()
                  :identifier
                  "666F6F"
+                 :is_op
+                 false
                  :is_prefix_op
                  false)
                . (IdentifierExpr
@@ -54,6 +58,8 @@
                              ()
                              :identifier
                              "6E756D"
+                             :is_op
+                             false
                              :is_prefix_op
                              false)
                          (IdentifierPattern
@@ -61,6 +67,8 @@
                              ()
                              :identifier
                              "737472"
+                             :is_op
+                             false
                              :is_prefix_op
                              false)
                      )))
@@ -86,6 +94,8 @@
                          ()
                          :identifier
                          "6E756D"
+                         :is_op
+                         false
                          :is_prefix_op
                          false)
                      (WildcardPattern)
@@ -123,6 +133,8 @@
                  ()
                  :identifier
                  "2B2B"
+                 :is_op
+                 true
                  :is_prefix_op
                  false)
                . (IdentifierExpr
@@ -147,6 +159,8 @@
                  )
                  :identifier
                  "62617A"
+                 :is_op
+                 false
                  :is_prefix_op
                  false)
                . (IdentifierExpr
@@ -174,6 +188,8 @@
                              ()
                              :identifier
                              "666F6F"
+                             :is_op
+                             false
                              :is_prefix_op
                              false))
                      (RecRowSubpattern
@@ -192,6 +208,8 @@
                                          ()
                                          :identifier
                                          "62617A"
+                                         :is_op
+                                         false
                                          :is_prefix_op
                                          false)
                                      (IdentifierPattern
@@ -199,6 +217,8 @@
                                          ()
                                          :identifier
                                          "71757578"
+                                         :is_op
+                                         false
                                          :is_prefix_op
                                          false)
                                  ))))
@@ -250,6 +270,8 @@
                          ()
                          :identifier
                          "666F6F"
+                         :is_op
+                         false
                          :is_prefix_op
                          false)
                      (WildcardPattern)
@@ -258,6 +280,8 @@
                          ()
                          :identifier
                          "2B2B"
+                         :is_op
+                         true
                          :is_prefix_op
                          false)
                      (IdentifierPattern
@@ -265,6 +289,8 @@
                          ()
                          :identifier
                          "626172"
+                         :is_op
+                         false
                          :is_prefix_op
                          false)
                  ))
@@ -313,6 +339,8 @@
                                      ()
                                      :identifier
                                      "626172"
+                                     :is_op
+                                     false
                                      :is_prefix_op
                                      false)
                              )))
@@ -321,6 +349,8 @@
                          ()
                          :identifier
                          "62617A"
+                         :is_op
+                         false
                          :is_prefix_op
                          false)
                      (RecordPattern
@@ -335,6 +365,8 @@
                                      ()
                                      :identifier
                                      "71757578"
+                                     :is_op
+                                     false
                                      :is_prefix_op
                                      false))
                              (RecRowSubpattern
@@ -349,6 +381,8 @@
                                              ()
                                              :identifier
                                              "78797A7A79"
+                                             :is_op
+                                             false
                                              :is_prefix_op
                                              false)
                                          (IdentifierPattern
@@ -356,6 +390,8 @@
                                              ()
                                              :identifier
                                              "706C756768"
+                                             :is_op
+                                             false
                                              :is_prefix_op
                                              false)
                                      )))
@@ -371,8 +407,123 @@
                      false
                      :is_prefix_op
                      false)))))
-0015 ERROR
-0016 ERROR
-0017 ERROR
+0014 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             (((DatatypePattern
+                 :constructor
+                 (IdentifierPattern
+                     :qualifiers
+                     ()
+                     :identifier
+                     "466F6F"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false)
+                 :arg
+                 (IdentifierPattern
+                     :qualifiers
+                     ()
+                     :identifier
+                     "626172"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false))
+               . (IdentifierExpr
+                     :qualifiers
+                     ()
+                     :identifier
+                     "62617A"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false)))))
+0015 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             (((DatatypePattern
+                 :constructor
+                 (IdentifierPattern
+                     :qualifiers
+                     ()
+                     :identifier
+                     "3A3A"
+                     :is_op
+                     true
+                     :is_prefix_op
+                     false)
+                 :arg
+                 (TuplePattern
+                     :patterns
+                     (
+                         (IdentifierPattern
+                             :qualifiers
+                             ()
+                             :identifier
+                             "666F6F"
+                             :is_op
+                             false
+                             :is_prefix_op
+                             false)
+                         (IdentifierPattern
+                             :qualifiers
+                             ()
+                             :identifier
+                             "626172"
+                             :is_op
+                             false
+                             :is_prefix_op
+                             false)
+                     )))
+               . (IdentifierExpr
+                     :qualifiers
+                     ()
+                     :identifier
+                     "62617A"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false)))))
+0016 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             (((DatatypePattern
+                 :constructor
+                 (IdentifierPattern
+                     :qualifiers
+                     ()
+                     :identifier
+                     "7E"
+                     :is_op
+                     true
+                     :is_prefix_op
+                     true)
+                 :arg
+                 (IdentifierPattern
+                     :qualifiers
+                     ()
+                     :identifier
+                     "666F6F"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false))
+               . (IdentifierExpr
+                     :qualifiers
+                     ()
+                     :identifier
+                     "626172"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false)))))
 0018 ERROR
-0019 (EndOfFileTopDecl)
+0019 ERROR
+0020 ERROR
+0021 ERROR
+0022 (EndOfFileTopDecl)

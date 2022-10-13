@@ -11,6 +11,9 @@ val () = foo;
 val (foo, _, (++), bar) = baz;
 val [] = foo;
 val [foo as (_, bar), baz, {quux, waldo = (xyzzy, plugh)}, _] = grault;
+val Foo bar = baz;
+val (::) (foo, bar) = baz;
+val (prefix ~) foo = bar;
 (* add parenthesized pattern, operator precedence tests *)
 val (_, 2.3) = foo; (* error - fp literals not allowed *)
 val;;
