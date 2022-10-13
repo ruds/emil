@@ -4,25 +4,35 @@
              :decls
              (
                  (ValDecl
-                     :identifier
-                     "61"
-                     :expr
-                     (BigintLiteralExpr
-                         :val
-                         1))
-                 (ValDecl
-                     :identifier
-                     "62"
-                     :expr
-                     (IdentifierExpr
+                     :bindings
+                     (((IdentifierPattern
                          :qualifiers
                          ()
                          :identifier
-                         "666F6F"
-                         :is_op
-                         false
+                         "61"
                          :is_prefix_op
-                         false))
+                         false)
+                       . (BigintLiteralExpr
+                             :val
+                             1))))
+                 (ValDecl
+                     :bindings
+                     (((IdentifierPattern
+                         :qualifiers
+                         ()
+                         :identifier
+                         "62"
+                         :is_prefix_op
+                         false)
+                       . (IdentifierExpr
+                             :qualifiers
+                             ()
+                             :identifier
+                             "666F6F"
+                             :is_op
+                             false
+                             :is_prefix_op
+                             false))))
              )
              :exprs
              ((IdentifierExpr
@@ -40,25 +50,35 @@
              :decls
              (
                  (ValDecl
-                     :identifier
-                     "61"
-                     :expr
-                     (BigintLiteralExpr
-                         :val
-                         1))
-                 (ValDecl
-                     :identifier
-                     "62"
-                     :expr
-                     (IdentifierExpr
+                     :bindings
+                     (((IdentifierPattern
                          :qualifiers
                          ()
                          :identifier
-                         "666F6F"
-                         :is_op
-                         false
+                         "61"
                          :is_prefix_op
-                         false))
+                         false)
+                       . (BigintLiteralExpr
+                             :val
+                             1))))
+                 (ValDecl
+                     :bindings
+                     (((IdentifierPattern
+                         :qualifiers
+                         ()
+                         :identifier
+                         "62"
+                         :is_prefix_op
+                         false)
+                       . (IdentifierExpr
+                             :qualifiers
+                             ()
+                             :identifier
+                             "666F6F"
+                             :is_op
+                             false
+                             :is_prefix_op
+                             false))))
              )
              :exprs
              (

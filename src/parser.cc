@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <initializer_list>
 #include <memory>
+#include <stdexcept>
 #include <variant>
 
 #include "emil/ast.h"
@@ -28,6 +29,7 @@ namespace {
 
 using ExprPtr = std::unique_ptr<Expr>;
 using DeclPtr = std::unique_ptr<Decl>;
+using PatternPtr = std::unique_ptr<Pattern>;
 
 template <typename... Ts>
 struct overload : Ts... {
@@ -35,6 +37,14 @@ struct overload : Ts... {
 };
 template <typename... Ts>
 overload(Ts...) -> overload<Ts...>;
+
+#define NON_QUAL_OP_TYPES TokenType::ID_OP, TokenType::EQUALS
+#define QUAL_OP_TYPES TokenType::QUAL_ID_OP, NON_QUAL_OP_TYPES
+
+bool is_op(const Token* t, bool allow_qualified) {
+  return t && (t->type == TokenType::ID_OP || t->type == TokenType::EQUALS ||
+               (allow_qualified && t->type == TokenType::QUAL_ID_OP));
+}
 
 bool starts_decl(TokenType t) {
   switch (t) {
@@ -54,6 +64,10 @@ bool starts_decl(TokenType t) {
     default:
       return false;
   }
+}
+
+std::u8string&& move_string(Token& t) {
+  return std::move(get<std::u8string>(t.aux));
 }
 
 }  // namespace
@@ -170,6 +184,21 @@ ExprPtr Parser::match_expr(Token& first) { return match_atomic_expr(first); }
 
 DeclPtr Parser::match_decl(Token& first) { return match_val_decl(first); }
 
+PatternPtr Parser::match_pattern(Token& first) {
+  if (first.type == TokenType::ID_WORD) {
+    // match type annotation
+    if (match(TokenType::KW_AS)) {
+      return std::make_unique<LayeredPattern>(
+          first.location, move_string(first),
+          match_pattern(advance_safe("layered pattern")));
+    }
+  }
+  auto pattern = match_left_pattern(first);
+  // TODO: support infix precendence
+  // TODO: support type annotation
+  return pattern;
+}
+
 namespace {
 
 ExprPtr match_iliteral(Token& t) {
@@ -185,10 +214,6 @@ ExprPtr match_iliteral(Token& t) {
                           throw std::logic_error("Bad aux type for ILITERAL");
                         }},
                t.aux);
-}
-
-std::u8string&& move_string(Token& t) {
-  return std::move(get<std::u8string>(t.aux));
 }
 
 }  // namespace
@@ -299,9 +324,7 @@ std::unique_ptr<RecRowSubexpr> Parser::match_rec_row() {
 std::unique_ptr<Expr> Parser::match_paren_expr(const Location& location) {
   if (match(TokenType::RPAREN)) return std::make_unique<UnitExpr>(location);
   if (match(TokenType::KW_PREFIX)) {
-    Token& t =
-        consume({TokenType::QUAL_ID_OP, TokenType::ID_OP, TokenType::EQUALS},
-                "prefix operator");
+    Token& t = consume({QUAL_OP_TYPES}, "prefix operator");
     auto expr = match_id(t);
     expr->is_prefix_op = true;
     consume(TokenType::RPAREN, "prefix operator");
@@ -355,11 +378,14 @@ std::unique_ptr<ValDecl> Parser::match_val_decl(Token& first) {
   if (first.type != TokenType::KW_VAL)
     error(fmt::format("Expected 'val' but got token of type {}", first.type),
           first);
-  auto& id = consume(TokenType::ID_WORD, "val declaration");
-  consume(TokenType::EQUALS, "val declaration");
-  auto expr = match_expr(advance_safe("val declaration"));
-  return std::make_unique<ValDecl>(first.location, move_string(id),
-                                   std::move(expr));
+  std::vector<std::pair<PatternPtr, ExprPtr>> bindings;
+  do {
+    auto pattern = match_pattern(advance_safe("val declaration"));
+    consume(TokenType::EQUALS, "val declaration");
+    auto expr = match_expr(advance_safe("val declaration"));
+    bindings.emplace_back(std::move(pattern), std::move(expr));
+  } while (match(TokenType::KW_AND));
+  return std::make_unique<ValDecl>(first.location, std::move(bindings));
 }
 
 std::unique_ptr<LetExpr> Parser::match_let_expr(const Location& location) {
@@ -374,6 +400,198 @@ std::unique_ptr<LetExpr> Parser::match_let_expr(const Location& location) {
                .type == TokenType::SEMICOLON);
   return std::make_unique<LetExpr>(location, std::move(decls),
                                    std::move(exprs));
+}
+
+namespace {
+bool can_start_atomic_pattern(const Token* t) {
+  if (!t) return false;
+  switch (t->type) {
+    case TokenType::KW_UNDERSCORE:
+    case TokenType::STRING:
+    case TokenType::FSTRING:
+    case TokenType::ILITERAL:
+    case TokenType::ID_WORD:
+    case TokenType::QUAL_ID_WORD:
+    case TokenType::LBRACE:
+    case TokenType::LBRACKET:
+    case TokenType::LPAREN:
+      return true;
+
+    default:
+      return false;
+  }
+}
+
+std::unique_ptr<IdentifierPattern> make_id_pattern(
+    const Location& location, std::vector<std::u8string> qualifiers,
+    std::u8string id, bool is_prefix) {
+  return std::make_unique<IdentifierPattern>(location, std::move(qualifiers),
+                                             std::move(id), is_prefix);
+}
+
+std::unique_ptr<IdentifierPattern> make_id_pattern(Token& t,
+                                                   bool is_prefix = false) {
+  switch (t.type) {
+    case TokenType::QUAL_ID_OP:
+    case TokenType::QUAL_ID_WORD: {
+      auto& qid = get<QualifiedIdentifier>(t.aux);
+      return make_id_pattern(t.location, std::move(qid.qualifiers),
+                             std::move(qid.id),
+                             is_prefix && t.type == TokenType::QUAL_ID_OP);
+    }
+
+    case TokenType::ID_OP:
+    case TokenType::EQUALS:
+      return make_id_pattern(t.location, {}, move_string(t), is_prefix);
+
+    case TokenType::ID_WORD:
+      return make_id_pattern(t.location, {}, move_string(t), false);
+
+    default:
+      throw std::logic_error(
+          fmt::format("This token shouldn't make it here: {}.", t));
+  }
+}
+
+}  // namespace
+
+PatternPtr Parser::match_left_pattern(Token& first) {
+  auto maybe_id =
+      maybe_match_parenthesized_op_pattern(first, AllowQualified::YES);
+  if (!maybe_id && first.type == TokenType::QUAL_ID_WORD) {
+    maybe_id = make_id_pattern(first);
+  }
+  if (maybe_id) {
+    if (can_start_atomic_pattern(peek())) {
+      auto pattern = match_atomic_pattern(advance());
+      return std::make_unique<TyconPattern>(first.location, std::move(maybe_id),
+                                            std::move(pattern));
+    } else {
+      return maybe_id;
+    }
+  }
+  return match_atomic_pattern(first);
+}
+
+PatternPtr Parser::match_atomic_pattern(Token& first) {
+  auto maybe_op =
+      maybe_match_parenthesized_op_pattern(first, AllowQualified::NO);
+  if (maybe_op) return maybe_op;
+
+  switch (first.type) {
+    case TokenType::KW_UNDERSCORE:
+      return std::make_unique<WildcardPattern>(first.location);
+
+    case TokenType::ILITERAL:
+    case TokenType::STRING:
+    case TokenType::FSTRING:
+      return std::make_unique<LiteralPattern>(first.location,
+                                              match_atomic_expr(first));
+
+    case TokenType::ID_WORD:
+    case TokenType::QUAL_ID_WORD:
+      return make_id_pattern(first, false);
+
+    case TokenType::LBRACE:
+      return match_record_pattern(first.location);
+
+    case TokenType::LBRACKET:
+      return match_list_pattern(first.location);
+
+    case TokenType::LPAREN:
+      return match_paren_pattern(first.location);
+
+    default:
+      error("Unexpected token when parsing atomic pattern", first);
+  }
+}
+
+PatternPtr Parser::match_record_pattern(const Location& location) {
+  std::vector<std::unique_ptr<Subpattern>> rows;
+  if (!match(TokenType::RBRACE)) {
+    do {
+      if (match(TokenType::ELLIPSIS)) {
+        rows.push_back(std::make_unique<RecRowWildcardSubpattern>(
+            current_.back().location));
+      } else {
+        auto& label = consume(TokenType::ID_WORD, "record row pattern");
+        PatternPtr pattern;
+        if (match(TokenType::EQUALS)) {
+          pattern = match_pattern(advance_safe("record row pattern"));
+        } else if (match(TokenType::KW_AS)) {
+          pattern = std::make_unique<LayeredPattern>(
+              label.location, get<std::u8string>(label.aux),
+              match_pattern(advance_safe("record row layered pattern")));
+        } else {
+          pattern = make_id_pattern(label.location, {},
+                                    get<std::u8string>(label.aux), false);
+        }
+        rows.push_back(std::make_unique<RecRowSubpattern>(
+            label.location, move_string(label), std::move(pattern)));
+      }
+    } while (match(TokenType::COMMA));
+    consume(TokenType::RBRACE, "record pattern");
+  }
+  return std::make_unique<RecordPattern>(location, std::move(rows));
+}
+
+PatternPtr Parser::match_list_pattern(const Location& location) {
+  std::vector<std::unique_ptr<Pattern>> patterns;
+  if (!match(TokenType::RBRACKET)) {
+    do {
+      patterns.push_back(match_pattern(advance_safe("list pattern")));
+    } while (match(TokenType::COMMA));
+    consume(TokenType::RBRACKET, "list pattern");
+  }
+  return std::make_unique<ListPattern>(location, std::move(patterns));
+}
+
+PatternPtr Parser::match_paren_pattern(const Location& location) {
+  if (match(TokenType::RPAREN)) {
+    return std::make_unique<TuplePattern>(location, std::vector<PatternPtr>{});
+  }
+  if (match(TokenType::KW_PREFIX)) {
+    auto& id = consume({NON_QUAL_OP_TYPES}, "prefix op pattern");
+    consume(TokenType::RPAREN, "prefix op pattern");
+    return make_id_pattern(id, true);
+  }
+  if (is_op(peek(), false) && peek(1) && peek(1)->type == TokenType::RPAREN) {
+    advance();
+    auto& id = current_.back();
+    advance();
+    return make_id_pattern(id, false);
+  }
+  std::vector<PatternPtr> patterns;
+  do {
+    patterns.push_back(match_pattern(advance_safe("parenthesized pattern")));
+  } while (match(TokenType::COMMA));
+  consume(TokenType::RPAREN, "parenthesized pattern");
+  if (patterns.size() == 1) {
+    return std::move(patterns.front());
+  }
+  return std::make_unique<TuplePattern>(location, std::move(patterns));
+}
+
+std::unique_ptr<IdentifierPattern> Parser::maybe_match_parenthesized_op_pattern(
+    Token& first, AllowQualified allow_qualified) {
+  if (first.type != TokenType::LPAREN) return nullptr;
+
+  if (match(TokenType::KW_PREFIX)) {
+    Token& next = allow_qualified ? consume({QUAL_OP_TYPES}, "prefix op")
+                                  : consume({NON_QUAL_OP_TYPES}, "prefix op");
+    consume(TokenType::RPAREN, "prefix op");
+    return make_id_pattern(next, true);
+  }
+
+  if (is_op(peek(), allow_qualified) && peek(1) &&
+      peek(1)->type == TokenType::RPAREN) {
+    advance();
+    Token& id = current_.back();
+    advance();
+    return make_id_pattern(id, false);
+  }
+
+  return nullptr;
 }
 
 }  // namespace emil

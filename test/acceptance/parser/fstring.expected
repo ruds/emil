@@ -40,12 +40,17 @@
              ((LetExpr
                  :decls
                  ((ValDecl
-                     :identifier
-                     "61"
-                     :expr
-                     (BigintLiteralExpr
-                         :val
-                         1)))
+                     :bindings
+                     (((IdentifierPattern
+                         :qualifiers
+                         ()
+                         :identifier
+                         "61"
+                         :is_prefix_op
+                         false)
+                       . (BigintLiteralExpr
+                             :val
+                             1)))))
                  :exprs
                  ((IdentifierExpr
                      :qualifiers

@@ -452,16 +452,18 @@ value constructors from ~Cards~.
 
 #+begin_src bnf
   pattern -> word-id [':' ty] 'as' pattern
-           | left-pattern qual-op-id pattern [':' ty]
-           | left-pattern [':' ty]
+           | infix-pattern [':' ty]
 
-  left-pattern -> atomic-pattern
-                | qual-op-id atomic-pattern
-                | '(' ['prefix'] qual-op-id ')' atomic-pattern
+  infix-pattern -> left-pattern qual-op-id infix-pattern
+                 | qual-op-id infix-pattern
+                 | infix-pattern
+
+  left-pattern -> '(' ['prefix'] qual-op-id ')' atomic-pattern
                 | qual-word-id atomic-pattern
+                | atomic-pattern
 
   atomic-pattern -> '_'
-                  | literal
+                  | matchable-literal
                   | '(' ['prefix'] op-id ')'
                   | qual-word-id
                   | '{' [ rec-pat-row (',' rec-pat-row)* ] '}'
@@ -509,7 +511,9 @@ rewritten to ~id=id [: ty] [as pat]~.
 An identifier used as the "function" in a compound expression must be
 bound as a type constructor with the appropriate number of arguments.
 Then each of its arguments is matched as a pattern against the
-arguments of a value constructed by that type constructor.
+arguments of a value constructed by that type constructor. Type
+constructors of operator type are applied using precedence as in
+expressions.
 
 Patterns can be annotated with type expressions. This may be necessary
 to resolve ambiguities that prevent type inference.
@@ -561,11 +565,13 @@ parses.
                | 'let' decl 'in' expr (';' expr)* 'end'
                | '(' expr ')'
 
-  literal -> iliteral
+  literal -> matchable-literal
            | fpliteral
-           | string
-           | char
-           | fstring-literal
+
+  matchable-literal -> iliteral
+                     | string
+                     | char
+                     | fstring-literal
 
   fstring-literal -> fstring-start (fstring-subs fstring-cont)*
 
@@ -625,10 +631,10 @@ the value of the last expression, and all but the last must be of type
 
   val-decl -> 'val' [type-id-seq] val-bind ('and' val-bind)*
 
-  val-bind -> ['rec'] pattern '=' expr
+  val-bind -> pattern '=' expr
+            | 'rec' pattern '=' fn-expr
 #+end_src
 
-**** TODO: val-decl and val-bind are simplified considerably
 
 ** Modules
 

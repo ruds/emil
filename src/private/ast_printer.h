@@ -18,6 +18,8 @@
 
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 #include "emil/ast.h"
 
@@ -35,6 +37,18 @@ void print_ast(std::string& out, int indent, char32_t arg);
 template <typename T>
 void print_ast(std::string& out, int indent, const std::unique_ptr<T>& arg) {
   print_ast(*arg, out, indent);
+}
+
+template <typename K, typename V>
+void print_ast(std::string& out, int indent, const std::pair<K, V>& arg) {
+  std::string joiner(indent + 2, ' ');
+  joiner = "\n" + joiner;
+  out += '(';
+  print_ast(out, indent, arg.first);
+  out.append(joiner);
+  out.append(". ");
+  print_ast(out, indent + 4, arg.second);
+  out += ')';
 }
 
 template <typename T>

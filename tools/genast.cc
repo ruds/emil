@@ -48,9 +48,10 @@ struct AstNodeSpec {
    *
    * Type substitutions:
    * 1. str -> std::u8string
-   * 2. [ELTYPE] -> std::vector<ELTYPE>
-   * 3. PTYPE* -> std::unique_ptr<PTYPE>
-   * 4. OPTTYPE? -> std::optional<OPTYPE>
+   * 2. [KTYPE->VTYPE] -> std::vector<std::pair<KTYPE, VTYPE>>
+   * 3. [ELTYPE] -> std::vector<ELTYPE>
+   * 4. PTYPE* -> std::unique_ptr<PTYPE>
+   * 5. OPTTYPE? -> std::optional<OPTYPE>
    *
    * If NAME is =CNAME, then the field CNAME will be copied during
    * construction. Otherwise, the constructor will take an argument of
@@ -66,6 +67,25 @@ struct Category {
 };
 
 const std::vector<Category> CATEGORIES{
+    {"Subpattern",
+     "SUBPATTERN",
+     {
+         {"RecRowWildcard", {}},
+         {"RecRow", {"str label", "Pattern* pattern"}},
+     }},
+    {"Pattern",
+     "PATTERN",
+     {
+         {"Wildcard", {}},
+         {"Literal", {"Expr* val"}},
+         {"Identifier",
+          {"[str] qualifiers", "str identifier", "bool is_prefix_op"}},
+         {"Record", {"[Subpattern*] rows"}},
+         {"List", {"[Pattern*] patterns"}},
+         {"Tuple", {"[Pattern*] patterns"}},
+         {"Tycon", {"IdentifierPattern* constructor", "Pattern* arg"}},
+         {"Layered", {"str identifier", "Pattern* pattern"}},
+     }},
     {"Subexpr",
      "SUBEXPR",
      {
@@ -93,7 +113,7 @@ const std::vector<Category> CATEGORIES{
     {"Decl",
      "DECL",
      {
-         {"Val", {"str identifier", "Expr* expr"}},
+         {"Val", {"[Pattern*->Expr*] bindings"}},
      }},
     {"TopDecl",
      "TOPDECL",
@@ -129,10 +149,11 @@ const std::string HEADER_TEMPLATE = R"(%COPYRIGHT%
 
 #include <gmpxx.h>
 
+#include <map>
 #include <memory>
 #include <string>
-#include <vector>
 #include <utility>
+#include <vector>
 
 #include "emil/token.h"
 
@@ -281,12 +302,14 @@ It populate_template(const std::string& templ, const Dict& dict, It out) {
 }
 
 const std::regex STR_RE(R"(\bstr\b)");
+const std::regex MAP_RE(R"(\[(.*)->(.*)\])");
 const std::regex VEC_RE(R"(\[(.*)\])");
 const std::regex PTR_RE(R"((\w*)\*)");
 const std::regex OPT_RE(R"((\w*)\?)");
 
 std::string transform_type(std::string t) {
   t = std::regex_replace(t, STR_RE, "std::u8string");
+  t = std::regex_replace(t, MAP_RE, R"(std::vector<std::pair<$1, $2>>)");
   t = std::regex_replace(t, VEC_RE, R"(std::vector<$1>)");
   t = std::regex_replace(t, PTR_RE, R"(std::unique_ptr<$1>)");
   return std::regex_replace(t, OPT_RE, R"(std::optional<$1>)");

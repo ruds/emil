@@ -74,6 +74,8 @@ class Parser {
 
   std::unique_ptr<Decl> match_decl(Token& first);
 
+  std::unique_ptr<Pattern> match_pattern(Token& first);
+
   std::unique_ptr<Expr> match_atomic_expr(Token& first);
 
   std::unique_ptr<FstringLiteralExpr> match_fstring(Token& first);
@@ -91,6 +93,21 @@ class Parser {
   std::unique_ptr<LetExpr> match_let_expr(const Location& location);
 
   std::unique_ptr<ValDecl> match_val_decl(Token& first);
+
+  std::unique_ptr<Pattern> match_left_pattern(Token& first);
+
+  std::unique_ptr<Pattern> match_atomic_pattern(Token& first);
+
+  std::unique_ptr<Pattern> match_record_pattern(const Location& location);
+
+  std::unique_ptr<Pattern> match_list_pattern(const Location& location);
+
+  std::unique_ptr<Pattern> match_paren_pattern(const Location& location);
+
+  enum AllowQualified : bool { NO = false, YES = true };
+
+  std::unique_ptr<IdentifierPattern> maybe_match_parenthesized_op_pattern(
+      Token& first, AllowQualified allow_qualified);
 };
 
 }  // namespace emil

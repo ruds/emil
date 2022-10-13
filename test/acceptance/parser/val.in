@@ -1,6 +1,18 @@
 val foo = bar;
 val foo = bar.baz;
-val;
+val foo as (num, str) = (1, "bar");
+val (num, _) = (1, "bar");
+val _ = foo;
+val (++) = (+);
+val (prefix +) = fn x => x; (* TODO -- make non-error when fn implemented *)
+val foo.bar.baz = t; (* parses OK - not a very useful assignment *)
+val { foo, bar as (baz, quux), waldo = 2, ... } = xyzzy;
+val () = foo;
+val (foo, _, (++), bar) = baz;
+val [] = foo;
+val [foo as (_, bar), baz, {quux, waldo = (xyzzy, plugh)}, _] = grault;
+(* add parenthesized pattern, operator precedence tests *)
+val (_, 2.3) = foo; (* error - fp literals not allowed *)
+val;;
 val foo;
 val foo =;;
-val quux.foo = bar;

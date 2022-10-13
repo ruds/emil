@@ -89,7 +89,8 @@ namespace emil {
   DECLARE(RBRACE, X)                \
   DECLARE(COMMA, X)                 \
   DECLARE(SEMICOLON, X)             \
-  DECLARE(EQUALS, X)
+  DECLARE(EQUALS, X)                \
+  DECLARE(ELLIPSIS, X)
 
 ENUM_WITH_TEXT(TokenType, TOKEN_TYPE_LIST)
 

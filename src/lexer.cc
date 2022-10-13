@@ -375,6 +375,9 @@ Token Lexer::next_token() {
       if (is_decimal_digit(peek())) {
         error("Floating point constants must start with a digit.");
       }
+      if (match('.') && match('.')) {
+        return make_token(TokenType::ELLIPSIS);
+      }
       error("Stray '.'.");
   }
 
