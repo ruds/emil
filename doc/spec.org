@@ -229,15 +229,17 @@ not be used as identifiers.
   :    _    |    =>    ->    #
 #+end_example
 
-The equals sign ~=~ is used in the grammar, but may also be used as an
-identifier (and is in fact defined in the default prelude).
+The equals sign ~=~ and asterisk ~*~ are used in the grammar, but may
+also be used as an identifier (and are in fact defined in the default
+prelude).
 
 ** Comments
 
 Comments begin with ~(*~ that is not in a string literal and end with
-~)*~. They may be nested, so the number of ~)*~ must match the number
-of ~(*~ in a well-formed program. Comments are treated as whitespace
-for the purpose of lexical analysis.
+~)*~, except that ~(*)~ refers to the infix operator ~*~ and is not a
+comment. They may be nested, so the number of ~)*~ must match the
+number of ~(*~ in a well-formed program. Comments are treated as
+whitespace for the purpose of lexical analysis.
 
 ** Other syntactic elements
 

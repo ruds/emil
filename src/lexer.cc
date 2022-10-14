@@ -220,6 +220,7 @@ constexpr std::u8string_view TO_EXPR = u8"=>";
 constexpr std::u8string_view TO_TYPE = u8"->";
 constexpr std::u8string_view HASH = u8"#";
 constexpr std::u8string_view EQUALS = u8"=";
+constexpr std::u8string_view ASTERISK = u8"*";
 
 void match_keyword_in_id_op(Token& token) {
 #define REPLACE(kw)              \
@@ -249,6 +250,10 @@ void match_keyword_in_id_op(Token& token) {
     case '#':
       REPLACE(HASH);
       return;
+
+    case '*':
+      REPLACE(ASTERISK);
+      return;
   }
 #undef REPLACE
 }
@@ -259,6 +264,8 @@ Lexer::Lexer(std::string_view filename, std::unique_ptr<Source<>> source)
     : filename_(filename), source_(std::move(source)) {}
 
 Token Lexer::next_token() {
+  const bool prev_token_was_lparen = prev_token_was_lparen_;
+  prev_token_was_lparen_ = false;
   if (continuing_format_string()) {
     current_token_.clear();
     const auto& s = format_string_state_.top();
@@ -336,14 +343,17 @@ Token Lexer::next_token() {
       break;
 
     case '*':
-      if (peek() == ')') error("Comment end outside of comment.");
+      if (peek() == ')' && !prev_token_was_lparen)
+        error("Comment end outside of comment.");
       break;
 
     case '(':
-      if (match('*')) {
+      if (peek() == '*' && peek(1) != ')') {
+        advance();
         skip_comment();
         return next_token();
       }
+      prev_token_was_lparen_ = true;
       return make_token(TokenType::LPAREN);
 
     case ')':
@@ -848,6 +858,7 @@ Token make_qualified_id(std::u32string text, const Location& location,
 
     case TokenType::ID_OP:
     case TokenType::EQUALS:
+    case TokenType::ASTERISK:
       type = TokenType::QUAL_ID_OP;
       break;
 

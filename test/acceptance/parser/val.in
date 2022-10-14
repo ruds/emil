@@ -8,7 +8,7 @@ val (prefix +) = fn x => x; (* TODO -- make non-error when fn implemented *)
 val foo.bar.baz = t; (* parses OK - not a very useful assignment *)
 val { foo, bar as (baz, quux), waldo = 2, ... } = xyzzy;
 val () = foo;
-val (foo, _, (++), bar) = baz;
+val (foo, _, (++), (=), (*), bar) = baz;
 val [] = foo;
 val [foo as (_, bar), baz, {quux, waldo = (xyzzy, plugh)}, _] = grault;
 val Foo bar = baz;

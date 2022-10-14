@@ -288,6 +288,24 @@
                          :qualifiers
                          ()
                          :identifier
+                         "3D"
+                         :is_op
+                         true
+                         :is_prefix_op
+                         false)
+                     (IdentifierPattern
+                         :qualifiers
+                         ()
+                         :identifier
+                         "2A"
+                         :is_op
+                         true
+                         :is_prefix_op
+                         false)
+                     (IdentifierPattern
+                         :qualifiers
+                         ()
+                         :identifier
                          "626172"
                          :is_op
                          false

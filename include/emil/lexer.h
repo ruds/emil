@@ -87,6 +87,7 @@ class Lexer {
   int start_line_ = 1;
   int next_line_ = 1;
   std::stack<FormatStringState> format_string_state_;
+  bool prev_token_was_lparen_ = false;
 
   Token make_token(TokenType type, token_auxiliary_t aux = {}) const;
   [[noreturn]] void error(std::string msg);

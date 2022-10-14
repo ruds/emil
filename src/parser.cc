@@ -38,11 +38,13 @@ struct overload : Ts... {
 template <typename... Ts>
 overload(Ts...) -> overload<Ts...>;
 
-#define NON_QUAL_OP_TYPES TokenType::ID_OP, TokenType::EQUALS
+#define NON_QUAL_OP_TYPES \
+  TokenType::ID_OP, TokenType::EQUALS, TokenType::ASTERISK
 #define QUAL_OP_TYPES TokenType::QUAL_ID_OP, NON_QUAL_OP_TYPES
 
 bool is_op(const Token* t, bool allow_qualified) {
   return t && (t->type == TokenType::ID_OP || t->type == TokenType::EQUALS ||
+               t->type == TokenType::ASTERISK ||
                (allow_qualified && t->type == TokenType::QUAL_ID_OP));
 }
 
@@ -284,6 +286,7 @@ std::unique_ptr<IdentifierExpr> Parser::match_id(Token& t) {
     case TokenType::ID_WORD:
     case TokenType::ID_OP:
     case TokenType::EQUALS:
+    case TokenType::ASTERISK:
       return std::make_unique<IdentifierExpr>(
           t.location, std::vector<std::u8string>{}, move_string(t),
           t.type != TokenType::ID_WORD);
@@ -331,9 +334,7 @@ std::unique_ptr<Expr> Parser::match_paren_expr(const Location& location) {
     return expr;
   }
   Token& first = advance_safe("parenthesized expression");
-  if ((first.type == TokenType::QUAL_ID_OP || first.type == TokenType::ID_OP ||
-       first.type == TokenType::EQUALS) &&
-      match(TokenType::RPAREN)) {
+  if (is_op(&first, true) && match(TokenType::RPAREN)) {
     return match_id(first);
   }
   std::vector<std::unique_ptr<Expr>> exprs;
@@ -442,6 +443,7 @@ std::unique_ptr<IdentifierPattern> make_id_pattern(Token& t,
 
     case TokenType::ID_OP:
     case TokenType::EQUALS:
+    case TokenType::ASTERISK:
       return make_id_pattern(t.location, {}, move_string(t), true, is_prefix);
 
     case TokenType::ID_WORD:
