@@ -269,15 +269,18 @@ an ambiguity or for documentation purposes.
 **** Type Expressions
 
 #+begin_src bnf
-  ty -> type-id
-      | { [rt-row (',' rt-row)*] }
-      | ty-seq qual-word-id
-      | ty ('*' ty)+
-      | ty '->' ty
-      | '(' ty ')'
-  rt-row -> word-id ':' ty
-  ty-seq -> [ty]
-         | '(' ty (',' ty)+ ')'
+  type -> tuple-type ['->' type]
+
+  tuple-type -> atomic-type ('*' atomic-type)*
+
+  atomic-type -> type-id
+               | { [rt-row (',' rt-row)*] }
+               | [type-seq] qual-word-id
+               | '(' type ')'
+
+  rt-row -> word-id ':' type
+  type-seq -> type
+            | '(' type (',' type)+ ')'
   type-id-seq -> type-id
                | '(' type-id (',' type-id)+ ')'
 #+end_src
@@ -372,15 +375,15 @@ in a record value are evaluated in the order they appear.
   dtype-alias-decl -> 'datatype' word-id '=' 'datatype' qual-word-id
 
   type-bind -> one-type-bind ('and' one-type-bind)*
-  one-type-bind -> [type-id-seq] word-id '=' ty
+  one-type-bind -> [type-id-seq] word-id '=' type
 
   dtype-bind -> one-dtype-bind ('and' one-dtype-bind)*
   one-dtype-bind -> [type-id-seq] word-id '=' con-bind
 
   con-bind -> one-con-bind ('|' one-con-bind)*
-  one-con-bind -> word-id ['of' ty]
-                | op-id ty
-                | ty op-id ty
+  one-con-bind -> word-id ['of' type]
+                | op-id type
+                | type op-id type
 #+end_src
 
 Types may be defined by users in three ways.
@@ -453,8 +456,8 @@ value constructors from ~Cards~.
 *** Match Patterns
 
 #+begin_src bnf
-  pattern -> word-id [':' ty] 'as' pattern
-           | infix-pattern [':' ty]
+  pattern -> word-id [':' type] 'as' pattern
+           | infix-pattern [':' type]
 
   infix-pattern -> left-pattern qual-op-id infix-pattern
                  | qual-op-id infix-pattern
@@ -475,7 +478,7 @@ value constructors from ~Cards~.
 
   rec-pat-row -> '...'
                | word-id '=' pattern
-               | word-id [':' ty] ['as' pattern]
+               | word-id [':' type] ['as' pattern]
 #+end_src
 
 Match patterns are used in several places in the language to determine
@@ -505,8 +508,8 @@ with the appropriate parts of values bound to variables in the
 pattern. For example, if the pattern ~{a=(foo, 1, _), b=[1, b]}~ were
 matched against the value ~{a=("bar", 1, 23), b=[1, 2]}~, the match
 would succeed, ~foo~ would be bound to ~"bar"~, and ~b~ would be bound
-to ~2~. A record row pattern of the form ~id [: ty] [as pat]~ is
-rewritten to ~id=id [: ty] [as pat]~.
+to ~2~. A record row pattern of the form ~id [: type] [as pat]~ is
+rewritten to ~id=id [: type] [as pat]~.
 
 **** Compound Patterns
 
@@ -529,7 +532,7 @@ the value ~[1, 2, 3, 4]~ results in ~foo~ being bound to ~[1, 2, 3,
 *** Expressions
 
 #+begin_src bnf
-  expr -> infix-expr [: ty]
+  expr -> infix-expr [: type]
         | handle-expr
         | raise-expr
         | while-expr

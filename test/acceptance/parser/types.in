@@ -1,0 +1,13 @@
+foo : 'a;
+foo : 'a list;
+foo : 'a list list;
+foo : bigint;
+foo : (string, 'a list) Dict.dict;
+foo : ('a list) list;
+foo : ('a list);
+foo : ((string, ('a list)) Dict.dict);
+foo : { bar : (string, 'a list) Dict.dict, baz : bigint, quux : 'a -> string };
+foo : bigint * string;
+foo : bigint -> string;
+foo : bigint * 'a list * (bigint * string) * float;
+foo : 'a * 'b -> 'c * bigint * string * (bigint -> float) -> bigint;

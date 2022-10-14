@@ -18,6 +18,7 @@
 #include <initializer_list>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <variant>
 
 #include "emil/ast.h"
@@ -30,6 +31,7 @@ namespace {
 using ExprPtr = std::unique_ptr<Expr>;
 using DeclPtr = std::unique_ptr<Decl>;
 using PatternPtr = std::unique_ptr<Pattern>;
+using TypePtr = std::unique_ptr<Type>;
 
 template <typename... Ts>
 struct overload : Ts... {
@@ -182,7 +184,15 @@ void Parser::synchronize() {
   }
 }
 
-ExprPtr Parser::match_expr(Token& first) { return match_atomic_expr(first); }
+ExprPtr Parser::match_expr(Token& first) {
+  auto expr = match_atomic_expr(first);
+  if (match(TokenType::COLON)) {
+    auto type = match_type(advance_safe("typed expression"));
+    return std::make_unique<TypedExpr>(first.location, std::move(expr),
+                                       std::move(type));
+  }
+  return expr;
+}
 
 DeclPtr Parser::match_decl(Token& first) { return match_val_decl(first); }
 
@@ -199,6 +209,16 @@ PatternPtr Parser::match_pattern(Token& first) {
   // TODO: support infix precendence
   // TODO: support type annotation
   return pattern;
+}
+
+TypePtr Parser::match_type(Token& first) {
+  auto t = match_tuple_type(first);
+  if (match(TokenType::TO_TYPE)) {
+    auto ret = match_type(advance_safe("function type"));
+    return std::make_unique<FuncType>(first.location, std::move(t),
+                                      std::move(ret));
+  }
+  return t;
 }
 
 namespace {
@@ -597,6 +617,100 @@ std::unique_ptr<IdentifierPattern> Parser::maybe_match_parenthesized_op_pattern(
   }
 
   return nullptr;
+}
+
+TypePtr Parser::match_tuple_type(Token& first) {
+  std::vector<TypePtr> types;
+  types.push_back(match_atomic_type(first));
+  while (match(TokenType::ASTERISK)) {
+    types.push_back(match_atomic_type(advance_safe("tuple type expression")));
+  }
+  if (types.size() == 1) {
+    return std::move(types.front());
+  }
+  return std::make_unique<TupleType>(first.location, std::move(types));
+}
+
+namespace {
+
+std::unique_ptr<TyconType> make_tycon_type(const Location& location, Token& t,
+                                           std::vector<TypePtr> types = {}) {
+  if (t.type == TokenType::QUAL_ID_WORD) {
+    auto& qid = get<QualifiedIdentifier>(t.aux);
+    return std::make_unique<TyconType>(location, std::move(qid.qualifiers),
+                                       std::move(qid.id), std::move(types));
+  } else {
+    return std::make_unique<TyconType>(location, std::vector<std::u8string>{},
+                                       move_string(t), std::move(types));
+  }
+}
+
+std::unique_ptr<TyconType> make_tycon_type(const Location& location, Token& t,
+                                           TypePtr param) {
+  std::vector<TypePtr> types;
+  types.push_back(std::move(param));
+  return make_tycon_type(location, t, std::move(types));
+}
+
+}  // namespace
+
+TypePtr Parser::match_atomic_type(Token& first) {
+  TypePtr type;
+  switch (first.type) {
+    case TokenType::ID_TYPE:
+      type = std::make_unique<VarType>(first.location, move_string(first));
+      break;
+
+    case TokenType::LBRACE:
+      type = match_record_type(first.location);
+      break;
+
+    case TokenType::LPAREN:
+      type = match_paren_type(first.location);
+      break;
+
+    case TokenType::QUAL_ID_WORD:
+    case TokenType::ID_WORD:
+      type = make_tycon_type(first.location, first);
+      break;
+
+    default:
+      error("Unexpected token in type expression", first);
+  }
+  while (match({TokenType::QUAL_ID_WORD, TokenType::ID_WORD})) {
+    type = make_tycon_type(first.location, current_.back(), std::move(type));
+  }
+  return type;
+}
+
+TypePtr Parser::match_record_type(const Location& location) {
+  std::vector<std::pair<std::u8string, TypePtr>> rows;
+  if (!match(TokenType::RBRACE)) {
+    do {
+      auto id = consume(TokenType::ID_WORD, "record row type expression");
+      consume(TokenType::COLON, "record row type expression");
+      auto type = match_type(advance_safe("record row type expression"));
+      rows.emplace_back(move_string(id), std::move(type));
+    } while (match(TokenType::COMMA));
+    consume(TokenType::RBRACE, "record type expression");
+  }
+  return std::make_unique<RecordType>(location, std::move(rows));
+}
+
+TypePtr Parser::match_paren_type(const Location& location) {
+  std::vector<TypePtr> types;
+  do {
+    types.push_back(match_type(advance_safe("parenthesized type expression")));
+  } while (match(TokenType::COMMA));
+  consume(TokenType::RPAREN, types.size() == 1 ? "parenthesized type expression"
+                                               : "type sequence");
+  if (types.size() == 1) {
+    return std::move(types.front());
+  }
+  return make_tycon_type(location,
+                         consume({TokenType::ID_WORD, TokenType::QUAL_ID_WORD},
+                                 "type constructor expression"),
+                         std::move(types));
 }
 
 }  // namespace emil

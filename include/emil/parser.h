@@ -76,6 +76,8 @@ class Parser {
 
   std::unique_ptr<Pattern> match_pattern(Token& first);
 
+  std::unique_ptr<Type> match_type(Token& first);
+
   std::unique_ptr<Expr> match_atomic_expr(Token& first);
 
   std::unique_ptr<FstringLiteralExpr> match_fstring(Token& first);
@@ -108,6 +110,14 @@ class Parser {
 
   std::unique_ptr<IdentifierPattern> maybe_match_parenthesized_op_pattern(
       Token& first, AllowQualified allow_qualified);
+
+  std::unique_ptr<Type> match_tuple_type(Token& first);
+
+  std::unique_ptr<Type> match_atomic_type(Token& first);
+
+  std::unique_ptr<Type> match_record_type(const Location& location);
+
+  std::unique_ptr<Type> match_paren_type(const Location& location);
 };
 
 }  // namespace emil

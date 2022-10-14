@@ -67,6 +67,15 @@ struct Category {
 };
 
 const std::vector<Category> CATEGORIES{
+    {"Type",
+     "TYPE",
+     {
+         {"Var", {"str id"}},
+         {"Record", {"[str->Type*] rows"}},
+         {"Tycon", {"[str] qualifiers", "str identifier", "[Type*] types"}},
+         {"Tuple", {"[Type*] types"}},
+         {"Func", {"Type* param", "Type* ret"}},
+     }},
     {"Subpattern",
      "SUBPATTERN",
      {
@@ -110,6 +119,7 @@ const std::vector<Category> CATEGORIES{
          {"Sequenced", {"[Expr*] exprs"}},
          {"List", {"[Expr*] exprs"}},
          {"Let", {"[Decl*] decls", "[Expr*] exprs"}},
+         {"Typed", {"Expr* expr", "Type* type"}},
      }},
     {"Decl",
      "DECL",
