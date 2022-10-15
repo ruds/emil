@@ -146,7 +146,39 @@
                      true
                      :is_prefix_op
                      false)))))
-0007 ERROR
+0007 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             (((IdentifierPattern
+                 :qualifiers
+                 ()
+                 :identifier
+                 "2B"
+                 :is_op
+                 true
+                 :is_prefix_op
+                 true)
+               . (FnExpr
+                     :cases
+                     (((IdentifierPattern
+                         :qualifiers
+                         ()
+                         :identifier
+                         "78"
+                         :is_op
+                         false
+                         :is_prefix_op
+                         false)
+                       . (IdentifierExpr
+                             :qualifiers
+                             ()
+                             :identifier
+                             "78"
+                             :is_op
+                             false
+                             :is_prefix_op
+                             false))))))))
 0008 (DeclTopDecl
          :decl
          (ValDecl

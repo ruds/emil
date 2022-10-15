@@ -482,9 +482,10 @@ value constructors from ~Cards~.
 #+end_src
 
 Match patterns are used in several places in the language to determine
-if a value matches a pattern, and if so to (optionally) bind variables
-to various parts of the value. Match patterns are used in value
-bindings, exception handlers, function values, and case expressions.
+if a value matches a pattern, and if so to (optionally) bind
+identifiers to various parts of the value. Match patterns are used in
+value bindings, exception handlers, function values, and case
+expressions. No pattern may bind the same identifier multiple times.
 
 **** Atomic Patterns
 
@@ -509,7 +510,7 @@ pattern. For example, if the pattern ~{a=(foo, 1, _), b=[1, b]}~ were
 matched against the value ~{a=("bar", 1, 23), b=[1, 2]}~, the match
 would succeed, ~foo~ would be bound to ~"bar"~, and ~b~ would be bound
 to ~2~. A record row pattern of the form ~id [: type] [as pat]~ is
-rewritten to ~id=id [: type] [as pat]~.
+syntactic sugar for ~id=id [: type] [as pat]~.
 
 **** Compound Patterns
 
@@ -628,6 +629,63 @@ the value of the last expression, and all but the last must be of type
   match-seq -> match ('|' match)*
   match -> pattern "=>" expr
 #+end_src
+
+Function expression and case expressions both use pattern matching to
+evaluate different expressions based on the value of an input
+expression.
+
+A case expression like ~case e of p1 => r1 | p2 => r2 | (*...*) pn =>
+rn~ evaluates ~e~ and tries to match its result against each pattern
+~p1~, ~p2~, ..., ~pn~ in turn, until it finds a pattern it matches
+against successfully. It then evaluates the corresponding result
+expression, using the bindings (if any) created by the match against
+the successful pattern.
+
+For example, in the following code snippet, ~s~ is matched against the
+various types of shapes in order to compute its area.
+
+#+begin_src sml
+  datatype shape = Circle of float
+                 | Rectangle of float * float
+                 | Triangle of float * float
+
+  (* Something binds `s` to a `shape` *)
+
+  val area = case s of
+                 Circle r => Math.pi * r * r
+               | Rectangle (l, w) => l * w
+               | Triangle (b, h) => 0.5 * b * h
+#+end_src
+
+Function expressions define functions that work similarly. When the
+function is called, the value passed to it is matched against each of
+the patterns in turn, just as in a case expression. For example,
+instead of computing the area of a single shape as in the above
+snippet, we can instead define a function to compute the area of any
+shape:
+
+#+begin_src sml
+  val computeArea =
+   fn Circle r => Math.pi * r * r
+    | Rectangle (l, w) => l * w
+    | Triangle (b, h) => 0.5 * b * h
+#+end_src
+
+The types of the result expressions must unify to a type; this is the
+type of the case expression or return type of the function expression.
+The patterns must also unify to a type; in function expressions this
+is the parameter type, and in case expressions this must also unify
+with the type of the expression matched against.
+
+The patterns must not be redundant: each pattern must match some value
+not matched by a prior expression. Redundant patterns will result in
+an error. The patterns should be complete: any value of the
+appropriate type should match some pattern. Incomplete pattern matches
+will result in a warning, and will be compiled with an implicit final
+pattern: ~_ => raise Match~.
+
+Identifiers bound in a pattern are scoped to the result expression
+corresponding to that pattern.
 
 *** Declarations
 

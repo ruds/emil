@@ -78,7 +78,13 @@ class Parser {
 
   std::unique_ptr<Type> match_type(Token& first);
 
+  std::unique_ptr<Expr> match_left_expr(Token& first);
+
   std::unique_ptr<Expr> match_atomic_expr(Token& first);
+
+  std::unique_ptr<CaseExpr> match_case_expr(const Location& location);
+
+  std::unique_ptr<FnExpr> match_fn_expr(const Location& location);
 
   std::unique_ptr<FstringLiteralExpr> match_fstring(Token& first);
 
@@ -93,6 +99,9 @@ class Parser {
   std::unique_ptr<ListExpr> match_list_expr(const Location& location);
 
   std::unique_ptr<LetExpr> match_let_expr(const Location& location);
+
+  std::vector<std::pair<std::unique_ptr<Pattern>, std::unique_ptr<Expr>>>
+  match_cases();
 
   std::unique_ptr<ValDecl> match_val_decl(Token& first);
 

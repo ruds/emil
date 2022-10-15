@@ -44,6 +44,8 @@ overload(Ts...) -> overload<Ts...>;
   TokenType::ID_OP, TokenType::EQUALS, TokenType::ASTERISK
 #define QUAL_OP_TYPES TokenType::QUAL_ID_OP, NON_QUAL_OP_TYPES
 
+bool starts_atomic_expr(TokenType t);
+
 bool is_op(const Token* t, bool allow_qualified) {
   return t && (t->type == TokenType::ID_OP || t->type == TokenType::EQUALS ||
                t->type == TokenType::ASTERISK ||
@@ -185,7 +187,7 @@ void Parser::synchronize() {
 }
 
 ExprPtr Parser::match_expr(Token& first) {
-  auto expr = match_atomic_expr(first);
+  auto expr = match_left_expr(first);
   if (match(TokenType::COLON)) {
     auto type = match_type(advance_safe("typed expression"));
     return std::make_unique<TypedExpr>(first.location, std::move(expr),
@@ -221,6 +223,32 @@ TypePtr Parser::match_type(Token& first) {
   return t;
 }
 
+ExprPtr Parser::match_left_expr(Token& first) {
+  switch (first.type) {
+    case TokenType::KW_IF:
+      error("Not implemented", first);
+
+    case TokenType::KW_CASE:
+      return match_case_expr(first.location);
+
+    case TokenType::KW_FN:
+      return match_fn_expr(first.location);
+
+    default: {
+      std::vector<ExprPtr> exprs;
+      exprs.push_back(match_atomic_expr(first));
+      while (peek() && starts_atomic_expr(peek()->type)) {
+        exprs.push_back(match_atomic_expr(advance()));
+      }
+      if (exprs.size() == 1) {
+        return std::move(exprs.front());
+      }
+      return std::make_unique<ApplicationExpr>(first.location,
+                                               std::move(exprs));
+    }
+  }
+}
+
 namespace {
 
 ExprPtr match_iliteral(Token& t) {
@@ -236,6 +264,15 @@ ExprPtr match_iliteral(Token& t) {
                           throw std::logic_error("Bad aux type for ILITERAL");
                         }},
                t.aux);
+}
+
+bool starts_atomic_expr(TokenType t) {
+  return (t == TokenType::ILITERAL || t == TokenType::FPLITERAL ||
+          t == TokenType::STRING || t == TokenType::CHAR ||
+          t == TokenType::FSTRING || t == TokenType::ID_WORD ||
+          t == TokenType::QUAL_ID_WORD || t == TokenType::LBRACE ||
+          t == TokenType::LPAREN || t == TokenType::LBRACKET ||
+          t == TokenType::KW_LET);
 }
 
 }  // namespace
@@ -279,6 +316,16 @@ ExprPtr Parser::match_atomic_expr(Token& first) {
     default:
       error(fmt::format("Expression may not start with {}", first.type), first);
   }
+}
+
+std::unique_ptr<CaseExpr> Parser::match_case_expr(const Location& location) {
+  auto expr = match_expr(advance_safe("case expression"));
+  consume(TokenType::KW_OF, "case expression");
+  return std::make_unique<CaseExpr>(location, std::move(expr), match_cases());
+}
+
+std::unique_ptr<FnExpr> Parser::match_fn_expr(const Location& location) {
+  return std::make_unique<FnExpr>(location, match_cases());
 }
 
 std::unique_ptr<FstringLiteralExpr> Parser::match_fstring(Token& first) {
@@ -392,6 +439,17 @@ std::unique_ptr<ListExpr> Parser::match_list_expr(const Location& location) {
     } while (consume({TokenType::RBRACKET, TokenType::COMMA}, "list expression")
                  .type != TokenType::RBRACKET);
   return std::make_unique<ListExpr>(location, std::move(exprs));
+}
+
+std::vector<std::pair<PatternPtr, ExprPtr>> Parser::match_cases() {
+  std::vector<std::pair<PatternPtr, ExprPtr>> cases;
+  do {
+    auto pattern = match_pattern(advance_safe("match expression"));
+    consume(TokenType::TO_EXPR, "match expression");
+    auto expr = match_expr(advance_safe("match expression"));
+    cases.emplace_back(std::move(pattern), std::move(expr));
+  } while (match(TokenType::PIPE));
+  return cases;
 }
 
 std::unique_ptr<ValDecl> Parser::match_val_decl(Token& first) {

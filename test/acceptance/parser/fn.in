@@ -1,0 +1,4 @@
+fn x => x;
+fn (0, bar) => bar
+ | (1, bar) => (-) (bar, 1)
+ | (_, bar) => Math.pow bar 2;
