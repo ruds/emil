@@ -36,8 +36,10 @@ add_custom_command(
   DEPENDS genast
 )
 
-add_library(parser STATIC parser.cc ast_printer.cc "${CMAKE_CURRENT_BINARY_DIR}/ast.cc")
+add_library(parser STATIC
+  parser.cc ast_printer.cc "${CMAKE_CURRENT_BINARY_DIR}/ast.cc")
+add_emil_options(parser)
 target_link_libraries(parser PUBLIC lexer)
 target_include_directories(parser
-  PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/include" ../include
-  PRIVATE ./private)
+  PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/include" ../include)
+target_include_directories(parser PRIVATE .)

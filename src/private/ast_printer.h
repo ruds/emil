@@ -16,23 +16,23 @@
 
 #include <gmpxx.h>
 
+#include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
-#include "emil/ast.h"
-
 namespace emil::astprinter {
 
-void print_ast(std::string& out, int indent, std::string_view arg);
-void print_ast(std::string& out, int indent, const char* arg);
-void print_ast(std::string& out, int indent, const mpz_class& arg);
-void print_ast(std::string& out, int indent, bool arg);
-void print_ast(std::string& out, int indent, int64_t arg);
-void print_ast(std::string& out, int indent, double arg);
-void print_ast(std::string& out, int indent, const std::u8string& arg);
-void print_ast(std::string& out, int indent, char32_t arg);
+void print_ast(std::string& out, int, std::string_view arg);
+void print_ast(std::string& out, int, const char* arg);
+void print_ast(std::string& out, int, const mpz_class& arg);
+void print_ast(std::string& out, int, bool arg);
+void print_ast(std::string& out, int, int64_t arg);
+void print_ast(std::string& out, int, double arg);
+void print_ast(std::string& out, int, const std::u8string& arg);
+void print_ast(std::string& out, int, char32_t arg);
 
 template <typename T>
 void print_ast(std::string& out, int indent, const std::unique_ptr<T>& arg) {
@@ -74,7 +74,7 @@ void print_ast(std::string& out, int indent, const std::vector<T>& arg) {
   out += ')';
 }
 
-void print_ast_joined(std::string& out, int indent, const std::string& joiner,
+void print_ast_joined(std::string& out, int indent, const std::string&,
                       const auto& arg) {
   print_ast(out, indent, arg);
 }

@@ -14,7 +14,12 @@
 
 #include "emil/parser.h"
 
+#include <fmt/core.h>
+#include <fmt/format.h>
+#include <gmpxx.h>
+
 #include <algorithm>
+#include <cstdint>
 #include <initializer_list>
 #include <memory>
 #include <stdexcept>
@@ -50,6 +55,10 @@ bool is_op(const Token* t, bool allow_qualified) {
   return t && (t->type == TokenType::ID_OP || t->type == TokenType::EQUALS ||
                t->type == TokenType::ASTERISK ||
                (allow_qualified && t->type == TokenType::QUAL_ID_OP));
+}
+
+[[noreturn]] void error(std::string message, Token t) {
+  throw ParsingError(std::move(message), t.location);
 }
 
 bool starts_decl(TokenType t) {
@@ -147,8 +156,9 @@ const Token* Parser::peek(std::size_t lookahead) {
 }
 
 bool Parser::match(std::initializer_list<TokenType> ts) {
-  const Token* next = peek();
-  if (next && std::find(begin(ts), end(ts), next->type) != end(ts)) {
+  const Token* next_token = peek();
+  if (next_token &&
+      std::find(begin(ts), end(ts), next_token->type) != end(ts)) {
     advance();
     return true;
   }
@@ -158,20 +168,18 @@ bool Parser::match(std::initializer_list<TokenType> ts) {
 Token& Parser::consume(std::initializer_list<TokenType> ts,
                        std::string_view production) {
   if (!match(ts)) {
-    Token next = ensure_token(peek());
-    TokenType next_type = next.type;
+    Token next_token = ensure_token(peek());
+    TokenType next_type = next_token.type;
     error(fmt::format(
               "While parsing {}, expected token of type {} but instead got {}",
               production, fmt::join(ts, " or "), next_type),
-          std::move(next));
+          std::move(next_token));
   }
   return current_.back();
 }
 
-Token Parser::ensure_token(const Token* t) { return t ? *t : *eof_token_; }
-
-void Parser::error(std::string message, Token t) {
-  throw ParsingError(std::move(message), t.location);
+Token Parser::ensure_token(const Token* t) const {
+  return t ? *t : *eof_token_;
 }
 
 void Parser::synchronize() {
@@ -241,6 +249,7 @@ ExprPtr Parser::match_left_expr(Token& first) {
         exprs.push_back(match_atomic_expr(advance()));
       }
       if (exprs.size() == 1) {
+        // cppcheck-suppress returnStdMoveLocal
         return std::move(exprs.front());
       }
       return std::make_unique<ApplicationExpr>(first.location,
@@ -260,7 +269,7 @@ ExprPtr match_iliteral(Token& t) {
                           return std::make_unique<BigintLiteralExpr>(
                               t.location, std::move(n));
                         },
-                        [&t](const auto&) -> ExprPtr {
+                        [](const auto&) -> ExprPtr {
                           throw std::logic_error("Bad aux type for ILITERAL");
                         }},
                t.aux);
@@ -348,26 +357,26 @@ std::unique_ptr<FstringLiteralExpr> Parser::match_fstring(Token& first) {
       first.location, std::move(segments), std::move(substitutions));
 }
 
-std::unique_ptr<IdentifierExpr> Parser::match_id(Token& t) {
-  switch (t.type) {
+std::unique_ptr<IdentifierExpr> Parser::match_id(Token& first) {
+  switch (first.type) {
     case TokenType::ID_WORD:
     case TokenType::ID_OP:
     case TokenType::EQUALS:
     case TokenType::ASTERISK:
       return std::make_unique<IdentifierExpr>(
-          t.location, std::vector<std::u8string>{}, move_string(t),
-          t.type != TokenType::ID_WORD);
+          first.location, std::vector<std::u8string>{}, move_string(first),
+          first.type != TokenType::ID_WORD);
 
     case TokenType::QUAL_ID_OP:
     case TokenType::QUAL_ID_WORD: {
-      auto& qual = get<QualifiedIdentifier>(t.aux);
+      auto& qual = get<QualifiedIdentifier>(first.aux);
       return std::make_unique<IdentifierExpr>(
-          t.location, std::move(qual.qualifiers), std::move(qual.id),
-          t.type == TokenType::QUAL_ID_OP);
+          first.location, std::move(qual.qualifiers), std::move(qual.id),
+          first.type == TokenType::QUAL_ID_OP);
     }
 
     default:
-      error("Expected identifier", t);
+      error("Expected identifier", first);
   }
 }
 
@@ -434,10 +443,12 @@ std::unique_ptr<Expr> Parser::match_paren_expr(const Location& location) {
 
 std::unique_ptr<ListExpr> Parser::match_list_expr(const Location& location) {
   std::vector<std::unique_ptr<Expr>> exprs;
-  if (!match(TokenType::RBRACKET)) do {
+  if (!match(TokenType::RBRACKET)) {
+    do {
       exprs.push_back(match_expr(advance_safe("list expression")));
     } while (consume({TokenType::RBRACKET, TokenType::COMMA}, "list expression")
                  .type != TokenType::RBRACKET);
+  }
   return std::make_unique<ListExpr>(location, std::move(exprs));
 }
 
@@ -650,20 +661,22 @@ PatternPtr Parser::match_paren_pattern(const Location& location) {
   } while (match(TokenType::COMMA));
   consume(TokenType::RPAREN, "parenthesized pattern");
   if (patterns.size() == 1) {
+    // cppcheck-suppress returnStdMoveLocal
     return std::move(patterns.front());
   }
   return std::make_unique<TuplePattern>(location, std::move(patterns));
 }
 
 std::unique_ptr<IdentifierPattern> Parser::maybe_match_parenthesized_op_pattern(
-    Token& first, AllowQualified allow_qualified) {
+    const Token& first, AllowQualified allow_qualified) {
   if (first.type != TokenType::LPAREN) return nullptr;
 
   if (match(TokenType::KW_PREFIX)) {
-    Token& next = allow_qualified ? consume({QUAL_OP_TYPES}, "prefix op")
-                                  : consume({NON_QUAL_OP_TYPES}, "prefix op");
+    Token& next_token = allow_qualified
+                            ? consume({QUAL_OP_TYPES}, "prefix op")
+                            : consume({NON_QUAL_OP_TYPES}, "prefix op");
     consume(TokenType::RPAREN, "prefix op");
-    return make_id_pattern(next, true);
+    return make_id_pattern(next_token, true);
   }
 
   if (is_op(peek(), allow_qualified) && peek(1) &&
@@ -684,6 +697,7 @@ TypePtr Parser::match_tuple_type(Token& first) {
     types.push_back(match_atomic_type(advance_safe("tuple type expression")));
   }
   if (types.size() == 1) {
+    // cppcheck-suppress returnStdMoveLocal
     return std::move(types.front());
   }
   return std::make_unique<TupleType>(first.location, std::move(types));
@@ -763,6 +777,7 @@ TypePtr Parser::match_paren_type(const Location& location) {
   consume(TokenType::RPAREN, types.size() == 1 ? "parenthesized type expression"
                                                : "type sequence");
   if (types.size() == 1) {
+    // cppcheck-suppress returnStdMoveLocal
     return std::move(types.front());
   }
   return make_tycon_type(location,

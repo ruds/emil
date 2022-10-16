@@ -83,6 +83,10 @@ find_program(CPPLINT_DEFAULT NAMES cpplint)
 set(CPPLINT "${CPPLINT_DEFAULT}"
   CACHE STRING "The cpplint command line")
 
+if (CPPLINT)
+  configure_file(gen-CPPLINT.cfg CPPLINT.cfg)
+endif()
+
 set(SANITIZER_CHOICES none address leak thread undefined memory)
 set(SANITIZER none CACHE STRING "Which sanitizer to build with")
 set_property(CACHE SANITIZER PROPERTY STRINGS "${SANITIZER_CHOICES}")

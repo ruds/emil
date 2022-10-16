@@ -163,7 +163,7 @@ const std::string HEADER_TEMPLATE = R"(%COPYRIGHT%
 
 #include <gmpxx.h>
 
-#include <map>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -189,7 +189,7 @@ const std::string CC_TEMPLATE = R"(%COPYRIGHT%
 #include <vector>
 #include <utility>
 
-#include "ast_printer.h"
+#include "private/ast_printer.h"
 
 namespace emil {
 %ALL_IMPLS%
@@ -197,7 +197,7 @@ namespace emil {
 )";
 
 const std::string CATEGORY_FWD_DECL_TEMPLATE = R"(
-class %BASE%;%FWD_DECLS%)";
+class %BASE%;  // IWYU pragma: keep%FWD_DECLS%)";
 
 const std::string CATEGORY_DECL_TEMPLATE = R"(
 class %BASE% {
@@ -241,7 +241,7 @@ class %BASE%Printer : public %BASE%::Visitor {
   int indent_;
 };
 
-}
+}  // namespace
 
 std::string print_ast(const %BASE%& v, int indent) {
   std::string out;
@@ -256,7 +256,7 @@ void print_ast(const %BASE%& v, std::string& out, int indent) {
 %IMPLS%)";
 
 const std::string FWD_DECL_TEMPLATE = R"(
-class %NAME%;)";
+class %NAME%;  // IWYU pragma: keep)";
 
 const std::string VISITOR_FUNC_TEMPLATE = R"(
     virtual void visit%NAME%(const %NAME%& node) = 0;)";
@@ -286,11 +286,11 @@ void %NAME%::accept(Visitor& visitor) const {
 
 namespace {
 
-void %BASE%Printer::visit%NAME%(const %NAME%& node) {
+void %BASE%Printer::visit%NAME%(const %NAME%&%PRINTERPARAM%) {
   astprinter::print_sexp(*out_, indent_, %SEXPLIST%);
 }
 
-}
+}  // namespace
 )";
 
 using Dict = std::map<std::string, std::string, std::less<>>;
@@ -385,9 +385,12 @@ Dict build_node_dict(const std::string& base, const AstNodeSpec& spec) {
   if (empty(spec.params)) {
     dict["INITIALIZERS"] = "";
     dict["FIELDS"] = "";
+    /* Works around unused parameter warning. */
+    dict["PRINTERPARAM"] = "";
   } else {
     dict["INITIALIZERS"] = fmt::format(",\n  {}", initializers.str());
     dict["FIELDS"] = fmt::format("\n{}\n", fields.str());
+    dict["PRINTERPARAM"] = " node";
   }
   dict["SEXPLIST"] = sexp_list.str();
   return dict;

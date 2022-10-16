@@ -14,49 +14,42 @@
 
 #include "private/ast_printer.h"
 
-#include <fmt/core.h>
-
 #include <cstdint>
 #include <string>
 #include <string_view>
 
-#include "emil/ast.h"
 #include "emil/strconvert.h"
 
 namespace emil::astprinter {
 
-void print_ast(std::string& out, int indent, std::string_view arg) {
-  out.append(arg);
-}
+void print_ast(std::string& out, int, std::string_view arg) { out.append(arg); }
 
-void print_ast(std::string& out, int indent, const char* arg) {
-  out.append(arg);
-}
+void print_ast(std::string& out, int, const char* arg) { out.append(arg); }
 
-void print_ast(std::string& out, int indent, const mpz_class& arg) {
+void print_ast(std::string& out, int, const mpz_class& arg) {
   out.append(arg.get_str());
 }
 
-void print_ast(std::string& out, int indent, bool arg) {
+void print_ast(std::string& out, int, bool arg) {
   out.append(arg ? "true" : "false");
 }
 
-void print_ast(std::string& out, int indent, int64_t arg) {
+void print_ast(std::string& out, int, int64_t arg) {
   out.append(std::to_string(arg));
   out += 'i';
 }
 
-void print_ast(std::string& out, int indent, double arg) {
+void print_ast(std::string& out, int, double arg) {
   out.append(std::to_string(arg));
 }
 
-void print_ast(std::string& out, int indent, const std::u8string& arg) {
+void print_ast(std::string& out, int, const std::u8string& arg) {
   out += '"';
   to_hex(arg, out);
   out += '"';
 }
 
-void print_ast(std::string& out, int indent, char32_t arg) {
+void print_ast(std::string& out, int, char32_t arg) {
   out += R"(#")";
   to_std_string(arg, out);
   out += '"';

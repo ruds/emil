@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <deque>
 #include <exception>
 #include <initializer_list>
@@ -22,12 +23,28 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
-#include "emil/ast.h"
 #include "emil/source.h"
 #include "emil/token.h"
 
 namespace emil {
+
+class CaseExpr;
+class Decl;
+class Expr;
+class FnExpr;
+class FstringLiteralExpr;
+class IdentifierExpr;
+class IdentifierPattern;
+class LetExpr;
+class ListExpr;
+class Pattern;
+class RecRowSubexpr;
+class RecordExpr;
+class TopDecl;
+class Type;
+class ValDecl;
 
 class ParsingError : public std::exception {
  public:
@@ -65,9 +82,8 @@ class Parser {
   }
   Token& consume(std::initializer_list<TokenType> ts,
                  std::string_view production);
-  Token ensure_token(const Token* t);
+  Token ensure_token(const Token* t) const;
 
-  [[noreturn]] void error(std::string message, Token t);
   void synchronize();
 
   std::unique_ptr<Expr> match_expr(Token& first);
@@ -118,7 +134,7 @@ class Parser {
   enum AllowQualified : bool { NO = false, YES = true };
 
   std::unique_ptr<IdentifierPattern> maybe_match_parenthesized_op_pattern(
-      Token& first, AllowQualified allow_qualified);
+      const Token& first, AllowQualified allow_qualified);
 
   std::unique_ptr<Type> match_tuple_type(Token& first);
 
