@@ -43,3 +43,8 @@ target_link_libraries(parser PUBLIC lexer)
 target_include_directories(parser
   PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/include" ../include)
 target_include_directories(parser PRIVATE .)
+
+add_library(gc STATIC gc.cc)
+add_emil_options(gc)
+target_include_directories(gc
+  PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/include" ../include)

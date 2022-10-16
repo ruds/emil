@@ -41,3 +41,4 @@ macro(emil_add_gtest TESTNAME FILES LIBRARIES)
 endmacro()
 
 emil_add_gtest(source_test source_test.cc lexer)
+emil_add_gtest(gc_test gc_test.cc gc)
