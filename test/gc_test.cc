@@ -192,5 +192,24 @@ TEST(GcTest, PrivateBuffer) {
   ASSERT_FALSE(alive_inner);
 }
 
+TEST(GcTest, Bool) {
+  MemoryManager mgr;
+  bool alive = false;
+  auto true_ptr = mgr.create<SimpleManaged>(alive);
+  managed_ptr<SimpleManaged> false_ptr = nullptr;
+
+  if (true_ptr) {
+    SUCCEED();
+  } else {
+    FAIL() << "Expected pointer to evaluate to true.";
+  }
+
+  if (false_ptr) {
+    FAIL() << "Expected pointer to evaluate to false.";
+  } else {
+    SUCCEED();
+  }
+}
+
 }  // namespace
 }  // namespace emil::testing

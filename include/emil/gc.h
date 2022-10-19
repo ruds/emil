@@ -99,10 +99,12 @@ class managed_ptr_base {
 
   void visit(const ManagedVisitor& visitor);
 
+  explicit operator bool() const noexcept { return val_; }
+
  protected:
   Managed* val_;
 
-  explicit managed_ptr_base(Managed* val);
+  explicit managed_ptr_base(Managed* val) noexcept;
 
  private:
   friend class MemoryManager;
@@ -119,22 +121,25 @@ class managed_ptr_base {
 template <ManagedType T>
 class managed_ptr : public managed_ptr_base {
  public:
-  template <BaseManagedType<T> U>
   // cppcheck-suppress noExplicitConstructor
-  managed_ptr(managed_ptr<U>&& o) : managed_ptr_base(o.val_) {}
+  managed_ptr(std::nullptr_t) noexcept : managed_ptr_base(nullptr) {}
 
   template <BaseManagedType<T> U>
-  managed_ptr& operator=(managed_ptr<U>&& o) {
+  // cppcheck-suppress noExplicitConstructor
+  managed_ptr(managed_ptr<U>&& o) noexcept : managed_ptr_base(o.val_) {}
+
+  template <BaseManagedType<T> U>
+  managed_ptr& operator=(managed_ptr<U>&& o) noexcept {
     val_ = o.val_;
     return *this;
   }
 
   template <BaseManagedType<T> U>
   // cppcheck-suppress noExplicitConstructor
-  managed_ptr(const managed_ptr<U>& o) : managed_ptr_base(o.val_) {}
+  managed_ptr(const managed_ptr<U>& o) noexcept : managed_ptr_base(o.val_) {}
 
   template <BaseManagedType<T> U>
-  managed_ptr& operator=(const managed_ptr<U>& o) {
+  managed_ptr& operator=(const managed_ptr<U>& o) noexcept {
     val_ = o.val_;
     return *this;
   }

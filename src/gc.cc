@@ -21,7 +21,7 @@ namespace emil {
 Managed::Managed() = default;
 Managed::~Managed() = default;
 
-managed_ptr_base::managed_ptr_base(Managed* val) : val_(val) {}
+managed_ptr_base::managed_ptr_base(Managed* val) noexcept : val_(val) {}
 managed_ptr_base::~managed_ptr_base() = default;
 
 void managed_ptr_base::visit(const ManagedVisitor& visitor) {

@@ -11,6 +11,7 @@
     { include: ["@\"utf8/.*\"", "private", "<utf8.h>", "public"] },
     { include: ["\"gtest/gtest.h\"", "private", "<gtest/gtest.h>", "public"]},
     { include: ["\"gmock/gmock.h\"", "private", "<gmock/gmock.h>", "public"]},
+    { symbol: ["std::nullptr_t", "private", "<cstddef>", "public"]},
     { symbol: ["std::ifstream", "private", "<fstream>", "public"]},
     { symbol: ["std::ofstream", "private", "<fstream>", "public"]},
     { symbol: ["std::ostringstream", "private", "<sstream>", "public"]},
