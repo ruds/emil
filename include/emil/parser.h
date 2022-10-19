@@ -40,7 +40,7 @@ class IdentifierPattern;
 class LetExpr;
 class ListExpr;
 class Pattern;
-class RecRowSubexpr;
+class RecRowExpr;
 class RecordExpr;
 class TopDecl;
 class Type;
@@ -108,7 +108,7 @@ class Parser {
 
   std::unique_ptr<RecordExpr> match_record_expr(const Location& location);
 
-  std::unique_ptr<RecRowSubexpr> match_rec_row();
+  std::unique_ptr<RecRowExpr> match_rec_row();
 
   std::unique_ptr<Expr> match_paren_expr(const Location& location);
 

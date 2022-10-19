@@ -7,7 +7,7 @@
                  (RecordExpr
                      :rows
                      (
-                         (RecRowSubexpr
+                         (RecRowExpr
                              :label
                              "666F6F"
                              :val
@@ -20,7 +20,7 @@
                                  false
                                  :is_prefix_op
                                  false))
-                         (RecRowSubexpr
+                         (RecRowExpr
                              :label
                              "626172"
                              :val
@@ -54,7 +54,7 @@
                  ((RecordPattern
                      :rows
                      (
-                         (RecRowSubpattern
+                         (RecRowPattern
                              :label
                              "666F6F"
                              :pattern
@@ -63,7 +63,7 @@
                                  (BigintLiteralExpr
                                      :val
                                      2)))
-                         (RecRowSubpattern
+                         (RecRowPattern
                              :label
                              "626172"
                              :pattern
@@ -76,20 +76,17 @@
                    . (BigintLiteralExpr
                          :val
                          23))
-                 ((RecordPattern
+                 ((PolyRecordPattern
                      :rows
-                     (
-                         (RecRowSubpattern
-                             :label
-                             "666F6F"
-                             :pattern
-                             (LiteralPattern
+                     ((RecRowPattern
+                         :label
+                         "666F6F"
+                         :pattern
+                         (LiteralPattern
+                             :val
+                             (BigintLiteralExpr
                                  :val
-                                 (BigintLiteralExpr
-                                     :val
-                                     3)))
-                         (RecRowWildcardSubpattern)
-                     ))
+                                 3)))))
                    . (ApplicationExpr
                          :exprs
                          (

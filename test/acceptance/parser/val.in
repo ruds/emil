@@ -15,6 +15,7 @@ val Foo bar = baz;
 val (::) (foo, bar) = baz;
 val (prefix ~) foo = bar;
 (* add parenthesized pattern, operator precedence tests *)
+val { foo=bar, foo as (baz, quux) } = waldo;
 val (_, 2.3) = foo; (* error - fp literals not allowed *)
 val;;
 val foo;

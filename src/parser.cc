@@ -22,11 +22,13 @@
 #include <cstdint>
 #include <initializer_list>
 #include <memory>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <variant>
 
 #include "emil/ast.h"
+#include "emil/strconvert.h"
 #include "emil/token.h"
 
 namespace emil {
@@ -382,7 +384,7 @@ std::unique_ptr<IdentifierExpr> Parser::match_id(Token& first) {
 
 std::unique_ptr<RecordExpr> Parser::match_record_expr(
     const Location& location) {
-  std::vector<std::unique_ptr<RecRowSubexpr>> rows;
+  std::vector<std::unique_ptr<RecRowExpr>> rows;
   if (!match(TokenType::RBRACE)) {
     do {
       rows.push_back(match_rec_row());
@@ -392,12 +394,12 @@ std::unique_ptr<RecordExpr> Parser::match_record_expr(
   return std::make_unique<RecordExpr>(location, std::move(rows));
 }
 
-std::unique_ptr<RecRowSubexpr> Parser::match_rec_row() {
+std::unique_ptr<RecRowExpr> Parser::match_rec_row() {
   auto& label = consume(TokenType::ID_WORD, "record expression row");
   consume(TokenType::EQUALS, "record expression row");
   auto expr = match_expr(advance_safe("record expression row"));
-  return std::make_unique<RecRowSubexpr>(label.location, move_string(label),
-                                         std::move(expr));
+  return std::make_unique<RecRowExpr>(label.location, move_string(label),
+                                      std::move(expr));
 }
 
 std::unique_ptr<Expr> Parser::match_paren_expr(const Location& location) {
@@ -601,32 +603,48 @@ PatternPtr Parser::match_atomic_pattern(Token& first) {
 }
 
 PatternPtr Parser::match_record_pattern(const Location& location) {
-  std::vector<std::unique_ptr<Subpattern>> rows;
+  std::vector<std::unique_ptr<RecRowPattern>> rows;
+  std::set<std::u8string> labels;
+  bool has_wildcard = false;
   if (!match(TokenType::RBRACE)) {
     do {
       if (match(TokenType::ELLIPSIS)) {
-        rows.push_back(std::make_unique<RecRowWildcardSubpattern>(
-            current_.back().location));
+        if (has_wildcard)
+          error("'...' may not appear twice in a single pattern.",
+                current_.back());
+        else
+          has_wildcard = true;
       } else {
         auto& label = consume(TokenType::ID_WORD, "record row pattern");
+        std::u8string label_name = get<std::u8string>(label.aux);
         PatternPtr pattern;
         if (match(TokenType::EQUALS)) {
           pattern = match_pattern(advance_safe("record row pattern"));
         } else if (match(TokenType::KW_AS)) {
           pattern = std::make_unique<LayeredPattern>(
-              label.location, get<std::u8string>(label.aux),
+              label.location, label_name,
               match_pattern(advance_safe("record row layered pattern")));
         } else {
-          pattern = make_id_pattern(
-              label.location, {}, get<std::u8string>(label.aux), false, false);
+          pattern =
+              make_id_pattern(label.location, {}, label_name, false, false);
         }
-        rows.push_back(std::make_unique<RecRowSubpattern>(
+        auto insres = labels.insert(label_name);
+        if (!insres.second) {
+          error(fmt::format("Label '{}' was specified twice in pattern",
+                            to_std_string(label_name)),
+                label);
+        }
+        rows.push_back(std::make_unique<RecRowPattern>(
             label.location, move_string(label), std::move(pattern)));
       }
     } while (match(TokenType::COMMA));
     consume(TokenType::RBRACE, "record pattern");
   }
-  return std::make_unique<RecordPattern>(location, std::move(rows));
+  if (has_wildcard) {
+    return std::make_unique<PolyRecordPattern>(location, std::move(rows));
+  } else {
+    return std::make_unique<RecordPattern>(location, std::move(rows));
+  }
 }
 
 PatternPtr Parser::match_list_pattern(const Location& location) {

@@ -208,10 +208,10 @@
          :decl
          (ValDecl
              :bindings
-             (((RecordPattern
+             (((PolyRecordPattern
                  :rows
                  (
-                     (RecRowSubpattern
+                     (RecRowPattern
                          :label
                          "666F6F"
                          :pattern
@@ -224,7 +224,7 @@
                              false
                              :is_prefix_op
                              false))
-                     (RecRowSubpattern
+                     (RecRowPattern
                          :label
                          "626172"
                          :pattern
@@ -254,7 +254,7 @@
                                          :is_prefix_op
                                          false)
                                  ))))
-                     (RecRowSubpattern
+                     (RecRowPattern
                          :label
                          "77616C646F"
                          :pattern
@@ -263,7 +263,6 @@
                              (BigintLiteralExpr
                                  :val
                                  2)))
-                     (RecRowWildcardSubpattern)
                  ))
                . (IdentifierExpr
                      :qualifiers
@@ -406,7 +405,7 @@
                      (RecordPattern
                          :rows
                          (
-                             (RecRowSubpattern
+                             (RecRowPattern
                                  :label
                                  "71757578"
                                  :pattern
@@ -419,7 +418,7 @@
                                      false
                                      :is_prefix_op
                                      false))
-                             (RecRowSubpattern
+                             (RecRowPattern
                                  :label
                                  "77616C646F"
                                  :pattern
@@ -576,4 +575,5 @@
 0019 ERROR
 0020 ERROR
 0021 ERROR
-0022 (EndOfFileTopDecl)
+0022 ERROR
+0023 (EndOfFileTopDecl)

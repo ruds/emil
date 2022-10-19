@@ -3,20 +3,20 @@
          (RecordExpr
              :rows
              (
-                 (RecRowSubexpr
+                 (RecRowExpr
                      :label
                      "666F6F"
                      :val
                      (BigintLiteralExpr
                          :val
                          1))
-                 (RecRowSubexpr
+                 (RecRowExpr
                      :label
                      "626172"
                      :val
                      (RecordExpr
                          :rows
-                         ((RecRowSubexpr
+                         ((RecRowExpr
                              :label
                              "62617A"
                              :val
@@ -29,7 +29,7 @@
                                  false
                                  :is_prefix_op
                                  false)))))
-                 (RecRowSubexpr
+                 (RecRowExpr
                      :label
                      "77616C646F"
                      :val
