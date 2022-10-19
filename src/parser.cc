@@ -781,12 +781,19 @@ TypePtr Parser::match_atomic_type(Token& first) {
 
 TypePtr Parser::match_record_type(const Location& location) {
   std::vector<std::pair<std::u8string, TypePtr>> rows;
+  std::set<std::u8string> labels;
   if (!match(TokenType::RBRACE)) {
     do {
       auto id = consume(TokenType::ID_WORD, "record row type expression");
       consume(TokenType::COLON, "record row type expression");
       auto type = match_type(advance_safe("record row type expression"));
       rows.emplace_back(move_string(id), std::move(type));
+      auto insres = labels.insert(rows.back().first);
+      if (!insres.second) {
+        error(fmt::format("Label '{}' bound twice in record type experession.",
+                          to_std_string(rows.back().first)),
+              id);
+      }
     } while (match(TokenType::COMMA));
     consume(TokenType::RBRACE, "record type expression");
   }

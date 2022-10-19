@@ -11,3 +11,4 @@ foo : bigint * string;
 foo : bigint -> string;
 foo : bigint * 'a list * (bigint * string) * float;
 foo : 'a * 'b -> 'c * bigint * string * (bigint -> float) -> bigint;
+foo : { bar : string, bar : string };

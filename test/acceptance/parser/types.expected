@@ -478,4 +478,5 @@
                          "626967696E74"
                          :types
                          ())))))
-0014 (EndOfFileTopDecl)
+0014 ERROR
+0015 (EndOfFileTopDecl)
