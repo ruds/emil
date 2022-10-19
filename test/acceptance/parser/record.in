@@ -1,4 +1,5 @@
 {foo=1,bar={baz=quux},waldo=(prefix -)} ;
 {};
+{foo=1,foo=bar};
 {foo:1};
 {foo};

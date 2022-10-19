@@ -385,9 +385,15 @@ std::unique_ptr<IdentifierExpr> Parser::match_id(Token& first) {
 std::unique_ptr<RecordExpr> Parser::match_record_expr(
     const Location& location) {
   std::vector<std::unique_ptr<RecRowExpr>> rows;
+  std::set<std::u8string> labels;
   if (!match(TokenType::RBRACE)) {
     do {
       rows.push_back(match_rec_row());
+      auto ins_res = labels.insert(rows.back()->label);
+      if (!ins_res.second)
+        error(fmt::format("Label '{}' bound twice in record expression",
+                          to_std_string(rows.back()->label)),
+              current_.back());
     } while (consume({TokenType::RBRACE, TokenType::COMMA}, "record expression")
                  .type == TokenType::COMMA);
   }

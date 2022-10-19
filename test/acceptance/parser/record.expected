@@ -50,4 +50,5 @@
              ()))
 0003 ERROR
 0004 ERROR
-0005 (EndOfFileTopDecl)
+0005 ERROR
+0006 (EndOfFileTopDecl)
