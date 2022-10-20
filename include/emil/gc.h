@@ -203,24 +203,48 @@ class MemoryManager {
     std::size_t allocated = 0;
     uint64_t num_objects = 0;
     uint64_t num_private_buffers = 0;
+    uint64_t num_holds = 0;
 
     friend auto operator<=>(const Stats&, const Stats&) = default;
   };
 
-  /** Create a new managed object. */
+  /**
+   * Create a new managed object.
+   *
+   * If you will call `create` again before this object is reachable from a
+   * root, be sure to take a `hold` by calling `acquire_hold`.
+   */
   template <ManagedType T, class... Args>
   managed_ptr<T> create(Args&&... args);
 
   /**
    * Create a buffer that is owned by a managed object and whose
-   * address is not shared.
+   * address is not shared and persisted.
    */
   PrivateBuffer allocate_private_buffer(std::size_t size);
+
+  /** As long as this object lives, no garbage will be collected. */
+  class hold {
+   public:
+    ~hold();
+    hold(hold&& o);
+    hold& operator=(hold&& o);
+
+   private:
+    friend class MemoryManager;
+    MemoryManager* mgr_;
+    hold(MemoryManager* mgr);
+    hold(const hold&) = delete;
+    hold& operator=(const hold&) = delete;
+  };
+
+  hold acquire_hold();
 
   Stats stats() const;
 
  private:
   friend class PrivateBuffer;
+  friend class hold;
 
   Managed* managed_ = nullptr;
   Stats stats_{};
@@ -232,6 +256,7 @@ class MemoryManager {
 
   void free_obj(Managed* m);
   void free_private_buffer(char* buf, std::size_t size);
+  void release_hold();
 };
 
 template <ManagedType T, class... Args>

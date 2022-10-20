@@ -56,6 +56,7 @@ PrivateBuffer& PrivateBuffer::operator=(PrivateBuffer&& o) noexcept {
 MemoryManager::MemoryManager() = default;
 
 MemoryManager::~MemoryManager() {
+  assert(stats_.num_holds == 0);
   Managed* next = managed_;
   while (next) {
     auto* t = next;
@@ -68,6 +69,27 @@ PrivateBuffer MemoryManager::allocate_private_buffer(std::size_t size) {
   stats_.allocated += size;
   ++stats_.num_private_buffers;
   return PrivateBuffer(this, new char[size], size);
+}
+
+MemoryManager::hold::~hold() {
+  if (mgr_) mgr_->release_hold();
+}
+
+MemoryManager::hold::hold(hold&& o) : mgr_(o.mgr_) { o.mgr_ = nullptr; }
+
+MemoryManager::hold& MemoryManager::hold::operator=(hold&& o) {
+  if (this != &o) {
+    mgr_ = o.mgr_;
+    o.mgr_ = nullptr;
+  }
+  return *this;
+}
+
+MemoryManager::hold::hold(MemoryManager* mgr) : mgr_(mgr) {}
+
+MemoryManager::hold MemoryManager::acquire_hold() {
+  ++stats_.num_holds;
+  return {this};
 }
 
 MemoryManager::Stats MemoryManager::stats() const { return stats_; }
@@ -87,6 +109,11 @@ void MemoryManager::free_private_buffer(char* buf, std::size_t size) {
   assert(stats_.num_private_buffers != 0);
   --stats_.num_private_buffers;
   delete[] buf;
+}
+
+void MemoryManager::release_hold() {
+  assert(stats_.num_holds != 0);
+  --stats_.num_holds;
 }
 
 }  // namespace emil

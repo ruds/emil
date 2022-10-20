@@ -106,7 +106,7 @@ TEST(GcTest, OneObject) {
   bool alive = false;
   {
     MemoryManager mgr;
-    ASSERT_EQ(mgr.stats(), (Stats{0, 0, 0}));
+    ASSERT_EQ(mgr.stats(), (Stats{}));
     auto ptr = mgr.create<SimpleManaged>(alive);
     ASSERT_TRUE(alive);
     ASSERT_TRUE(ptr->alive);
@@ -120,7 +120,7 @@ TEST(GcTest, TwoObjects) {
   bool alive2 = false;
   {
     MemoryManager mgr;
-    ASSERT_EQ(mgr.stats(), (Stats{0, 0, 0}));
+    ASSERT_EQ(mgr.stats(), (Stats{}));
     auto ptr1 = mgr.create<SimpleManaged>(alive1);
     auto ptr2 = mgr.create<SimpleManaged>(alive2);
     ASSERT_TRUE(alive1);
@@ -141,7 +141,7 @@ TEST(GcTest, Tree) {
   bool alive_r = false;
   {
     MemoryManager mgr;
-    ASSERT_EQ(mgr.stats(), (Stats{0, 0, 0}));
+    ASSERT_EQ(mgr.stats(), (Stats{}));
     auto root = mgr.create<
         ManagedPair<ManagedPair<SimpleManaged, SimpleManaged>, SimpleManaged>>(
         alive_root,
@@ -178,7 +178,7 @@ TEST(GcTest, PrivateBuffer) {
   bool alive_inner = false;
   {
     MemoryManager mgr;
-    ASSERT_EQ(mgr.stats(), (Stats{0, 0, 0}));
+    ASSERT_EQ(mgr.stats(), (Stats{}));
     auto ptr =
         mgr.create<ManagedPayload>(mgr, alive_outer, alive_inner, 42, 2.5);
     ASSERT_TRUE(alive_outer);
@@ -209,6 +209,19 @@ TEST(GcTest, Bool) {
   } else {
     SUCCEED();
   }
+}
+
+TEST(GcTest, Holds) {
+  MemoryManager mgr;
+  {
+    ASSERT_EQ(mgr.stats(), (Stats{}));
+    auto hold = mgr.acquire_hold();
+    ASSERT_EQ(mgr.stats(), (Stats{.num_holds = 1}));
+    // TODO: add more tests once there's actual garbage collection
+    auto hold2 = std::move(hold);
+    ASSERT_EQ(mgr.stats(), (Stats{.num_holds = 1}));
+  }
+  ASSERT_EQ(mgr.stats(), (Stats{}));
 }
 
 }  // namespace
