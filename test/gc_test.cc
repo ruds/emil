@@ -30,7 +30,29 @@ class SimpleManaged : public Managed {
 
   explicit SimpleManaged(bool& alive) : alive(alive) { alive = true; }
   ~SimpleManaged() override { alive = false; }
-  std::size_t size() const override { return sizeof(SimpleManaged); }
+  std::size_t managed_size() const noexcept override {
+    return sizeof(SimpleManaged);
+  }
+
+ private:
+  void visit_subobjects(const ManagedVisitor&) override {}
+};
+
+class SimpleManagedWithSelfPtr
+    : public ManagedWithSelfPtr<SimpleManagedWithSelfPtr> {
+ public:
+  bool& alive;
+
+  explicit SimpleManagedWithSelfPtr(bool& alive) : alive(alive) {
+    alive = true;
+  }
+  ~SimpleManagedWithSelfPtr() override { alive = false; }
+
+  const managed_ptr<SimpleManagedWithSelfPtr>& get_self() { return self(); }
+
+  std::size_t managed_size() const noexcept override {
+    return sizeof(SimpleManagedWithSelfPtr);
+  }
 
  private:
   void visit_subobjects(const ManagedVisitor&) override {}
@@ -50,7 +72,9 @@ class ManagedPair : public Managed {
   managed_ptr<L> left() const { return l_; }
   managed_ptr<R> right() const { return r_; }
 
-  std::size_t size() const override { return sizeof(ManagedPair<L, R>); }
+  std::size_t managed_size() const noexcept override {
+    return sizeof(ManagedPair);
+  }
 
  private:
   managed_ptr<L> l_;
@@ -99,7 +123,9 @@ class ManagedPayload : public Managed {
   PrivateBuffer buf;
 
   void visit_subobjects(const ManagedVisitor&) override {}
-  std::size_t size() const override { return sizeof(ManagedPayload); }
+  std::size_t managed_size() const noexcept override {
+    return sizeof(ManagedPayload);
+  }
 };
 
 TEST(GcTest, OneObject) {
@@ -159,9 +185,10 @@ TEST(GcTest, Tree) {
     ASSERT_TRUE(root->left()->right()->alive);
     ASSERT_TRUE(alive_r);
     ASSERT_TRUE(root->right()->alive);
-    ASSERT_EQ(mgr.stats(), (Stats{root->size() + root->left()->size() +
-                                      3 * sizeof(SimpleManaged),
-                                  5, 0}));
+    ASSERT_EQ(mgr.stats(),
+              (Stats{root->managed_size() + root->left()->managed_size() +
+                         3 * sizeof(SimpleManaged),
+                     5, 0}));
     int count = 0;
     root.visit([&count](auto&) { ++count; });
     ASSERT_EQ(count, 5);
@@ -171,6 +198,21 @@ TEST(GcTest, Tree) {
   ASSERT_FALSE(alive_ll);
   ASSERT_FALSE(alive_lr);
   ASSERT_FALSE(alive_r);
+}
+
+TEST(GcTest, SelfPtr) {
+  bool alive;
+  {
+    MemoryManager mgr;
+    ASSERT_EQ(mgr.stats(), (Stats{}));
+    auto ptr = mgr.create<SimpleManagedWithSelfPtr>(alive);
+    ASSERT_TRUE(alive);
+    ASSERT_TRUE(ptr->alive);
+    ASSERT_TRUE(ptr->get_self());
+    ASSERT_TRUE(ptr->get_self()->alive);
+    ASSERT_EQ(mgr.stats(), (Stats{sizeof(SimpleManagedWithSelfPtr), 1, 0}));
+  }
+  ASSERT_FALSE(alive);
 }
 
 TEST(GcTest, PrivateBuffer) {

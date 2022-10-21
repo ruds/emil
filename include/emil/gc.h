@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <type_traits>
 #include <utility>
 
@@ -75,11 +76,26 @@ class Managed {
    *
    * Concrete subclasses should implement this as `return sizeof(ClassName);`
    */
-  virtual std::size_t size() const = 0;
+  virtual std::size_t managed_size() const noexcept = 0;
 };
 
 template <typename T>
-concept ManagedType = std::is_base_of<Managed, T>::value;
+class ManagedWithSelfPtr;
+
+namespace detail {
+
+template <typename T>
+void is_managed_with_self_ptr_impl(const ManagedWithSelfPtr<T>&);
+
+template <typename T>
+concept is_managed_with_self_ptr = requires(const T& t) {
+  is_managed_with_self_ptr_impl<T>(t);
+};
+}  // namespace detail
+
+template <typename T>
+concept ManagedType =
+    std::is_base_of<Managed, T>::value || detail::is_managed_with_self_ptr<T>;
 
 template <typename T, typename U>
 concept BaseManagedType =
@@ -101,6 +117,10 @@ class managed_ptr_base {
 
   explicit operator bool() const noexcept { return val_; }
 
+  friend bool operator==(const managed_ptr_base& l, const managed_ptr_base& r) {
+    return l.val_ == r.val_;
+  }
+
  protected:
   Managed* val_;
 
@@ -118,7 +138,7 @@ class managed_ptr_base {
  * Users of this interface must not capture the address of the managed
  * object in a way that may outlive the lifetime of the managed_ptr.
  */
-template <ManagedType T>
+template <typename T>
 class managed_ptr : public managed_ptr_base {
  public:
   // cppcheck-suppress noExplicitConstructor
@@ -161,6 +181,25 @@ class managed_ptr : public managed_ptr_base {
   const T* val() const { return static_cast<T*>(val_); }
 
   explicit managed_ptr(T* val) : managed_ptr_base(val) {}
+};
+
+template <typename T>
+class ptr_accessor;
+
+/**
+ * Subclasses will have access to managed_ptrs to themselves after their
+ * constructor returns.
+ */
+template <typename T>
+class ManagedWithSelfPtr : public Managed {
+ protected:
+  const managed_ptr<T>& self() const { return *self_; }
+
+ private:
+  friend class MemoryManager;
+  friend class ptr_accessor<T>;
+
+  mutable std::unique_ptr<managed_ptr<T>> self_ = nullptr;
 };
 
 class PrivateBuffer {
@@ -264,11 +303,17 @@ managed_ptr<T> MemoryManager::create(Args&&... args) {
   const auto size = sizeof(T);
   stats_.allocated += size;
   ++stats_.num_objects;
+  // cppcheck-suppress cppcheckError
   T* t = new T(std::forward<Args>(args)...);
-  assert(static_cast<Managed*>(t)->size() == size);
+  assert(static_cast<Managed*>(t)->managed_size() == size);
   t->next_managed = managed_;
   managed_ = t;
-  return managed_ptr<T>(t);
+  managed_ptr<T> ptr(t);
+  if constexpr (detail::is_managed_with_self_ptr<T>) {
+    static_cast<ManagedWithSelfPtr<T>*>(t)->self_ =
+        std::make_unique<managed_ptr<T>>(ptr);
+  }
+  return ptr;
 }
 
 }  // namespace emil

@@ -95,7 +95,7 @@ MemoryManager::hold MemoryManager::acquire_hold() {
 MemoryManager::Stats MemoryManager::stats() const { return stats_; }
 
 void MemoryManager::free_obj(Managed* m) {
-  const auto size = m->size();
+  const auto size = m->managed_size();
   assert(stats_.allocated >= size);
   stats_.allocated -= size;
   assert(stats_.num_objects != 0);
