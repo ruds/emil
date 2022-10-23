@@ -43,8 +43,8 @@ struct ManagedCons : Managed {
       : car(std::move(car)), cdr(std::move(cdr)) {}
 
   void visit_subobjects(const ManagedVisitor& visitor) override {
-    visitor(car);
-    visitor(cdr);
+    if (car) car.accept(visitor);
+    if (cdr) cdr.accept(visitor);
   }
 
   std::size_t managed_size() const noexcept override {
@@ -55,19 +55,38 @@ struct ManagedCons : Managed {
 template <ManagedType T>
 using ConsPtr = managed_ptr<ManagedCons<T>>;
 
+/**
+ * Prepend `car` to `cdr`.
+ *
+ * It is not safe to pass an unreachable `car` or `cdr` to this function and its
+ * return value must be made reachable before any other allocations are made.
+ */
 template <ManagedType T>
 ConsPtr<T> cons(MemoryManager& mgr, managed_ptr<T> car, ConsPtr<T> cdr) {
   return mgr.create<ManagedCons<T>>(std::move(car), std::move(cdr));
 }
 
+/** @overload */
 template <ManagedType T>
 ConsPtr<T> cons(MemoryManager& mgr, managed_ptr<T> car, std::nullptr_t) {
   return mgr.create<ManagedCons<T>>(std::move(car), nullptr);
 }
 
+/** @overload */
 template <ManagedType T>
 ConsPtr<T> cons(MemoryManager& mgr, std::nullptr_t, ConsPtr<T> cdr) {
   return mgr.create<ManagedCons<T>>(nullptr, std::move(cdr));
+}
+
+/**
+ * Construct and prepend a `T` to `cdr`.
+ */
+template <ManagedType T, typename... Args>
+ConsPtr<T> cons_in_place(MemoryManager& mgr, ConsPtr<T> cdr, Args&&... args) {
+  auto hold = mgr.acquire_hold();
+  // cppcheck-suppress redundantInitialization
+  auto car = mgr.create<T>(std::forward<Args>(args)...);
+  return mgr.create<ManagedCons<T>>(std::move(car), std::move(cdr));
 }
 
 namespace detail {
@@ -81,7 +100,11 @@ struct ManagedTree;  // IWYU pragma: keep
 template <ManagedType K, OptionalManagedType V = void>
 using TreePtr = managed_ptr<ManagedTree<K, V>>;
 
-/** Trees with a key, used for sorting, and a side value. */
+/**
+ * Trees with a key, used for sorting, and a side value, ignored for sorting.
+ *
+ * Null keys are not supported.
+ */
 template <ManagedType K, OptionalManagedType V>
 struct ManagedTree : Managed {
   TreePtr<K, V> left;
@@ -99,10 +122,10 @@ struct ManagedTree : Managed {
         color(color) {}
 
   void visit_subobjects(const ManagedVisitor& visitor) override {
-    visitor(left);
-    visitor(right);
+    if (left) visitor(left);
+    if (right) visitor(right);
     visitor(key);
-    visitor(val);
+    if (val) visitor(val);
   }
 
   std::size_t managed_size() const noexcept override {
@@ -110,7 +133,11 @@ struct ManagedTree : Managed {
   }
 };
 
-/** Specialization for "sets" -- trees with just keys, no side values. */
+/**
+ * Specialization for "sets" -- trees with just keys, no side values.
+ *
+ * Null keys are not supported.
+ */
 template <ManagedType K>
 struct ManagedTree<K, void> : Managed {
   TreePtr<K, void> left;
@@ -118,6 +145,7 @@ struct ManagedTree<K, void> : Managed {
   managed_ptr<K> key;
   Color color;
 
+  // cppcheck-suppress uninitMemberVar
   ManagedTree(TreePtr<K, void>&& left, TreePtr<K, void>&& right,
               managed_ptr<K>&& key, Color color)
       : left(std::move(left)),
@@ -126,9 +154,9 @@ struct ManagedTree<K, void> : Managed {
         color(color) {}
 
   void visit_subobjects(const ManagedVisitor& visitor) override {
-    visitor(left);
-    visitor(right);
-    visitor(key);
+    if (left) left.accept(visitor);
+    if (right) right.accept(visitor);
+    key.accept(visitor);
   }
 
   std::size_t managed_size() const noexcept override {
@@ -580,6 +608,8 @@ class ManagedSet : public ManagedWithSelfPtr<ManagedSet<T, Comp>> {
    * Returns the resulting set and a flag that is true if the
    * resulting set is different than the current set (i.e. if `t` was
    * not already in this set.)
+   *
+   * `t` must be reachable or this must be called under a hold.
    */
   std::pair<managed_ptr<ManagedSet<T, Comp>>, bool> insert(
       managed_ptr<T> t) const {
@@ -594,6 +624,12 @@ class ManagedSet : public ManagedWithSelfPtr<ManagedSet<T, Comp>> {
     }
   }
 
+  template <typename... Args>
+  std::pair<managed_ptr<ManagedSet<T, Comp>>, bool> emplace(Args&&... args) {
+    auto hold = mgr_->acquire_hold();
+    return insert(mgr_->create<T>(std::forward<Args>(args)...));
+  }
+
  private:
   friend class MemoryManager;
   friend class testing::ManagedSetAccessor;
@@ -604,9 +640,9 @@ class ManagedSet : public ManagedWithSelfPtr<ManagedSet<T, Comp>> {
   std::size_t size_ = 0;
 
   void visit_subobjects(const ManagedVisitor& visitor) override {
-    visitor(tree_);
+    if (tree_) tree_.accept(visitor);
     if constexpr (ManagedType<Comp>) {
-      visitor(*comp_);
+      comp_->accept(visitor);
     }
   }
 
@@ -615,10 +651,16 @@ class ManagedSet : public ManagedWithSelfPtr<ManagedSet<T, Comp>> {
   }
 };
 
+/**
+ * Creates a `ManagedSet` with the given elements.
+ *
+ * All elements must be reachable or else this must be called with a hold.
+ */
 template <ManagedType T, typename Comp>
 managed_ptr<ManagedSet<T, Comp>> managed_set(
     MemoryManager& mgr, const Comp& comp,
     std::initializer_list<managed_ptr<T>> els) {
+  auto hold = mgr.acquire_hold();
   auto s = mgr.create<ManagedSet<T, Comp>>(mgr, comp);
   for (const auto& el : els) {
     s = s->insert(el).first;
@@ -626,6 +668,7 @@ managed_ptr<ManagedSet<T, Comp>> managed_set(
   return s;
 }
 
+/** @overload */
 template <ManagedType T>
 managed_ptr<ManagedSet<T>> managed_set(
     MemoryManager& mgr, std::initializer_list<managed_ptr<T>> els) {

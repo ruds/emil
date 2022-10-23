@@ -24,13 +24,17 @@
 #include <vector>
 
 #include "emil/gc.h"
+#include "testing/test_util.h"
 
 namespace emil::collections::testing {
+
+using TestRoot = emil::testing::TestRoot;
 
 class ManagedSetAccessor {
  public:
   template <ManagedType T, typename Comp>
   static void verify_invariants(const ManagedSet<T, Comp>& set) {
+    auto hold = set.mgr_->acquire_hold();
     detail::verify_invariants(set.tree_);
     ASSERT_EQ(std::distance(set.cbegin(), set.cend()), set.size_);
     for (auto it = set.cbegin();
@@ -75,64 +79,79 @@ managed_ptr<ManagedInt> mi(MemoryManager& mgr, int n) {
 }
 
 TEST(ConsTest, Cons) {
-  MemoryManager mgr;
-  auto l = cons(mgr, mi(mgr, 1), nullptr);
-  l = cons(mgr, mi(mgr, 2), std::move(l));
-  l = cons(mgr, nullptr, std::move(l));
+  TestRoot root;
+  MemoryManager mgr(root);
+  auto l = root.add_root(cons_in_place<ManagedInt>(mgr, nullptr, 1));
+  auto i = root.add_root(mi(mgr, 2));
+  l = root.replace_root(l, cons(mgr, i, l));
+  root.remove_root(i);
+  l = root.replace_root(l, cons_in_place(mgr, l, 3));
+  l = root.replace_root(l, cons(mgr, nullptr, l));
   ASSERT_FALSE(l->car);
-  ASSERT_EQ(l->cdr->car, 2);
-  ASSERT_EQ(l->cdr->cdr->car, 1);
-  ASSERT_FALSE(l->cdr->cdr->cdr);
+  ASSERT_EQ(l->cdr->car, 3);
+  ASSERT_EQ(l->cdr->cdr->car, 2);
+  ASSERT_EQ(l->cdr->cdr->cdr->car, 1);
+  ASSERT_FALSE(l->cdr->cdr->cdr->cdr);
 }
 
 TEST(ManagedSetTest, OrderedAfterInserts) {
-  MemoryManager mgr;
-  auto s = mgr.create<ManagedSet<ManagedInt>>(mgr);
+  TestRoot root;
+  MemoryManager mgr(root);
+  auto s = root.add_root(mgr.create<ManagedSet<ManagedInt>>(mgr));
   ManagedSetAccessor::verify_invariants(*s);
-  s = s->insert(mi(mgr, 1)).first;
+  s = root.replace_root(s, s->emplace(1).first);
   ManagedSetAccessor::verify_invariants(*s);
-  s = s->insert(mi(mgr, 5)).first;
+  s = root.replace_root(s, s->emplace(5).first);
   ManagedSetAccessor::verify_invariants(*s);
-  s = s->insert(mi(mgr, 4)).first;
+  s = root.replace_root(s, s->emplace(4).first);
   ManagedSetAccessor::verify_invariants(*s);
-  s = s->insert(mi(mgr, 2)).first;
+  s = root.replace_root(s, s->emplace(2).first);
   ManagedSetAccessor::verify_invariants(*s);
-  s = s->insert(mi(mgr, 3)).first;
+  s = root.replace_root(s, s->emplace(3).first);
   ManagedSetAccessor::verify_invariants(*s);
-  s = s->insert(mi(mgr, 6)).first;
+  s = root.replace_root(s, s->emplace(6).first);
   ManagedSetAccessor::verify_invariants(*s);
-  s = s->insert(mi(mgr, 7)).first;
+  s = root.replace_root(s, s->emplace(7).first);
   ManagedSetAccessor::verify_invariants(*s);
   std::vector<managed_ptr<ManagedInt>> v;
+  auto hold = mgr.acquire_hold();
   std::copy(s->begin(), s->end(), std::back_inserter(v));
   ASSERT_THAT(v, ElementsAre(1, 2, 3, 4, 5, 6, 7));
 }
 
 TEST(ManagedSetTest, HandlesDuplicate) {
-  MemoryManager mgr;
-  auto s = mgr.create<ManagedSet<ManagedInt>>(mgr);
+  TestRoot root;
+  MemoryManager mgr(root);
+  auto s = root.add_root(mgr.create<ManagedSet<ManagedInt>>(mgr));
   ManagedSetAccessor::verify_invariants(*s);
-  auto r = s->insert(mi(mgr, 1));
+  auto r = s->emplace(1);
+  root.add_root(r.first);
   EXPECT_TRUE(r.second);
   ManagedSetAccessor::verify_invariants(*r.first);
+  root.remove_root(s);
   s = r.first;
 
-  r = s->insert(mi(mgr, 1));
+  r = s->emplace(1);
   EXPECT_FALSE(r.second);
-  ManagedSetAccessor::verify_invariants(*r.first);
-  s = r.first;
+  ASSERT_EQ(s, r.first);
+  ManagedSetAccessor::verify_invariants(*s);
 
   std::vector<managed_ptr<ManagedInt>> v;
+  auto hold = mgr.acquire_hold();
   std::copy(s->begin(), s->end(), std::back_inserter(v));
   ASSERT_THAT(v, ElementsAre(1));
 }
 
 TEST(ManagedSetTest, Factories) {
-  MemoryManager mgr;
+  TestRoot root;
+  MemoryManager mgr(root);
+  auto hold = mgr.acquire_hold();
+
   auto s = managed_set(mgr, {mi(mgr, 1), mi(mgr, 3), mi(mgr, 2)});
   std::vector<managed_ptr<ManagedInt>> v;
   std::copy(s->begin(), s->end(), std::back_inserter(v));
   EXPECT_THAT(v, ElementsAre(1, 2, 3));
+
   auto s2 =
       managed_set(mgr, std::greater<>(), {mi(mgr, 1), mi(mgr, 3), mi(mgr, 2)});
   v.clear();

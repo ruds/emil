@@ -17,7 +17,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -28,7 +27,15 @@ class MemoryManager;
 class managed_ptr_base;
 
 /** Returns true if subobjects should be visited. */
-using ManagedVisitor = std::function<bool(managed_ptr_base&)>;
+class ManagedVisitor {
+ public:
+  virtual ~ManagedVisitor();
+
+ private:
+  friend class managed_ptr_base;
+
+  virtual bool visit(managed_ptr_base& ptr) const = 0;
+};
 
 /**
  * Base class for all objects managed by emil's memory manager.
@@ -63,7 +70,7 @@ class Managed {
   /**
    * Visits all the managed subobjects of this object.
    *
-   * Implementations should pass the visitor to the visit method of
+   * Implementations should pass the visitor to the accept method of
    * each managed_ptr they own.
    *
    * This could be used, for example, in the mark phase of a mark &
@@ -78,6 +85,8 @@ class Managed {
    * Concrete subclasses should implement this as `return sizeof(ClassName);`
    */
   virtual std::size_t managed_size() const noexcept = 0;
+
+  bool mark();
 };
 
 template <typename T>
@@ -117,7 +126,7 @@ class managed_ptr_base {
   Managed* operator->() { return val_; }
   const Managed* operator->() const { return val_; }
 
-  void visit(const ManagedVisitor& visitor);
+  void accept(const ManagedVisitor& visitor);
 
   explicit operator bool() const noexcept { return val_; }
 
@@ -132,6 +141,7 @@ class managed_ptr_base {
 
  private:
   friend class MemoryManager;
+  friend class MarkVisitor;
 
   bool mark();
 };
@@ -145,6 +155,7 @@ class managed_ptr_base {
 template <typename T>
 class managed_ptr : public managed_ptr_base {
  public:
+  managed_ptr() noexcept : managed_ptr(nullptr) {}
   // cppcheck-suppress noExplicitConstructor
   managed_ptr(std::nullptr_t) noexcept : managed_ptr_base(nullptr) {}
 
@@ -236,20 +247,72 @@ class PrivateBuffer {
   PrivateBuffer& operator=(PrivateBuffer&& o) noexcept;
 };
 
+struct MemoryManagerStats {
+  std::size_t allocated = 0;
+  uint64_t num_objects = 0;
+  uint64_t num_private_buffers = 0;
+  uint64_t num_holds = 0;
+
+  friend auto operator<=>(const MemoryManagerStats&,
+                          const MemoryManagerStats&) = default;
+};
+
+/** The root of the object graph managed by a `MemoryManager`. */
+class Root {
+ public:
+  virtual ~Root();
+
+  virtual void visit_root(const ManagedVisitor& visitor) = 0;
+};
+
+/**
+ * Controls when garbage collection occurs.
+ *
+ * Only called when the number of holds is zero, so some allocations may not be
+ * visible to the policy.
+ */
+class GcPolicy {
+ public:
+  enum class Decision {
+    DoNothing,
+    FullGc,
+  };
+
+  virtual ~GcPolicy();
+
+  virtual Decision on_object_allocation_request(
+      const MemoryManagerStats& stats, std::size_t allocation_request) = 0;
+  virtual Decision on_private_buffer_request(
+      const MemoryManagerStats& stats, std::size_t allocation_request) = 0;
+  virtual Decision on_hold_request(const MemoryManagerStats& stats) = 0;
+};
+
+/**
+ * Does a full GC whenever it is legal to do so.
+ *
+ * This is good for stress testing your use of the `MemoryManager`,
+ * particularly when used in conjunction with the address sanitizer,
+ * which detects use-after-free. Its use is recommended when
+ * developing new native libraries that interact with the memory
+ * manager.
+ */
+class StressTestGcPolicy : public GcPolicy {
+ public:
+  Decision on_object_allocation_request(
+      const MemoryManagerStats& stats, std::size_t allocation_request) override;
+  Decision on_private_buffer_request(const MemoryManagerStats& stats,
+                                     std::size_t allocation_request) override;
+  Decision on_hold_request(const MemoryManagerStats& stats) override;
+};
+
 /** Allocates and manages memory for the emil runtime. */
 class MemoryManager {
  public:
-  MemoryManager();
+  explicit MemoryManager(Root& root);
+  MemoryManager(Root& root, std::unique_ptr<GcPolicy> gc_policy);
   ~MemoryManager();
 
-  struct Stats {
-    std::size_t allocated = 0;
-    uint64_t num_objects = 0;
-    uint64_t num_private_buffers = 0;
-    uint64_t num_holds = 0;
-
-    friend auto operator<=>(const Stats&, const Stats&) = default;
-  };
+  using Stats = MemoryManagerStats;
 
   /**
    * Create a new managed object.
@@ -289,6 +352,8 @@ class MemoryManager {
   friend class PrivateBuffer;
   friend class hold;
 
+  Root& root_;
+  std::unique_ptr<GcPolicy> gc_policy_;
   Managed* managed_ = nullptr;
   Stats stats_{};
 
@@ -299,22 +364,29 @@ class MemoryManager {
 
   void free_obj(Managed* m);
   void free_private_buffer(char* buf, std::size_t size);
-  void release_hold();
+
+  void enact_decision(GcPolicy::Decision decision);
+  void full_gc();
 };
 
 template <ManagedType T, class... Args>
 managed_ptr<T> MemoryManager::create(Args&&... args) {
   const auto size = sizeof(T);
+  if (stats_.num_holds == 0)
+    enact_decision(gc_policy_->on_object_allocation_request(stats_, size));
+  // No garbage collection allowed during construction of an object.
+  hold h{this};
   stats_.allocated += size;
   ++stats_.num_objects;
   // cppcheck-suppress cppcheckError
-  T* t = new T(std::forward<Args>(args)...);
-  assert(static_cast<Managed*>(t)->managed_size() == size);
+  auto t = std::make_unique<T>(std::forward<Args>(args)...);
+  assert(static_cast<Managed&>(*t).managed_size() == size);
   t->next_managed = managed_;
-  managed_ = t;
-  managed_ptr<T> ptr(t);
+  auto* tptr = t.release();
+  managed_ = tptr;
+  managed_ptr<T> ptr(tptr);
   if constexpr (detail::is_managed_with_self_ptr<T>) {
-    static_cast<ManagedWithSelfPtr<T>*>(t)->self_ =
+    static_cast<ManagedWithSelfPtr<T>*>(tptr)->self_ =
         std::make_unique<managed_ptr<T>>(ptr);
   }
   return ptr;

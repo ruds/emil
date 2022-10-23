@@ -15,24 +15,29 @@
 #include "emil/gc.h"
 
 #include <cassert>
+#include <memory>
 
 namespace emil {
+
+ManagedVisitor::~ManagedVisitor() = default;
 
 Managed::Managed() = default;
 Managed::~Managed() = default;
 
+bool Managed::mark() {
+  bool was_marked = is_marked;
+  is_marked = true;
+  return !was_marked;
+}
+
 managed_ptr_base::managed_ptr_base(Managed* val) noexcept : val_(val) {}
 managed_ptr_base::~managed_ptr_base() = default;
 
-void managed_ptr_base::visit(const ManagedVisitor& visitor) {
-  if (visitor(*this)) val_->visit_subobjects(visitor);
+void managed_ptr_base::accept(const ManagedVisitor& visitor) {
+  if (visitor.visit(*this)) val_->visit_subobjects(visitor);
 }
 
-bool managed_ptr_base::mark() {
-  bool was_marked = val_->is_marked;
-  val_->is_marked = true;
-  return !was_marked;
-}
+bool managed_ptr_base::mark() { return val_->mark(); }
 
 PrivateBuffer::~PrivateBuffer() {
   if (buf_) mgr_->free_private_buffer(buf_, size_);
@@ -56,7 +61,30 @@ PrivateBuffer& PrivateBuffer::operator=(PrivateBuffer&& o) noexcept {
   return *this;
 }
 
-MemoryManager::MemoryManager() = default;
+Root::~Root() = default;
+
+GcPolicy::~GcPolicy() = default;
+
+StressTestGcPolicy::Decision StressTestGcPolicy::on_object_allocation_request(
+    const MemoryManagerStats&, std::size_t) {
+  return Decision::FullGc;
+}
+
+StressTestGcPolicy::Decision StressTestGcPolicy::on_private_buffer_request(
+    const MemoryManagerStats&, std::size_t) {
+  return Decision::FullGc;
+}
+
+StressTestGcPolicy::Decision StressTestGcPolicy::on_hold_request(
+    const MemoryManagerStats&) {
+  return Decision::FullGc;
+}
+
+MemoryManager::MemoryManager(Root& root)
+    : MemoryManager(root, std::make_unique<StressTestGcPolicy>()) {}
+
+MemoryManager::MemoryManager(Root& root, std::unique_ptr<GcPolicy> gc_policy)
+    : root_(root), gc_policy_(std::move(gc_policy)) {}
 
 MemoryManager::~MemoryManager() {
   assert(stats_.num_holds == 0);
@@ -69,13 +97,17 @@ MemoryManager::~MemoryManager() {
 }
 
 PrivateBuffer MemoryManager::allocate_private_buffer(std::size_t size) {
+  if (stats_.num_holds == 0)
+    enact_decision(gc_policy_->on_private_buffer_request(stats_, size));
   stats_.allocated += size;
   ++stats_.num_private_buffers;
   return PrivateBuffer(this, new char[size], size);
 }
 
 MemoryManager::hold::~hold() {
-  if (mgr_) mgr_->release_hold();
+  if (!mgr_) return;
+  assert(mgr_->stats_.num_holds != 0);
+  --mgr_->stats_.num_holds;
 }
 
 MemoryManager::hold::hold(hold&& o) : mgr_(o.mgr_) { o.mgr_ = nullptr; }
@@ -88,10 +120,13 @@ MemoryManager::hold& MemoryManager::hold::operator=(hold&& o) {
   return *this;
 }
 
-MemoryManager::hold::hold(MemoryManager* mgr) : mgr_(mgr) {}
+MemoryManager::hold::hold(MemoryManager* mgr) : mgr_(mgr) {
+  ++mgr_->stats_.num_holds;
+}
 
 MemoryManager::hold MemoryManager::acquire_hold() {
-  ++stats_.num_holds;
+  if (stats_.num_holds == 0)
+    enact_decision(gc_policy_->on_hold_request(stats_));
   return {this};
 }
 
@@ -114,9 +149,38 @@ void MemoryManager::free_private_buffer(char* buf, std::size_t size) {
   delete[] buf;
 }
 
-void MemoryManager::release_hold() {
-  assert(stats_.num_holds != 0);
-  --stats_.num_holds;
+void MemoryManager::enact_decision(GcPolicy::Decision decision) {
+  switch (decision) {
+    case GcPolicy::Decision::DoNothing:
+      return;
+
+    case GcPolicy::Decision::FullGc:
+      full_gc();
+      return;
+  }
+}
+
+class MarkVisitor : public ManagedVisitor {
+  bool visit(managed_ptr_base& ptr) const override { return ptr.mark(); }
+};
+
+void MemoryManager::full_gc() {
+  root_.visit_root(MarkVisitor());
+  Managed** prev_next = &managed_;
+  Managed* next = managed_;
+  while (next) {
+    if (next->is_marked) {
+      next->is_marked = false;
+      *prev_next = next;
+      prev_next = &next->next_managed;
+      next = next->next_managed;
+    } else {
+      Managed* to_delete = next;
+      next = to_delete->next_managed;
+      delete to_delete;
+    }
+  }
+  *prev_next = nullptr;
 }
 
 }  // namespace emil
