@@ -190,7 +190,10 @@ TEST(GcTest, Tree) {
                          3 * sizeof(SimpleManaged),
                      5, 0}));
     int count = 0;
-    root.visit([&count](auto&) { ++count; });
+    root.visit([&count](auto&) {
+      ++count;
+      return true;
+    });
     ASSERT_EQ(count, 5);
   }
   ASSERT_FALSE(alive_root);

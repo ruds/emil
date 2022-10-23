@@ -25,11 +25,14 @@ managed_ptr_base::managed_ptr_base(Managed* val) noexcept : val_(val) {}
 managed_ptr_base::~managed_ptr_base() = default;
 
 void managed_ptr_base::visit(const ManagedVisitor& visitor) {
-  visitor(*this);
-  val_->visit_subobjects(visitor);
+  if (visitor(*this)) val_->visit_subobjects(visitor);
 }
 
-void managed_ptr_base::mark() { val_->is_marked = true; }
+bool managed_ptr_base::mark() {
+  bool was_marked = val_->is_marked;
+  val_->is_marked = true;
+  return !was_marked;
+}
 
 PrivateBuffer::~PrivateBuffer() {
   if (buf_) mgr_->free_private_buffer(buf_, size_);

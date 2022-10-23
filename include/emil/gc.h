@@ -27,7 +27,8 @@ namespace emil {
 class MemoryManager;
 class managed_ptr_base;
 
-using ManagedVisitor = std::function<void(managed_ptr_base&)>;
+/** Returns true if subobjects should be visited. */
+using ManagedVisitor = std::function<bool(managed_ptr_base&)>;
 
 /**
  * Base class for all objects managed by emil's memory manager.
@@ -132,7 +133,7 @@ class managed_ptr_base {
  private:
   friend class MemoryManager;
 
-  void mark();
+  bool mark();
 };
 
 /**
