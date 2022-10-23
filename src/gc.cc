@@ -14,6 +14,9 @@
 
 #include "emil/gc.h"
 
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+
 #include <cassert>
 #include <memory>
 
@@ -59,6 +62,15 @@ PrivateBuffer& PrivateBuffer::operator=(PrivateBuffer&& o) noexcept {
   size_ = o.size_;
   o.buf_ = nullptr;
   return *this;
+}
+
+std::ostream& operator<<(std::ostream& os, const MemoryManagerStats& stats) {
+  fmt::print(os,
+             "MemoryManagerStats(allocated={}, num_objects={}, "
+             "num_private_buffers={}, num_holds={})",
+             stats.allocated, stats.num_objects, stats.num_private_buffers,
+             stats.num_holds);
+  return os;
 }
 
 Root::~Root() = default;
@@ -177,7 +189,7 @@ void MemoryManager::full_gc() {
     } else {
       Managed* to_delete = next;
       next = to_delete->next_managed;
-      delete to_delete;
+      free_obj(to_delete);
     }
   }
   *prev_next = nullptr;

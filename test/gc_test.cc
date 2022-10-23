@@ -165,6 +165,85 @@ TEST(GcTest, TwoObjects) {
   ASSERT_FALSE(alive2);
 }
 
+TEST(GcTest, FreesUnreachableObjectsWithHolds) {
+  bool alive1 = false;
+  bool alive2 = false;
+  {
+    TestRoot root;
+    MemoryManager mgr(root);
+    ASSERT_EQ(mgr.stats(), (Stats{}));
+
+    auto ptr1 = mgr.create<SimpleManaged>(alive1);
+    ASSERT_TRUE(alive1);
+    ASSERT_TRUE(ptr1->alive);
+    ASSERT_EQ(mgr.stats(), (Stats{sizeof(SimpleManaged), 1}));
+
+    auto ptr2 = root.add_root(mgr.create<SimpleManaged>(alive2));
+    ASSERT_FALSE(alive1);
+    ASSERT_TRUE(alive2);
+    ASSERT_TRUE(ptr2->alive);
+    EXPECT_EQ(mgr.stats(), (Stats{sizeof(SimpleManaged), 1}));
+
+    ptr1 = mgr.create<SimpleManaged>(alive1);
+    ASSERT_TRUE(alive1);
+    ASSERT_TRUE(ptr1->alive);
+    ASSERT_TRUE(alive2);
+    ASSERT_TRUE(ptr2->alive);
+    EXPECT_EQ(mgr.stats(), (Stats{2 * sizeof(SimpleManaged), 2}));
+  }
+  EXPECT_FALSE(alive1);
+  EXPECT_FALSE(alive2);
+}
+
+TEST(GcTest, HoldsPreventObjectFreeing) {
+  bool alive1 = false;
+  bool alive2 = false;
+  bool alive3 = false;
+  {
+    TestRoot root;
+    MemoryManager mgr(root);
+    {
+      ASSERT_EQ(mgr.stats(), (Stats{}));
+
+      auto ptr1 = mgr.create<SimpleManaged>(alive1);
+      ASSERT_TRUE(alive1);
+      ASSERT_TRUE(ptr1->alive);
+      ASSERT_EQ(mgr.stats(), (Stats{sizeof(SimpleManaged), 1}));
+
+      auto hold = mgr.acquire_hold();
+      ASSERT_FALSE(alive1);
+      ASSERT_EQ(mgr.stats(), (Stats{.num_holds = 1}));
+
+      ptr1 = mgr.create<SimpleManaged>(alive1);
+      ASSERT_TRUE(alive1);
+      ASSERT_TRUE(ptr1->alive);
+      ASSERT_EQ(mgr.stats(), (Stats{sizeof(SimpleManaged), 1, 0, 1}));
+
+      auto ptr2 = root.add_root(mgr.create<SimpleManaged>(alive2));
+      ASSERT_TRUE(alive1);
+      ASSERT_TRUE(ptr1->alive);
+      ASSERT_TRUE(alive2);
+      ASSERT_TRUE(ptr2->alive);
+      EXPECT_EQ(mgr.stats(), (Stats{2 * sizeof(SimpleManaged), 2, 0, 1}));
+
+      auto hold2 = std::move(hold);
+      ASSERT_EQ(mgr.stats(), (Stats{2 * sizeof(SimpleManaged), 2, 0, 1}));
+
+      ptr1 = mgr.create<SimpleManaged>(alive3);
+      ASSERT_TRUE(alive1);
+      ASSERT_TRUE(alive2);
+      ASSERT_TRUE(ptr2->alive);
+      ASSERT_TRUE(alive3);
+      ASSERT_TRUE(ptr1->alive);
+      EXPECT_EQ(mgr.stats(), (Stats{3 * sizeof(SimpleManaged), 3, 0, 1}));
+    }
+    EXPECT_EQ(mgr.stats(), (Stats{3 * sizeof(SimpleManaged), 3, 0, 0}));
+  }
+  EXPECT_FALSE(alive1);
+  EXPECT_FALSE(alive2);
+  EXPECT_FALSE(alive3);
+}
+
 class CountingVisitor : public ManagedVisitor {
  public:
   explicit CountingVisitor(int& count) : count_(count) {}
@@ -278,20 +357,6 @@ TEST(GcTest, Bool) {
   } else {
     SUCCEED();
   }
-}
-
-TEST(GcTest, Holds) {
-  TestRoot root;
-  MemoryManager mgr(root);
-  {
-    ASSERT_EQ(mgr.stats(), (Stats{}));
-    auto hold = mgr.acquire_hold();
-    ASSERT_EQ(mgr.stats(), (Stats{.num_holds = 1}));
-    // TODO: add more tests once there's actual garbage collection
-    auto hold2 = std::move(hold);
-    ASSERT_EQ(mgr.stats(), (Stats{.num_holds = 1}));
-  }
-  ASSERT_EQ(mgr.stats(), (Stats{}));
 }
 
 }  // namespace

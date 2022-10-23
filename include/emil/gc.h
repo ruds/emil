@@ -17,6 +17,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <iosfwd>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -257,6 +258,8 @@ struct MemoryManagerStats {
                           const MemoryManagerStats&) = default;
 };
 
+std::ostream& operator<<(std::ostream& os, const MemoryManagerStats& stats);
+
 /** The root of the object graph managed by a `MemoryManager`. */
 class Root {
  public:
@@ -374,16 +377,18 @@ managed_ptr<T> MemoryManager::create(Args&&... args) {
   const auto size = sizeof(T);
   if (stats_.num_holds == 0)
     enact_decision(gc_policy_->on_object_allocation_request(stats_, size));
+
   // No garbage collection allowed during construction of an object.
   hold h{this};
   stats_.allocated += size;
   ++stats_.num_objects;
-  // cppcheck-suppress cppcheckError
+
   auto t = std::make_unique<T>(std::forward<Args>(args)...);
   assert(static_cast<Managed&>(*t).managed_size() == size);
   t->next_managed = managed_;
   auto* tptr = t.release();
   managed_ = tptr;
+
   managed_ptr<T> ptr(tptr);
   if constexpr (detail::is_managed_with_self_ptr<T>) {
     static_cast<ManagedWithSelfPtr<T>*>(tptr)->self_ =
