@@ -48,3 +48,8 @@ add_library(gc STATIC gc.cc)
 add_emil_options(gc)
 target_include_directories(gc
   PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/include" ../include)
+
+add_library(collections INTERFACE)
+target_sources(collections INTERFACE ../include/emil/collections.h)
+target_include_directories(collections INTERFACE ../include)
+target_link_libraries(collections INTERFACE gc)

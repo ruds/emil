@@ -101,6 +101,9 @@ template <typename T, typename U>
 concept BaseManagedType =
     ManagedType<T> && ManagedType<U> && std::is_base_of<T, U>::value;
 
+template <typename T>
+concept OptionalManagedType = ManagedType<T> || std::is_same_v<T, void>;
+
 /**
  * A type-erased pointer to Managed. Use managed_ptr<T> for almost all
  * purposes.
