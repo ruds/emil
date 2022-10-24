@@ -30,12 +30,18 @@ class managed_ptr_base;
 /** Returns true if subobjects should be visited. */
 class ManagedVisitor {
  public:
+  ManagedVisitor();
   virtual ~ManagedVisitor();
 
  private:
   friend class managed_ptr_base;
 
   virtual bool visit(managed_ptr_base& ptr) const = 0;
+
+  ManagedVisitor(const ManagedVisitor&) = delete;
+  ManagedVisitor& operator=(const ManagedVisitor&) = delete;
+  ManagedVisitor(ManagedVisitor&&) = delete;
+  ManagedVisitor& operator=(ManagedVisitor&&) = delete;
 };
 
 /**

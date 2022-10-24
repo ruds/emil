@@ -22,6 +22,7 @@
 
 namespace emil {
 
+ManagedVisitor::ManagedVisitor() = default;
 ManagedVisitor::~ManagedVisitor() = default;
 
 Managed::Managed() = default;
