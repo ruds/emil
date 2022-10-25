@@ -1,3 +1,4 @@
+// Copyright 2022 Matt Rudary
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -113,25 +114,45 @@ using TreePtr = managed_ptr<ManagedTree<K, V>>;
  */
 template <ManagedType K, OptionalManagedType V>
 struct ManagedTree : Managed {
+  using payload_type = std::pair<managed_ptr<K>, managed_ptr<V>>;
+
   TreePtr<K, V> left;
   TreePtr<K, V> right;
-  managed_ptr<K> key;
-  managed_ptr<V> val;
+  payload_type payload;
   Color color;
 
-  ManagedTree(TreePtr<K, V>&& left, TreePtr<K, V>&& right, managed_ptr<K>&& key,
-              managed_ptr<V>&& val, Color color)
+  static TreePtr<K, V> make_tree(MemoryManager& mgr, TreePtr<K, V> left,
+                                 TreePtr<K, V> right, payload_type payload,
+                                 Color color) {
+    return mgr.create<ManagedTree<K, V>>(std::move(left), std::move(right),
+                                         std::move(payload), color);
+  }
+
+  static const managed_ptr<K>& key(const payload_type& payload) {
+    return payload.first;
+  }
+
+  static TreePtr<K, V> double_black_empty(MemoryManager& mgr) {
+    return make_tree(mgr, nullptr, nullptr, {nullptr, nullptr},
+                     Color::DoubleBlack);
+  }
+
+  const managed_ptr<K>& key() const { return payload.first; }
+
+  const managed_ptr<V>& value() const { return payload.second; }
+
+  ManagedTree(TreePtr<K, V>&& left, TreePtr<K, V>&& right,
+              payload_type&& payload, Color color)
       : left(std::move(left)),
         right(std::move(right)),
-        key(std::move(key)),
-        val(std::move(val)),
+        payload(std::move(payload)),
         color(color) {}
 
   void visit_subobjects(const ManagedVisitor& visitor) override {
-    if (left) visitor(left);
-    if (right) visitor(right);
-    visitor(key);
-    if (val) visitor(val);
+    if (left) left.accept(visitor);
+    if (right) right.accept(visitor);
+    payload.first.accept(visitor);
+    if (payload.second) payload.second.accept(visitor);
   }
 
   std::size_t managed_size() const noexcept override {
@@ -146,23 +167,42 @@ struct ManagedTree : Managed {
  */
 template <ManagedType K>
 struct ManagedTree<K, void> : Managed {
+  using payload_type = managed_ptr<K>;
+
   TreePtr<K, void> left;
   TreePtr<K, void> right;
-  managed_ptr<K> key;
+  payload_type payload;
   Color color;
+
+  static TreePtr<K> make_tree(MemoryManager& mgr, TreePtr<K> left,
+                              TreePtr<K> right, payload_type payload,
+                              Color color) {
+    return mgr.create<ManagedTree<K>>(std::move(left), std::move(right),
+                                      std::move(payload), color);
+  }
+
+  static const managed_ptr<K>& key(const payload_type& payload) {
+    return payload;
+  }
+
+  static TreePtr<K> double_black_empty(MemoryManager& mgr) {
+    return make_tree(mgr, nullptr, nullptr, nullptr, Color::DoubleBlack);
+  }
+
+  const managed_ptr<K>& key() const { return payload; }
 
   // cppcheck-suppress uninitMemberVar
   ManagedTree(TreePtr<K, void>&& left, TreePtr<K, void>&& right,
-              managed_ptr<K>&& key, Color color)
+              payload_type&& payload, Color color)
       : left(std::move(left)),
         right(std::move(right)),
-        key(std::move(key)),
+        payload(std::move(payload)),
         color(color) {}
 
   void visit_subobjects(const ManagedVisitor& visitor) override {
     if (left) left.accept(visitor);
     if (right) right.accept(visitor);
-    key.accept(visitor);
+    payload.accept(visitor);
   }
 
   std::size_t managed_size() const noexcept override {
@@ -188,10 +228,10 @@ int verify_subtree_invariants(const TreePtr<K, V>& subtree, const Comp& comp) {
        (subtree->right && subtree->right->color == Color::Red))) {
     throw std::logic_error("Red node has red child.");
   }
-  if (subtree->left && !comp(*subtree->left->key, *subtree->key)) {
+  if (subtree->left && !comp(*subtree->left->key(), *subtree->key())) {
     throw std::logic_error("Left subtree's key is not less than key.");
   }
-  if (subtree->right && !comp(*subtree->key, *subtree->right->key)) {
+  if (subtree->right && !comp(*subtree->key(), *subtree->right->key())) {
     throw std::logic_error("Key is not less than right subtree's key.");
   }
   int ldepth = verify_subtree_invariants(subtree->left, comp);
@@ -207,59 +247,6 @@ bool verify_invariants(const TreePtr<K, V>& root, const Comp& comp) {
   verify_subtree_invariants(root, comp);
   return true;
 }
-
-/**
- * A helper class to allow the same code to be used for both key and
- * key-value trees.
- *
- * The payload for a node in the tree is the key and, if present, the
- * value.
- */
-template <ManagedType K, OptionalManagedType V>
-struct Payload {
-  typedef std::pair<managed_ptr<K>, managed_ptr<V>> type;
-
-  static type get(const ManagedTree<K, V>& tree) {
-    return std::make_pair(tree.key, tree.value);
-  }
-
-  static const managed_ptr<K>& key(const type& payload) {
-    return payload.first;
-  }
-
-  static TreePtr<K, V> make_tree(MemoryManager& mgr, TreePtr<K, V> left,
-                                 TreePtr<K, V> right, type&& payload,
-                                 Color color) {
-    return mgr.create<ManagedTree<K, V>>(std::move(left), std::move(right),
-                                         std::move(payload.first),
-                                         std::move(payload.second), color);
-  }
-
-  static TreePtr<K, V> double_black_empty(MemoryManager& mgr) {
-    return mgr.create<ManagedTree<K, V>>(nullptr, nullptr, nullptr, nullptr,
-                                         Color::DoubleBlack);
-  }
-};
-
-template <ManagedType K>
-struct Payload<K, void> {
-  typedef managed_ptr<K> type;
-
-  static const type& get(const ManagedTree<K, void>& tree) { return tree.key; }
-
-  static const managed_ptr<K>& key(const type& payload) { return payload; }
-
-  static TreePtr<K> make_tree(MemoryManager& mgr, TreePtr<K> left,
-                              TreePtr<K> right, type key, Color color) {
-    return mgr.create<ManagedTree<K>>(std::move(left), std::move(right),
-                                      std::move(key), color);
-  }
-
-  static TreePtr<K> double_black_empty(MemoryManager& mgr) {
-    return mgr.create<ManagedTree<K>>(nullptr, nullptr, nullptr,
-                                      Color::DoubleBlack);
-  }
-};
 
 template <ManagedType K, OptionalManagedType V>
 using TreeStack = ConsPtr<ManagedTree<K, V>>;
@@ -280,8 +267,9 @@ class tree_iterator {
  public:
   using iterator_concept = std::bidirectional_iterator_tag;
   using difference_type = std::ptrdiff_t;
-  using value_type = typename Payload<K, V>::type;
+  using value_type = typename ManagedTree<K, V>::payload_type;
   using reference = const value_type&;
+  using pointer = const value_type*;
 
  public:
   tree_iterator() : mgr_(nullptr), stack_(nullptr), comp_(nullptr) {}
@@ -293,7 +281,8 @@ class tree_iterator {
                       cons(mgr, nullptr, cons(mgr, std::move(tree), nullptr)),
                       comp) {}
 
-  reference operator*() const { return Payload<K, V>::get(*stack_->car); }
+  reference operator*() const { return stack_->car->payload; }
+  pointer operator->() const { return &stack_->car->payload; }
 
   tree_iterator& operator++() {
     if (stack_->car->right) {
@@ -303,7 +292,8 @@ class tree_iterator {
         stack_ = cons(*mgr_, stack_->car->left, stack_);
       }
     } else {
-      while (stack_->cdr && (*comp_)(*stack_->cdr->car->key, *stack_->car->key))
+      while (stack_->cdr &&
+             (*comp_)(*stack_->cdr->car->key(), *stack_->car->key()))
         stack_ = stack_->cdr;
       if (stack_->cdr) {
         stack_ = stack_->cdr;
@@ -339,7 +329,8 @@ class tree_iterator {
       }
       return *this;
     }
-    while (stack_->cdr && (*comp_)(*stack_->car->key, *stack_->cdr->car->key))
+    while (stack_->cdr &&
+           (*comp_)(*stack_->car->key(), *stack_->cdr->car->key()))
       stack_ = stack_->cdr;
     stack_ = stack_->cdr;
     return *this;
@@ -362,26 +353,26 @@ class tree_iterator {
   const Comp* comp_;
 };
 
-template <typename T, ManagedType K, OptionalManagedType V, typename Comp>
+template <typename U, ManagedType K, OptionalManagedType V, typename Comp>
 TreeStack<K, V> find_with_bound(MemoryManager& mgr, TreePtr<K, V> tree,
-                                const T& key,
+                                const U& key,
                                 const TreeStack<K, V>& lower_bound,
                                 const Comp& comp, TreeStack<K, V> stack) {
-  if (!tree) return comp(*lower_bound->car->key, key) ? nullptr : lower_bound;
+  if (!tree) return comp(*lower_bound->car->key(), key) ? nullptr : lower_bound;
   auto new_stack = cons(mgr, tree, std::move(stack));
-  if (comp(key, *tree->key))
+  if (comp(key, *tree->key()))
     return find_with_bound(mgr, tree->left, key, lower_bound, comp,
                            std::move(new_stack));
   return find_with_bound(mgr, tree->right, key, new_stack, comp, new_stack);
 }
 
-template <typename T, ManagedType K, OptionalManagedType V, typename Comp>
+template <typename U, ManagedType K, OptionalManagedType V, typename Comp>
 TreeStack<K, V> find_no_bound(MemoryManager& mgr, TreePtr<K, V> tree,
-                              const T& key, const Comp& comp,
+                              const U& key, const Comp& comp,
                               TreeStack<K, V> stack = nullptr) {
   if (!tree) return nullptr;
   auto new_stack = cons(mgr, tree, std::move(stack));
-  if (comp(key, *tree->key))
+  if (comp(key, *tree->key()))
     return find_no_bound(mgr, tree->left, key, comp, std::move(new_stack));
   return find_with_bound(mgr, tree->right, key, new_stack, comp, new_stack);
 }
@@ -390,8 +381,8 @@ TreeStack<K, V> find_no_bound(MemoryManager& mgr, TreePtr<K, V> tree,
  * Find the key in the tree, returning the path from root to the node
  * containing the key. Returns nullptr if not found.
  */
-template <typename T, ManagedType K, OptionalManagedType V, typename Comp>
-TreeStack<K, V> find(MemoryManager& mgr, TreePtr<K, V> tree, const T& key,
+template <typename U, ManagedType K, OptionalManagedType V, typename Comp>
+TreeStack<K, V> find(MemoryManager& mgr, TreePtr<K, V> tree, const U& key,
                      const Comp& comp) {
   auto hold = mgr.acquire_hold();
   return find_no_bound(mgr, tree, key, comp);
@@ -401,18 +392,18 @@ TreeStack<K, V> find(MemoryManager& mgr, TreePtr<K, V> tree, const T& key,
 template <ManagedType K, OptionalManagedType V>
 TreePtr<K, V> balance_ll(MemoryManager& mgr, Color color, TreePtr<K, V> left,
                          TreePtr<K, V> right,
-                         typename Payload<K, V>::type payload) {
-  using P = Payload<K, V>;
+                         typename ManagedTree<K, V>::payload_type payload) {
+  using T = ManagedTree<K, V>;
   if (color == Color::Black && left && left->left &&
       left->color == Color::Red && left->left->color == Color::Red) {
-    return P::make_tree(mgr,
-                        P::make_tree(mgr, left->left->left, left->left->right,
-                                     P::get(*left->left), Color::Black),
-                        P::make_tree(mgr, left->right, std::move(right),
+    return T::make_tree(mgr,
+                        T::make_tree(mgr, left->left->left, left->left->right,
+                                     left->left->payload, Color::Black),
+                        T::make_tree(mgr, left->right, std::move(right),
                                      std::move(payload), Color::Black),
-                        P::get(*left), Color::Red);
+                        left->payload, Color::Red);
   }
-  return P::make_tree(mgr, std::move(left), std::move(right),
+  return T::make_tree(mgr, std::move(left), std::move(right),
                       std::move(payload), color);
 }
 
@@ -420,18 +411,18 @@ TreePtr<K, V> balance_ll(MemoryManager& mgr, Color color, TreePtr<K, V> left,
 template <ManagedType K, OptionalManagedType V>
 TreePtr<K, V> balance_lr(MemoryManager& mgr, Color color, TreePtr<K, V> left,
                          TreePtr<K, V> right,
-                         typename Payload<K, V>::type payload) {
-  using P = Payload<K, V>;
+                         typename ManagedTree<K, V>::payload_type payload) {
+  using T = ManagedTree<K, V>;
   if (color == Color::Black && left && left->right &&
       left->color == Color::Red && left->right->color == Color::Red) {
-    return P::make_tree(mgr,
-                        P::make_tree(mgr, left->left, left->right->left,
-                                     P::get(*left), Color::Black),
-                        P::make_tree(mgr, left->right->right, std::move(right),
+    return T::make_tree(mgr,
+                        T::make_tree(mgr, left->left, left->right->left,
+                                     left->payload, Color::Black),
+                        T::make_tree(mgr, left->right->right, std::move(right),
                                      std::move(payload), Color::Black),
-                        P::get(*left->right), Color::Red);
+                        left->right->payload, Color::Red);
   }
-  return P::make_tree(mgr, std::move(left), std::move(right),
+  return T::make_tree(mgr, std::move(left), std::move(right),
                       std::move(payload), color);
 }
 
@@ -439,18 +430,18 @@ TreePtr<K, V> balance_lr(MemoryManager& mgr, Color color, TreePtr<K, V> left,
 template <ManagedType K, OptionalManagedType V>
 TreePtr<K, V> balance_rl(MemoryManager& mgr, Color color, TreePtr<K, V> left,
                          TreePtr<K, V> right,
-                         typename Payload<K, V>::type payload) {
-  using P = Payload<K, V>;
+                         typename ManagedTree<K, V>::payload_type payload) {
+  using T = ManagedTree<K, V>;
   if (color == Color::Black && right && right->left &&
       right->color == Color::Red && right->left->color == Color::Red) {
-    return P::make_tree(mgr,
-                        P::make_tree(mgr, std::move(left), right->left->left,
+    return T::make_tree(mgr,
+                        T::make_tree(mgr, std::move(left), right->left->left,
                                      std::move(payload), Color::Black),
-                        P::make_tree(mgr, right->left->right, right->right,
-                                     P::get(*right), Color::Black),
-                        P::get(*right->left), Color::Red);
+                        T::make_tree(mgr, right->left->right, right->right,
+                                     right->payload, Color::Black),
+                        right->left->payload, Color::Red);
   }
-  return P::make_tree(mgr, std::move(left), std::move(right),
+  return T::make_tree(mgr, std::move(left), std::move(right),
                       std::move(payload), color);
 }
 
@@ -458,19 +449,19 @@ TreePtr<K, V> balance_rl(MemoryManager& mgr, Color color, TreePtr<K, V> left,
 template <ManagedType K, OptionalManagedType V>
 TreePtr<K, V> balance_rr(MemoryManager& mgr, Color color, TreePtr<K, V> left,
                          TreePtr<K, V> right,
-                         typename Payload<K, V>::type payload) {
-  using P = Payload<K, V>;
+                         typename ManagedTree<K, V>::payload_type payload) {
+  using T = ManagedTree<K, V>;
   if (color == Color::Black && right && right->right &&
       right->color == Color::Red && right->right->color == Color::Red) {
-    return P::make_tree(
+    return T::make_tree(
         mgr,
-        P::make_tree(mgr, std::move(left), right->left, std::move(payload),
+        T::make_tree(mgr, std::move(left), right->left, std::move(payload),
                      Color::Black),
-        P::make_tree(mgr, right->right->left, right->right->right,
-                     P::get(*right->right), Color::Black),
-        P::get(*right), Color::Red);
+        T::make_tree(mgr, right->right->left, right->right->right,
+                     right->right->payload, Color::Black),
+        right->payload, Color::Red);
   }
-  return P::make_tree(mgr, std::move(left), std::move(right),
+  return T::make_tree(mgr, std::move(left), std::move(right),
                       std::move(payload), color);
 }
 
@@ -484,10 +475,10 @@ TreePtr<K, V> balance_rr(MemoryManager& mgr, Color color, TreePtr<K, V> left,
 template <ManagedType K, OptionalManagedType V>
 std::optional<TreePtr<K, V>> maybe_replace(
     MemoryManager& mgr, TreePtr<K, V> tree,
-    typename Payload<K, V>::type&& payload, bool replace) {
+    typename ManagedTree<K, V>::payload_type&& payload, bool replace) {
   if (replace) {
-    return Payload<K, V>::make_tree(mgr, tree->left, tree->right,
-                                    std::move(payload), tree->color);
+    return ManagedTree<K, V>::make_tree(mgr, tree->left, tree->right,
+                                        std::move(payload), tree->color);
   }
   return std::nullopt;
 }
@@ -495,49 +486,51 @@ std::optional<TreePtr<K, V>> maybe_replace(
 template <ManagedType K, OptionalManagedType V, typename Comp>
 std::optional<TreePtr<K, V>> insert_into_subtree(
     MemoryManager& mgr, TreePtr<K, V> tree,
-    typename Payload<K, V>::type&& payload, const Comp& comp, bool replace) {
-  using P = Payload<K, V>;
+    typename ManagedTree<K, V>::payload_type&& payload, const Comp& comp,
+    bool replace) {
+  using T = ManagedTree<K, V>;
   if (!tree) {
-    return P::make_tree(mgr, nullptr, nullptr, std::move(payload), Color::Red);
+    return T::make_tree(mgr, nullptr, nullptr, std::move(payload), Color::Red);
   }
-  const auto& key = P::key(payload);
-  if (comp(*key, *tree->key)) {
-    const bool not_less_than_left = tree->left && !comp(*key, *tree->left->key);
-    if (not_less_than_left && !comp(*tree->left->key, *key)) {
+  const auto& key = T::key(payload);
+  if (comp(*key, *tree->key())) {
+    const bool not_less_than_left =
+        tree->left && !comp(*key, *tree->left->key());
+    if (not_less_than_left && !comp(*tree->left->key(), *key)) {
       return maybe_replace(mgr, std::move(tree), std::move(payload), replace);
     }
     return insert_into_subtree(mgr, tree->left, std::move(payload), comp,
                                replace)
-        .transform([&](auto&& new_tree) {
+        .transform([&](managed_ptr<T>&& new_tree) {
           if (!tree->left) {
-            return P::make_tree(mgr, std::move(new_tree), tree->right,
-                                P::get(*tree), tree->color);
+            return T::make_tree(mgr, std::move(new_tree), tree->right,
+                                tree->payload, tree->color);
           } else if (not_less_than_left) {
             return balance_lr(mgr, tree->color, std::move(new_tree),
-                              tree->right, P::get(*tree));
+                              tree->right, tree->payload);
           } else {
             return balance_ll(mgr, tree->color, std::move(new_tree),
-                              tree->right, P::get(*tree));
+                              tree->right, tree->payload);
           }
         });
-  } else if (comp(*tree->key, *key)) {
+  } else if (comp(*tree->key(), *key)) {
     const bool not_less_than_right =
-        tree->right && !comp(*key, *tree->right->key);
-    if (not_less_than_right && !comp(*tree->right->key, *key)) {
+        tree->right && !comp(*key, *tree->right->key());
+    if (not_less_than_right && !comp(*tree->right->key(), *key)) {
       return maybe_replace(mgr, std::move(tree), std::move(payload), replace);
     }
     return insert_into_subtree(mgr, tree->right, std::move(payload), comp,
                                replace)
         .transform([&](auto&& new_tree) {
           if (!tree->right) {
-            return P::make_tree(mgr, tree->left, std::move(new_tree),
-                                P::get(*tree), tree->color);
+            return T::make_tree(mgr, tree->left, std::move(new_tree),
+                                tree->payload, tree->color);
           } else if (not_less_than_right) {
             return balance_rr(mgr, tree->color, tree->left, std::move(new_tree),
-                              P::get(*tree));
+                              tree->payload);
           } else {
             return balance_rl(mgr, tree->color, tree->left, std::move(new_tree),
-                              P::get(*tree));
+                              tree->payload);
           }
         });
   } else {
@@ -550,8 +543,8 @@ TreePtr<K, V> blacken(MemoryManager& mgr, TreePtr<K, V>&& tree) {
   if (tree && tree->color == Color::Red &&
       ((tree->left && tree->left->color == Color::Red) ||
        (tree->right && tree->right->color == Color::Red))) {
-    using P = Payload<K, V>;
-    return P::make_tree(mgr, tree->left, tree->right, P::get(*tree),
+    using T = ManagedTree<K, V>;
+    return T::make_tree(mgr, tree->left, tree->right, tree->payload,
                         Color::Black);
   } else {
     return tree;
@@ -560,9 +553,10 @@ TreePtr<K, V> blacken(MemoryManager& mgr, TreePtr<K, V>&& tree) {
 
 /** Insert `payload` into `tree`. */
 template <ManagedType K, OptionalManagedType V, typename Comp>
-std::pair<TreePtr<K, V>, bool> insert(MemoryManager& mgr, TreePtr<K, V> tree,
-                                      typename Payload<K, V>::type&& payload,
-                                      const Comp& comp, bool replace) {
+std::pair<TreePtr<K, V>, bool> insert(
+    MemoryManager& mgr, TreePtr<K, V> tree,
+    typename ManagedTree<K, V>::payload_type&& payload, const Comp& comp,
+    bool replace) {
   auto hold = mgr.acquire_hold();
   auto result =
       *insert_into_subtree(mgr, tree, std::move(payload), comp, replace)
@@ -578,28 +572,29 @@ std::pair<TreePtr<K, V>, bool> insert(MemoryManager& mgr, TreePtr<K, V> tree,
 template <ManagedType K, OptionalManagedType V>
 TreePtr<K, V> undouble(MemoryManager& mgr, const TreePtr<K, V>& tree) {
   assert(tree && tree->color == Color::DoubleBlack);
-  if (!tree->key) return nullptr;
-  using P = Payload<K, V>;
-  return P::make_tree(mgr, tree->left, tree->right, P::get(*tree),
+  if (!tree->key()) return nullptr;
+  using T = ManagedTree<K, V>;
+  return T::make_tree(mgr, tree->left, tree->right, tree->payload,
                       Color::Black);
 }
 
 template <ManagedType K, OptionalManagedType V>
 TreePtr<K, V> balance_bbl(MemoryManager& mgr, TreePtr<K, V> ll,
-                          TreePtr<K, V> lr, typename Payload<K, V>::type left,
+                          TreePtr<K, V> lr,
+                          typename ManagedTree<K, V>::payload_type left,
                           TreePtr<K, V> right,
-                          typename Payload<K, V>::type payload) {
-  using P = Payload<K, V>;
+                          typename ManagedTree<K, V>::payload_type payload) {
+  using T = ManagedTree<K, V>;
   if (lr && lr->color == Color::Red) {
-    return P::make_tree(mgr,
-                        P::make_tree(mgr, std::move(ll), lr->left,
+    return T::make_tree(mgr,
+                        T::make_tree(mgr, std::move(ll), lr->left,
                                      std::move(left), Color::Black),
-                        P::make_tree(mgr, lr->right, std::move(right),
+                        T::make_tree(mgr, lr->right, std::move(right),
                                      std::move(payload), Color::Black),
-                        P::get(*lr), Color::Black);
+                        lr->payload, Color::Black);
   } else {
-    return P::make_tree(mgr,
-                        P::make_tree(mgr, std::move(ll), std::move(lr),
+    return T::make_tree(mgr,
+                        T::make_tree(mgr, std::move(ll), std::move(lr),
                                      std::move(left), Color::Red),
                         std::move(right), std::move(payload),
                         Color::DoubleBlack);
@@ -609,19 +604,19 @@ TreePtr<K, V> balance_bbl(MemoryManager& mgr, TreePtr<K, V> ll,
 template <ManagedType K, OptionalManagedType V>
 TreePtr<K, V> balance_bbr(MemoryManager& mgr, TreePtr<K, V> left,
                           TreePtr<K, V> rl, TreePtr<K, V> rr,
-                          typename Payload<K, V>::type right,
-                          typename Payload<K, V>::type payload) {
-  using P = Payload<K, V>;
+                          typename ManagedTree<K, V>::payload_type right,
+                          typename ManagedTree<K, V>::payload_type payload) {
+  using T = ManagedTree<K, V>;
   if (rl && rl->color == Color::Red) {
-    return P::make_tree(mgr,
-                        P::make_tree(mgr, std::move(left), rl->left,
+    return T::make_tree(mgr,
+                        T::make_tree(mgr, std::move(left), rl->left,
                                      std::move(payload), Color::Black),
-                        P::make_tree(mgr, rl->right, std::move(rr),
+                        T::make_tree(mgr, rl->right, std::move(rr),
                                      std::move(right), Color::Black),
-                        P::get(*rl), Color::Black);
+                        rl->payload, Color::Black);
   } else {
-    return P::make_tree(mgr, std::move(left),
-                        P::make_tree(mgr, std::move(rl), std::move(rr),
+    return T::make_tree(mgr, std::move(left),
+                        T::make_tree(mgr, std::move(rl), std::move(rr),
                                      std::move(right), Color::Red),
                         std::move(payload), Color::DoubleBlack);
   }
@@ -630,121 +625,121 @@ TreePtr<K, V> balance_bbr(MemoryManager& mgr, TreePtr<K, V> left,
 template <ManagedType K, OptionalManagedType V>
 TreePtr<K, V> rotate_l(MemoryManager& mgr, Color color, TreePtr<K, V> left,
                        TreePtr<K, V> right,
-                       typename Payload<K, V>::type payload) {
-  using P = Payload<K, V>;
+                       typename ManagedTree<K, V>::payload_type payload) {
+  using T = ManagedTree<K, V>;
   assert(color != Color::DoubleBlack);
   if (left && left->color == Color::DoubleBlack) {
     assert(right);
     if (color == Color::Red) {
       if (right->color == Color::Black) {
         return balance_lr(mgr, Color::Black,
-                          P::make_tree(mgr, undouble(mgr, left), right->left,
+                          T::make_tree(mgr, undouble(mgr, left), right->left,
                                        std::move(payload), Color::Red),
-                          right->right, P::get(*right));
+                          right->right, right->payload);
       }
     } else if (right->color == Color::Black) {
       return balance_bbl(mgr, undouble(mgr, left), right->left,
-                         std::move(payload), right->right, P::get(*right));
+                         std::move(payload), right->right, right->payload);
     } else if (right->left && right->left->color == Color::Black) {
       auto new_left =
           balance_lr(mgr, Color::Black,
-                     P::make_tree(mgr, undouble(mgr, left), right->left->left,
+                     T::make_tree(mgr, undouble(mgr, left), right->left->left,
                                   std::move(payload), Color::Red),
-                     right->left->right, P::get(*right->left));
-      return P::make_tree(mgr, std::move(new_left), right->right,
-                          P::get(*right), Color::Black);
+                     right->left->right, right->left->payload);
+      return T::make_tree(mgr, std::move(new_left), right->right,
+                          right->payload, Color::Black);
     }
   }
-  return P::make_tree(mgr, std::move(left), std::move(right),
+  return T::make_tree(mgr, std::move(left), std::move(right),
                       std::move(payload), color);
 }
 
 template <ManagedType K, OptionalManagedType V>
 TreePtr<K, V> rotate_r(MemoryManager& mgr, Color color, TreePtr<K, V> left,
                        TreePtr<K, V> right,
-                       typename Payload<K, V>::type payload) {
-  using P = Payload<K, V>;
+                       typename ManagedTree<K, V>::payload_type payload) {
+  using T = ManagedTree<K, V>;
   assert(color != Color::DoubleBlack);
   if (right && right->color == Color::DoubleBlack) {
     assert(left);
     if (color == Color::Red) {
       if (left->color == Color::Black) {
         return balance_rl(mgr, Color::Black, left->left,
-                          P::make_tree(mgr, left->right, undouble(mgr, right),
+                          T::make_tree(mgr, left->right, undouble(mgr, right),
                                        std::move(payload), Color::Red),
-                          P::get(*left));
+                          left->payload);
       }
     } else if (left->color == Color::Black) {
       return balance_bbr(mgr, left->left, left->right, undouble(mgr, right),
-                         std::move(payload), P::get(*left));
+                         std::move(payload), left->payload);
     } else if (left->right && left->right->color == Color::Black) {
       auto new_right =
           balance_rl(mgr, Color::Black, left->right->left,
-                     P::make_tree(mgr, left->right->right, undouble(mgr, right),
+                     T::make_tree(mgr, left->right->right, undouble(mgr, right),
                                   std::move(payload), Color::Red),
-                     P::get(*left->right));
-      return P::make_tree(mgr, left->left, std::move(new_right), P::get(*left),
+                     left->right->payload);
+      return T::make_tree(mgr, left->left, std::move(new_right), left->payload,
                           Color::Black);
     }
   }
-  return P::make_tree(mgr, std::move(left), std::move(right),
+  return T::make_tree(mgr, std::move(left), std::move(right),
                       std::move(payload), color);
 }
 
 /** Delete the smallest element in `tree` (ie its leftmost node). */
 template <ManagedType K, OptionalManagedType V>
-std::pair<TreePtr<K, V>, typename Payload<K, V>::type> erase_min(
+std::pair<TreePtr<K, V>, typename ManagedTree<K, V>::payload_type> erase_min(
     MemoryManager& mgr, TreePtr<K, V> tree) {
-  using P = Payload<K, V>;
+  using T = ManagedTree<K, V>;
   if (!tree) throw std::logic_error("Deleting min from empty tree.");
   if (tree->color == Color::Red && !tree->left && !tree->right) {
-    return std::make_pair(nullptr, P::get(*tree));
+    return std::make_pair(nullptr, tree->payload);
   } else if (tree->color == Color::Black && !tree->left) {
     if (!tree->right) {
-      return std::make_pair(P::double_black_empty(mgr), P::get(*tree));
+      return std::make_pair(T::double_black_empty(mgr), tree->payload);
     } else if (tree->right->color == Color::Red) {
       return std::make_pair(
-          P::make_tree(mgr, tree->right->left, tree->right->right,
-                       P::get(*tree->right), Color::Black),
-          P::get(*tree));
+          T::make_tree(mgr, tree->right->left, tree->right->right,
+                       tree->right->payload, Color::Black),
+          tree->payload);
     }
   }
   auto [left, payload] = erase_min(mgr, tree->left);
   return std::make_pair(
-      rotate_l(mgr, tree->color, std::move(left), tree->right, P::get(*tree)),
+      rotate_l(mgr, tree->color, std::move(left), tree->right, tree->payload),
       std::move(payload));
 }
 
 /** Delete `key` from `tree`. */
-template <typename T, ManagedType K, OptionalManagedType V, typename Comp>
+template <typename U, ManagedType K, OptionalManagedType V, typename Comp>
 std::optional<TreePtr<K, V>> erase_from_subtree(MemoryManager& mgr,
                                                 TreePtr<K, V> tree,
-                                                const T& key,
+                                                const U& key,
                                                 const Comp& comp) {
-  using P = Payload<K, V>;
+  using T = ManagedTree<K, V>;
   if (!tree) {
     return {};
   }
-  if (comp(key, *tree->key)) {
+  if (comp(key, *tree->key())) {
     return erase_from_subtree(mgr, tree->left, key, comp)
         .transform([&](auto&& new_tree) {
           return rotate_l(mgr, tree->color, std::move(new_tree), tree->right,
-                          P::get(*tree));
+                          tree->payload);
         });
-  } else if (comp(*tree->key, key)) {
+  } else if (comp(*tree->key(), key)) {
     return erase_from_subtree(mgr, tree->right, key, comp)
         .transform([&](auto&& new_tree) {
           return rotate_r(mgr, tree->color, tree->left, std::move(new_tree),
-                          P::get(*tree));
+                          tree->payload);
         });
   } else if (tree->color == Color::Red && !tree->left && !tree->right) {
     return nullptr;
   } else if (tree->color == Color::Black && !tree->right) {
     if (!tree->left) {
-      return P::double_black_empty(mgr);
+      return T::double_black_empty(mgr);
     } else if (tree->left->color == Color::Red) {
-      return P::make_tree(mgr, tree->left->left, tree->left->right,
-                          P::get(*tree->left), Color::Black);
+      return T::make_tree(mgr, tree->left->left, tree->left->right,
+                          tree->left->payload, Color::Black);
     }
   }
   auto [right, payload] = erase_min(mgr, tree->right);
@@ -757,8 +752,8 @@ TreePtr<K, V> redden(MemoryManager& mgr, TreePtr<K, V>&& tree) {
   if (tree && tree->color == Color::Black &&
       (!tree->left || tree->left->color == Color::Black) &&
       (!tree->right || tree->right->color == Color::Black)) {
-    using P = Payload<K, V>;
-    return P::make_tree(mgr, tree->left, tree->right, P::get(*tree),
+    using T = ManagedTree<K, V>;
+    return T::make_tree(mgr, tree->left, tree->right, tree->payload,
                         Color::Red);
   } else {
     return tree;
@@ -766,9 +761,9 @@ TreePtr<K, V> redden(MemoryManager& mgr, TreePtr<K, V>&& tree) {
 }
 
 /** Delete `key` from `tree`. */
-template <typename T, ManagedType K, OptionalManagedType V, typename Comp>
+template <typename U, ManagedType K, OptionalManagedType V, typename Comp>
 std::pair<TreePtr<K, V>, bool> erase(MemoryManager& mgr, TreePtr<K, V> tree,
-                                     const T& key, const Comp& comp) {
+                                     const U& key, const Comp& comp) {
   auto hold = mgr.acquire_hold();
   auto result =
       *erase_from_subtree(mgr, redden(mgr, std::move(tree)), key, comp)
