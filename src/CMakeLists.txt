@@ -52,5 +52,6 @@ target_link_libraries(gc PRIVATE fmt::fmt)
 
 add_library(collections INTERFACE)
 target_sources(collections INTERFACE ../include/emil/collections.h)
+target_precompile_headers(collections INTERFACE ../include/emil/collections.h)
 target_include_directories(collections INTERFACE ../include)
 target_link_libraries(collections INTERFACE gc)
