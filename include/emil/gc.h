@@ -336,7 +336,7 @@ class MemoryManager {
    * Create a buffer that is owned by a managed object and whose
    * address is not shared and persisted.
    */
-  PrivateBuffer allocate_private_buffer(std::size_t size);
+  [[nodiscard]] PrivateBuffer allocate_private_buffer(std::size_t size);
 
   /** As long as this object lives, no garbage will be collected. */
   class hold {
@@ -353,7 +353,7 @@ class MemoryManager {
     hold& operator=(const hold&) = delete;
   };
 
-  hold acquire_hold();
+  [[nodiscard]] hold acquire_hold();
 
   Stats stats() const;
 

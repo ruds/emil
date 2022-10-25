@@ -229,11 +229,10 @@ struct Payload<K, void> {
 
   static const managed_ptr<K>& key(const type& payload) { return payload; }
 
-  static TreePtr<K, void> make_tree(MemoryManager& mgr, TreePtr<K, void> left,
-                                    TreePtr<K, void> right, type key,
-                                    Color color) {
-    return mgr.create<ManagedTree<K, void>>(std::move(left), std::move(right),
-                                            std::move(key), color);
+  static TreePtr<K> make_tree(MemoryManager& mgr, TreePtr<K> left,
+                              TreePtr<K> right, type key, Color color) {
+    return mgr.create<ManagedTree<K>>(std::move(left), std::move(right),
+                                      std::move(key), color);
   }
 };
 
@@ -339,25 +338,38 @@ class tree_iterator {
 };
 
 template <typename T, ManagedType K, OptionalManagedType V, typename Comp>
-TreeStack<K, V> find(TreePtr<K, V> tree, const T& key,
-                     const TreeStack<K, V>& lower_bound, const Comp& comp,
-                     TreeStack<K, V> stack) {
+TreeStack<K, V> find_with_bound(MemoryManager& mgr, TreePtr<K, V> tree,
+                                const T& key,
+                                const TreeStack<K, V>& lower_bound,
+                                const Comp& comp, TreeStack<K, V> stack) {
   if (!tree) return comp(*lower_bound->car->key, key) ? nullptr : lower_bound;
+  auto new_stack = cons(mgr, tree, std::move(stack));
   if (comp(key, *tree->key))
-    return find(tree->left, key, lower_bound, comp,
-                cons(tree, std::move(stack)));
-  return find(tree->right, key, tree, comp, cons(tree, std::move(stack)));
+    return find_with_bound(mgr, tree->left, key, lower_bound, comp,
+                           std::move(new_stack));
+  return find_with_bound(mgr, tree->right, key, new_stack, comp, new_stack);
 }
 
-/** Find the key in the tree, returning the path from root to the node
- * containing the key. Returns nullptr if not found. */
 template <typename T, ManagedType K, OptionalManagedType V, typename Comp>
-TreeStack<K, V> find(TreePtr<K, V> tree, const T& key, const Comp& comp,
-                     TreeStack<K, V> stack = nullptr) {
+TreeStack<K, V> find_no_bound(MemoryManager& mgr, TreePtr<K, V> tree,
+                              const T& key, const Comp& comp,
+                              TreeStack<K, V> stack = nullptr) {
   if (!tree) return nullptr;
+  auto new_stack = cons(mgr, tree, std::move(stack));
   if (comp(key, *tree->key))
-    return find(tree->left, key, comp, cons(tree, std::move(stack)));
-  return find(tree->right, key, tree, comp, cons(tree, std::move(stack)));
+    return find_no_bound(mgr, tree->left, key, comp, std::move(new_stack));
+  return find_with_bound(mgr, tree->right, key, new_stack, comp, new_stack);
+}
+
+/**
+ * Find the key in the tree, returning the path from root to the node
+ * containing the key. Returns nullptr if not found.
+ */
+template <typename T, ManagedType K, OptionalManagedType V, typename Comp>
+TreeStack<K, V> find(MemoryManager& mgr, TreePtr<K, V> tree, const T& key,
+                     const Comp& comp) {
+  auto hold = mgr.acquire_hold();
+  return find_no_bound(mgr, tree, key, comp);
 }
 
 /** Balance a red-black tree when inserting in the left-left grandchild. */
@@ -601,6 +613,17 @@ class ManagedSet : public ManagedWithSelfPtr<ManagedSet<T, Comp>> {
 
   bool empty() const noexcept { return !tree_; }
   std::size_t size() const noexcept { return size_; }
+
+  template <typename U>
+  const_iterator find(const U& needle) const {
+    auto s = detail::find(*mgr_, tree_, needle, *comp_);
+    return s ? const_iterator(*mgr_, std::move(s), *comp_) : cend();
+  }
+
+  template <typename U>
+  bool contains(const U& needle) const {
+    return static_cast<bool>(detail::find(*mgr_, tree_, needle, *comp_));
+  }
 
   /**
    * Insert `t` into this set.

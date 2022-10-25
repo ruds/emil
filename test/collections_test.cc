@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <iostream>
 #include <iterator>
 #include <string>
 #include <vector>
@@ -35,7 +36,7 @@ class ManagedSetAccessor {
   template <ManagedType T, typename Comp>
   static void verify_invariants(const ManagedSet<T, Comp>& set) {
     auto hold = set.mgr_->acquire_hold();
-    detail::verify_invariants(set.tree_);
+    detail::verify_invariants(set.tree_, *set.comp_);
     ASSERT_EQ(std::distance(set.cbegin(), set.cend()), set.size_);
     for (auto it = set.cbegin();
          it != set.cend() && std::next(it) != set.cend(); ++it) {
@@ -43,8 +44,6 @@ class ManagedSetAccessor {
     }
   }
 };
-
-namespace {
 
 using ::testing::ElementsAre;
 
@@ -62,13 +61,37 @@ class ManagedInt : public Managed {
   void visit_subobjects(const ManagedVisitor&) override {}
 };
 
+[[maybe_unused]] std::ostream& operator<<(std::ostream& os,
+                                          const ManagedInt& n) {
+  return os << n.n;
+}
+
+[[maybe_unused]] std::ostream& operator<<(std::ostream& os,
+                                          const managed_ptr<ManagedInt>& n) {
+  return os << n->n;
+}
+
 [[maybe_unused]] bool operator<(const ManagedInt& l, const ManagedInt& r) {
   return l.n < r.n;
 }
 
+[[maybe_unused]] bool operator<(const ManagedInt& l, int r) { return l.n < r; }
+
+[[maybe_unused]] bool operator<(int l, const ManagedInt& r) { return l < r.n; }
+
 [[maybe_unused]] bool operator>(const ManagedInt& l, const ManagedInt& r) {
   return l.n > r.n;
 }
+
+struct managed_int_less {
+  bool operator()(const ManagedInt& l, const auto& r) const { return l < r; }
+
+  template <typename T>
+  requires(!std::is_same_v<T, ManagedInt>) bool operator()(
+      const T& l, const ManagedInt& r) const {
+    return l < r;
+  }
+};
 
 [[maybe_unused]] bool operator==(const managed_ptr<ManagedInt>& l, int r) {
   return l->n == r;
@@ -97,22 +120,111 @@ TEST(ConsTest, Cons) {
 TEST(ManagedSetTest, OrderedAfterInserts) {
   TestRoot root;
   MemoryManager mgr(root);
-  auto s = root.add_root(mgr.create<ManagedSet<ManagedInt>>(mgr));
+
+  auto s = root.add_root(mgr.create<ManagedSet<ManagedInt, managed_int_less>>(
+      mgr, managed_int_less{}));
   ManagedSetAccessor::verify_invariants(*s);
+  ASSERT_FALSE(s->contains(0));
+  ASSERT_FALSE(s->contains(1));
+  ASSERT_FALSE(s->contains(2));
+  ASSERT_FALSE(s->contains(3));
+  ASSERT_FALSE(s->contains(4));
+  ASSERT_FALSE(s->contains(5));
+  ASSERT_FALSE(s->contains(6));
+  ASSERT_FALSE(s->contains(7));
+  ASSERT_FALSE(s->contains(8));
+
   s = root.replace_root(s, s->emplace(1).first);
   ManagedSetAccessor::verify_invariants(*s);
+  ASSERT_FALSE(s->contains(0));
+  ASSERT_TRUE(s->contains(1));
+  ASSERT_FALSE(s->contains(2));
+  ASSERT_FALSE(s->contains(3));
+  ASSERT_FALSE(s->contains(4));
+  ASSERT_FALSE(s->contains(5));
+  ASSERT_FALSE(s->contains(6));
+  ASSERT_FALSE(s->contains(7));
+  ASSERT_FALSE(s->contains(8));
+  ASSERT_EQ(*s->find(1), 1);
+
   s = root.replace_root(s, s->emplace(5).first);
   ManagedSetAccessor::verify_invariants(*s);
+  ASSERT_FALSE(s->contains(0));
+  ASSERT_TRUE(s->contains(1));
+  ASSERT_FALSE(s->contains(2));
+  ASSERT_FALSE(s->contains(3));
+  ASSERT_FALSE(s->contains(4));
+  ASSERT_TRUE(s->contains(5));
+  ASSERT_FALSE(s->contains(6));
+  ASSERT_FALSE(s->contains(7));
+  ASSERT_FALSE(s->contains(8));
+  ASSERT_EQ(*s->find(5), 5);
+
   s = root.replace_root(s, s->emplace(4).first);
   ManagedSetAccessor::verify_invariants(*s);
+  ASSERT_FALSE(s->contains(0));
+  ASSERT_TRUE(s->contains(1));
+  ASSERT_FALSE(s->contains(2));
+  ASSERT_FALSE(s->contains(3));
+  ASSERT_TRUE(s->contains(4));
+  ASSERT_TRUE(s->contains(5));
+  ASSERT_FALSE(s->contains(6));
+  ASSERT_FALSE(s->contains(7));
+  ASSERT_FALSE(s->contains(8));
+  ASSERT_EQ(*s->find(4), 4);
+
   s = root.replace_root(s, s->emplace(2).first);
   ManagedSetAccessor::verify_invariants(*s);
+  ASSERT_FALSE(s->contains(0));
+  ASSERT_TRUE(s->contains(1));
+  ASSERT_TRUE(s->contains(2));
+  ASSERT_FALSE(s->contains(3));
+  ASSERT_TRUE(s->contains(4));
+  ASSERT_TRUE(s->contains(5));
+  ASSERT_FALSE(s->contains(6));
+  ASSERT_FALSE(s->contains(7));
+  ASSERT_FALSE(s->contains(8));
+  ASSERT_EQ(*s->find(2), 2);
+
   s = root.replace_root(s, s->emplace(3).first);
   ManagedSetAccessor::verify_invariants(*s);
+  ASSERT_FALSE(s->contains(0));
+  ASSERT_TRUE(s->contains(1));
+  ASSERT_TRUE(s->contains(2));
+  ASSERT_TRUE(s->contains(3));
+  ASSERT_TRUE(s->contains(4));
+  ASSERT_TRUE(s->contains(5));
+  ASSERT_FALSE(s->contains(6));
+  ASSERT_FALSE(s->contains(7));
+  ASSERT_FALSE(s->contains(8));
+  ASSERT_EQ(*s->find(3), 3);
+
   s = root.replace_root(s, s->emplace(6).first);
   ManagedSetAccessor::verify_invariants(*s);
+  ASSERT_FALSE(s->contains(0));
+  ASSERT_TRUE(s->contains(1));
+  ASSERT_TRUE(s->contains(2));
+  ASSERT_TRUE(s->contains(3));
+  ASSERT_TRUE(s->contains(4));
+  ASSERT_TRUE(s->contains(5));
+  ASSERT_TRUE(s->contains(6));
+  ASSERT_FALSE(s->contains(7));
+  ASSERT_FALSE(s->contains(8));
+  ASSERT_EQ(*s->find(6), 6);
+
   s = root.replace_root(s, s->emplace(7).first);
   ManagedSetAccessor::verify_invariants(*s);
+  ASSERT_FALSE(s->contains(0));
+  ASSERT_TRUE(s->contains(1));
+  ASSERT_TRUE(s->contains(2));
+  ASSERT_TRUE(s->contains(3));
+  ASSERT_TRUE(s->contains(4));
+  ASSERT_TRUE(s->contains(5));
+  ASSERT_TRUE(s->contains(6));
+  ASSERT_TRUE(s->contains(7));
+  ASSERT_FALSE(s->contains(8));
+  ASSERT_EQ(*s->find(7), 7);
+
   std::vector<managed_ptr<ManagedInt>> v;
   auto hold = mgr.acquire_hold();
   std::copy(s->begin(), s->end(), std::back_inserter(v));
@@ -159,5 +271,4 @@ TEST(ManagedSetTest, Factories) {
   EXPECT_THAT(v, ElementsAre(3, 2, 1));
 }
 
-}  // namespace
 }  // namespace emil::collections::testing
