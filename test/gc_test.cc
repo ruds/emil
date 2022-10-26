@@ -135,13 +135,12 @@ class ManagedPayload : public Managed {
 TEST(GcTest, OneObject) {
   bool alive = false;
   {
-    TestRoot root;
-    MemoryManager mgr(root);
-    ASSERT_EQ(mgr.stats(), (Stats{}));
-    auto ptr = root.add_root(mgr.create<SimpleManaged>(alive));
+    TestContext tc;
+    ASSERT_EQ(tc.mgr.stats(), (Stats{}));
+    auto ptr = tc.root.add_root(tc.mgr.create<SimpleManaged>(alive));
     ASSERT_TRUE(alive);
     ASSERT_TRUE(ptr->alive);
-    ASSERT_EQ(mgr.stats(), (Stats{sizeof(SimpleManaged), 1, 0}));
+    ASSERT_EQ(tc.mgr.stats(), (Stats{sizeof(SimpleManaged), 1, 0}));
   }
   ASSERT_FALSE(alive);
 }
@@ -150,16 +149,15 @@ TEST(GcTest, TwoObjects) {
   bool alive1 = false;
   bool alive2 = false;
   {
-    TestRoot root;
-    MemoryManager mgr(root);
-    ASSERT_EQ(mgr.stats(), (Stats{}));
-    auto ptr1 = root.add_root(mgr.create<SimpleManaged>(alive1));
-    auto ptr2 = root.add_root(mgr.create<SimpleManaged>(alive2));
+    TestContext tc;
+    ASSERT_EQ(tc.mgr.stats(), (Stats{}));
+    auto ptr1 = tc.root.add_root(tc.mgr.create<SimpleManaged>(alive1));
+    auto ptr2 = tc.root.add_root(tc.mgr.create<SimpleManaged>(alive2));
     ASSERT_TRUE(alive1);
     ASSERT_TRUE(ptr1->alive);
     ASSERT_TRUE(alive2);
     ASSERT_TRUE(ptr2->alive);
-    ASSERT_EQ(mgr.stats(), (Stats{2 * sizeof(SimpleManaged), 2, 0}));
+    ASSERT_EQ(tc.mgr.stats(), (Stats{2 * sizeof(SimpleManaged), 2, 0}));
   }
   ASSERT_FALSE(alive1);
   ASSERT_FALSE(alive2);
@@ -169,27 +167,26 @@ TEST(GcTest, FreesUnreachableObjectsWithHolds) {
   bool alive1 = false;
   bool alive2 = false;
   {
-    TestRoot root;
-    MemoryManager mgr(root);
-    ASSERT_EQ(mgr.stats(), (Stats{}));
+    TestContext tc;
+    ASSERT_EQ(tc.mgr.stats(), (Stats{}));
 
-    auto ptr1 = mgr.create<SimpleManaged>(alive1);
+    auto ptr1 = tc.mgr.create<SimpleManaged>(alive1);
     ASSERT_TRUE(alive1);
     ASSERT_TRUE(ptr1->alive);
-    ASSERT_EQ(mgr.stats(), (Stats{sizeof(SimpleManaged), 1}));
+    ASSERT_EQ(tc.mgr.stats(), (Stats{sizeof(SimpleManaged), 1}));
 
-    auto ptr2 = root.add_root(mgr.create<SimpleManaged>(alive2));
+    auto ptr2 = tc.root.add_root(tc.mgr.create<SimpleManaged>(alive2));
     ASSERT_FALSE(alive1);
     ASSERT_TRUE(alive2);
     ASSERT_TRUE(ptr2->alive);
-    EXPECT_EQ(mgr.stats(), (Stats{sizeof(SimpleManaged), 1}));
+    EXPECT_EQ(tc.mgr.stats(), (Stats{sizeof(SimpleManaged), 1}));
 
-    ptr1 = mgr.create<SimpleManaged>(alive1);
+    ptr1 = tc.mgr.create<SimpleManaged>(alive1);
     ASSERT_TRUE(alive1);
     ASSERT_TRUE(ptr1->alive);
     ASSERT_TRUE(alive2);
     ASSERT_TRUE(ptr2->alive);
-    EXPECT_EQ(mgr.stats(), (Stats{2 * sizeof(SimpleManaged), 2}));
+    EXPECT_EQ(tc.mgr.stats(), (Stats{2 * sizeof(SimpleManaged), 2}));
   }
   EXPECT_FALSE(alive1);
   EXPECT_FALSE(alive2);
@@ -200,44 +197,43 @@ TEST(GcTest, HoldsPreventObjectFreeing) {
   bool alive2 = false;
   bool alive3 = false;
   {
-    TestRoot root;
-    MemoryManager mgr(root);
+    TestContext tc;
     {
-      ASSERT_EQ(mgr.stats(), (Stats{}));
+      ASSERT_EQ(tc.mgr.stats(), (Stats{}));
 
-      auto ptr1 = mgr.create<SimpleManaged>(alive1);
+      auto ptr1 = tc.mgr.create<SimpleManaged>(alive1);
       ASSERT_TRUE(alive1);
       ASSERT_TRUE(ptr1->alive);
-      ASSERT_EQ(mgr.stats(), (Stats{sizeof(SimpleManaged), 1}));
+      ASSERT_EQ(tc.mgr.stats(), (Stats{sizeof(SimpleManaged), 1}));
 
-      auto hold = mgr.acquire_hold();
+      auto hold = tc.mgr.acquire_hold();
       ASSERT_FALSE(alive1);
-      ASSERT_EQ(mgr.stats(), (Stats{.num_holds = 1}));
+      ASSERT_EQ(tc.mgr.stats(), (Stats{.num_holds = 1}));
 
-      ptr1 = mgr.create<SimpleManaged>(alive1);
+      ptr1 = tc.mgr.create<SimpleManaged>(alive1);
       ASSERT_TRUE(alive1);
       ASSERT_TRUE(ptr1->alive);
-      ASSERT_EQ(mgr.stats(), (Stats{sizeof(SimpleManaged), 1, 0, 1}));
+      ASSERT_EQ(tc.mgr.stats(), (Stats{sizeof(SimpleManaged), 1, 0, 1}));
 
-      auto ptr2 = root.add_root(mgr.create<SimpleManaged>(alive2));
+      auto ptr2 = tc.root.add_root(tc.mgr.create<SimpleManaged>(alive2));
       ASSERT_TRUE(alive1);
       ASSERT_TRUE(ptr1->alive);
       ASSERT_TRUE(alive2);
       ASSERT_TRUE(ptr2->alive);
-      EXPECT_EQ(mgr.stats(), (Stats{2 * sizeof(SimpleManaged), 2, 0, 1}));
+      EXPECT_EQ(tc.mgr.stats(), (Stats{2 * sizeof(SimpleManaged), 2, 0, 1}));
 
       auto hold2 = std::move(hold);
-      ASSERT_EQ(mgr.stats(), (Stats{2 * sizeof(SimpleManaged), 2, 0, 1}));
+      ASSERT_EQ(tc.mgr.stats(), (Stats{2 * sizeof(SimpleManaged), 2, 0, 1}));
 
-      ptr1 = mgr.create<SimpleManaged>(alive3);
+      ptr1 = tc.mgr.create<SimpleManaged>(alive3);
       ASSERT_TRUE(alive1);
       ASSERT_TRUE(alive2);
       ASSERT_TRUE(ptr2->alive);
       ASSERT_TRUE(alive3);
       ASSERT_TRUE(ptr1->alive);
-      EXPECT_EQ(mgr.stats(), (Stats{3 * sizeof(SimpleManaged), 3, 0, 1}));
+      EXPECT_EQ(tc.mgr.stats(), (Stats{3 * sizeof(SimpleManaged), 3, 0, 1}));
     }
-    EXPECT_EQ(mgr.stats(), (Stats{3 * sizeof(SimpleManaged), 3, 0, 0}));
+    EXPECT_EQ(tc.mgr.stats(), (Stats{3 * sizeof(SimpleManaged), 3, 0, 0}));
   }
   EXPECT_FALSE(alive1);
   EXPECT_FALSE(alive2);
@@ -263,20 +259,19 @@ TEST(GcTest, Tree) {
   bool alive_lr = false;
   bool alive_r = false;
   {
-    TestRoot root;
-    MemoryManager mgr(root);
-    ASSERT_EQ(mgr.stats(), (Stats{}));
+    TestContext tc;
+    ASSERT_EQ(tc.mgr.stats(), (Stats{}));
     using RootType =
         ManagedPair<ManagedPair<SimpleManaged, SimpleManaged>, SimpleManaged>;
     managed_ptr<RootType> tree_root;
     {
-      auto hold = mgr.acquire_hold();
-      tree_root = root.add_root(mgr.create<RootType>(
+      auto hold = tc.mgr.acquire_hold();
+      tree_root = tc.root.add_root(tc.mgr.create<RootType>(
           alive_root,
-          mgr.create<ManagedPair<SimpleManaged, SimpleManaged>>(
-              alive_l, mgr.create<SimpleManaged>(alive_ll),
-              mgr.create<SimpleManaged>(alive_lr)),
-          mgr.create<SimpleManaged>(alive_r)));
+          tc.mgr.create<ManagedPair<SimpleManaged, SimpleManaged>>(
+              alive_l, tc.mgr.create<SimpleManaged>(alive_ll),
+              tc.mgr.create<SimpleManaged>(alive_lr)),
+          tc.mgr.create<SimpleManaged>(alive_r)));
     }
     ASSERT_TRUE(alive_root);
     ASSERT_TRUE(tree_root->alive);
@@ -288,10 +283,10 @@ TEST(GcTest, Tree) {
     ASSERT_TRUE(tree_root->left()->right()->alive);
     ASSERT_TRUE(alive_r);
     ASSERT_TRUE(tree_root->right()->alive);
-    ASSERT_EQ(mgr.stats(), (Stats{tree_root->managed_size() +
-                                      tree_root->left()->managed_size() +
-                                      3 * sizeof(SimpleManaged),
-                                  5, 0}));
+    ASSERT_EQ(tc.mgr.stats(), (Stats{tree_root->managed_size() +
+                                         tree_root->left()->managed_size() +
+                                         3 * sizeof(SimpleManaged),
+                                     5, 0}));
     int count = 0;
     tree_root.accept(CountingVisitor(count));
     ASSERT_EQ(count, 5);
@@ -306,15 +301,14 @@ TEST(GcTest, Tree) {
 TEST(GcTest, SelfPtr) {
   bool alive;
   {
-    TestRoot root;
-    MemoryManager mgr(root);
-    ASSERT_EQ(mgr.stats(), (Stats{}));
-    auto ptr = root.add_root(mgr.create<SimpleManagedWithSelfPtr>(alive));
+    TestContext tc;
+    ASSERT_EQ(tc.mgr.stats(), (Stats{}));
+    auto ptr = tc.root.add_root(tc.mgr.create<SimpleManagedWithSelfPtr>(alive));
     ASSERT_TRUE(alive);
     ASSERT_TRUE(ptr->alive);
     ASSERT_TRUE(ptr->get_self());
     ASSERT_TRUE(ptr->get_self()->alive);
-    ASSERT_EQ(mgr.stats(), (Stats{sizeof(SimpleManagedWithSelfPtr), 1, 0}));
+    ASSERT_EQ(tc.mgr.stats(), (Stats{sizeof(SimpleManagedWithSelfPtr), 1, 0}));
   }
   ASSERT_FALSE(alive);
 }
@@ -323,15 +317,14 @@ TEST(GcTest, PrivateBuffer) {
   bool alive_outer = false;
   bool alive_inner = false;
   {
-    TestRoot root;
-    MemoryManager mgr(root);
-    ASSERT_EQ(mgr.stats(), (Stats{}));
-    auto ptr = root.add_root(
-        mgr.create<ManagedPayload>(mgr, alive_outer, alive_inner, 42, 2.5));
+    TestContext tc;
+    ASSERT_EQ(tc.mgr.stats(), (Stats{}));
+    auto ptr = tc.root.add_root(tc.mgr.create<ManagedPayload>(
+        tc.mgr, alive_outer, alive_inner, 42, 2.5));
     ASSERT_TRUE(alive_outer);
     ASSERT_TRUE(alive_inner);
     bool alive_tmp = false;
-    ASSERT_EQ(mgr.stats(),
+    ASSERT_EQ(tc.mgr.stats(),
               (Stats{sizeof(ManagedPayload) + sizeof(Payload), 1, 1}));
     ASSERT_EQ(*ptr->payload(), (Payload{alive_tmp, 42, 2.5}));
   }
@@ -340,10 +333,9 @@ TEST(GcTest, PrivateBuffer) {
 }
 
 TEST(GcTest, Bool) {
-  TestRoot root;
-  MemoryManager mgr(root);
+  TestContext tc;
   bool alive = false;
-  auto true_ptr = root.add_root(mgr.create<SimpleManaged>(alive));
+  auto true_ptr = tc.root.add_root(tc.mgr.create<SimpleManaged>(alive));
   managed_ptr<SimpleManaged> false_ptr = nullptr;
 
   if (true_ptr) {

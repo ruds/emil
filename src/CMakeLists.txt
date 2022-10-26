@@ -44,14 +44,14 @@ target_include_directories(parser
   PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/include" ../include)
 target_include_directories(parser PRIVATE .)
 
-add_library(gc STATIC gc.cc)
-add_emil_options(gc)
-target_include_directories(gc
+add_library(runtime STATIC gc.cc runtime.cc)
+add_emil_options(runtime)
+target_include_directories(runtime
   PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/include" ../include)
-target_link_libraries(gc PRIVATE fmt::fmt)
+target_link_libraries(runtime PRIVATE fmt::fmt)
 
 add_library(collections INTERFACE)
 target_sources(collections INTERFACE ../include/emil/collections.h)
 target_precompile_headers(collections INTERFACE ../include/emil/collections.h)
 target_include_directories(collections INTERFACE ../include)
-target_link_libraries(collections INTERFACE gc)
+target_link_libraries(collections INTERFACE runtime)

@@ -31,16 +31,20 @@ set_target_properties(gtest_main PROPERTIES FOLDER extern)
 set_target_properties(gmock PROPERTIES FOLDER extern)
 set_target_properties(gmock_main PROPERTIES FOLDER extern)
 
+add_library(test_util STATIC test_util.cc)
+add_emil_options(test_util)
+target_link_libraries(test_util PRIVATE runtime)
+
 macro(emil_add_gtest TESTNAME FILES)
   set(LIBRARIES ${ARGN})
   add_executable(${TESTNAME} "${FILES}")
   add_emil_options(${TESTNAME})
-  target_link_libraries(${TESTNAME} gtest gmock gtest_main "${LIBRARIES}")
+  target_link_libraries(${TESTNAME} gtest gmock gtest_main test_util "${LIBRARIES}")
   gtest_discover_tests(${TESTNAME} PROPERTIES ENVIRONMENT
     "TEST_DATA_DIR=${PROJECT_SOURCE_DIR}/test/data")
   set_target_properties(${TESTNAME} PROPERTIES FOLDER test)
 endmacro()
 
 emil_add_gtest(source_test source_test.cc lexer)
-emil_add_gtest(gc_test gc_test.cc gc)
+emil_add_gtest(gc_test gc_test.cc runtime)
 emil_add_gtest(collections_test collections_test.cc collections)

@@ -20,6 +20,8 @@
 #include <cassert>
 #include <memory>
 
+#include "emil/runtime.h"
+
 namespace emil {
 
 ManagedVisitor::ManagedVisitor() = default;
@@ -61,21 +63,20 @@ void managed_ptr_base::accept(const ManagedVisitor& visitor) {
 bool managed_ptr_base::mark() { return val_->mark(); }
 
 PrivateBuffer::~PrivateBuffer() {
-  if (buf_) mgr_->free_private_buffer(buf_, size_);
+  if (buf_) ctx().mgr->free_private_buffer(buf_, size_);
 }
 
-PrivateBuffer::PrivateBuffer(MemoryManager* mgr, char* buf, std::size_t size)
-    : mgr_(mgr), buf_(buf), size_(size) {}
+PrivateBuffer::PrivateBuffer(char* buf, std::size_t size)
+    : buf_(buf), size_(size) {}
 
 PrivateBuffer::PrivateBuffer(PrivateBuffer&& o) noexcept
-    : mgr_(o.mgr_), buf_(o.buf_), size_(o.size_) {
+    : buf_(o.buf_), size_(o.size_) {
   o.buf_ = nullptr;
 }
 
 PrivateBuffer& PrivateBuffer::operator=(PrivateBuffer&& o) noexcept {
   if (&o == this) return *this;
-  if (buf_) mgr_->free_private_buffer(buf_, size_);
-  mgr_ = o.mgr_;
+  if (buf_) ctx().mgr->free_private_buffer(buf_, size_);
   buf_ = o.buf_;
   size_ = o.size_;
   o.buf_ = nullptr;
@@ -131,7 +132,7 @@ PrivateBuffer MemoryManager::allocate_private_buffer(std::size_t size) {
     enact_decision(gc_policy_->on_private_buffer_request(stats_, size));
   stats_.allocated += size;
   ++stats_.num_private_buffers;
-  return PrivateBuffer(this, new char[size], size);
+  return PrivateBuffer(new char[size], size);
 }
 
 MemoryManager::hold::~hold() {

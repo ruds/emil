@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "emil/gc.h"
+#include "emil/runtime.h"
 
 namespace emil::testing {
 
@@ -53,6 +54,24 @@ class TestRoot : public Root {
 
  private:
   std::vector<managed_ptr_base> roots_;
+};
+
+class TestContext;
+
+class TestContextHolder {
+  friend class TestContext;
+  RuntimeContext rc;
+  explicit TestContextHolder(TestContext& tc);
+  ~TestContextHolder();
+};
+
+class TestContext {
+  // Clean up after mgr and root have been destroyed.
+  TestContextHolder ctx_holder_{*this};
+
+ public:
+  TestRoot root;
+  MemoryManager mgr{root};
 };
 
 }  // namespace emil::testing

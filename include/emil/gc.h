@@ -22,6 +22,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "emil/runtime.h"
+
 namespace emil {
 
 class MemoryManager;
@@ -236,7 +238,6 @@ class PrivateBuffer {
 
   friend void swap(PrivateBuffer& lhs, PrivateBuffer& rhs) {
     using std::swap;
-    swap(lhs.mgr_, rhs.mgr_);
     swap(lhs.buf_, rhs.buf_);
     swap(lhs.size_, rhs.size_);
   }
@@ -244,11 +245,10 @@ class PrivateBuffer {
  private:
   friend class MemoryManager;
 
-  MemoryManager* mgr_;
   char* buf_;
   std::size_t size_;
 
-  PrivateBuffer(MemoryManager* mgr, char* buf, std::size_t size);
+  PrivateBuffer(char* buf, std::size_t size);
 
   PrivateBuffer(const PrivateBuffer&) = delete;
   PrivateBuffer& operator=(const PrivateBuffer&) = delete;
@@ -380,6 +380,11 @@ class MemoryManager {
   void enact_decision(GcPolicy::Decision decision);
   void full_gc();
 };
+
+template <ManagedType T, class... Args>
+managed_ptr<T> make_managed(Args&&... args) {
+  return ctx().mgr->create<T>(std::forward<Args>(args)...);
+}
 
 template <ManagedType T, class... Args>
 managed_ptr<T> MemoryManager::create(Args&&... args) {
