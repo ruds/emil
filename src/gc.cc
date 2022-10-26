@@ -28,10 +28,27 @@ ManagedVisitor::~ManagedVisitor() = default;
 Managed::Managed() = default;
 Managed::~Managed() = default;
 
+namespace {
+static_assert(alignof(Managed) >= 2);
+constexpr std::uintptr_t TAG_MASK = 1;
+constexpr std::uintptr_t PTR_MASK = ~TAG_MASK;
+}  // namespace
+
 bool Managed::mark() {
-  bool was_marked = is_marked;
-  is_marked = true;
+  bool was_marked = is_marked();
+  next_managed_ |= TAG_MASK;
   return !was_marked;
+}
+
+void Managed::update_next_managed_and_clear(Managed* next) {
+  next_managed_ = reinterpret_cast<std::uintptr_t>(next);
+  assert(!is_marked());
+}
+
+bool Managed::is_marked() const { return next_managed_ & TAG_MASK; }
+
+Managed* Managed::next_managed() const {
+  return reinterpret_cast<Managed*>(next_managed_ & PTR_MASK);
 }
 
 managed_ptr_base::managed_ptr_base(Managed* val) noexcept : val_(val) {}
@@ -104,7 +121,7 @@ MemoryManager::~MemoryManager() {
   Managed* next = managed_;
   while (next) {
     auto* t = next;
-    next = t->next_managed;
+    next = t->next_managed();
     free_obj(t);
   }
 }
@@ -179,21 +196,28 @@ class MarkVisitor : public ManagedVisitor {
 
 void MemoryManager::full_gc() {
   root_.visit_root(MarkVisitor());
-  Managed** prev_next = &managed_;
+  Managed* prev = nullptr;
   Managed* next = managed_;
   while (next) {
-    if (next->is_marked) {
-      next->is_marked = false;
-      *prev_next = next;
-      prev_next = &next->next_managed;
-      next = next->next_managed;
+    if (next->is_marked()) {
+      if (prev) {
+        prev->update_next_managed_and_clear(next);
+      } else {
+        managed_ = next;
+      }
+      prev = next;
+      next = next->next_managed();
     } else {
       Managed* to_delete = next;
-      next = to_delete->next_managed;
+      next = to_delete->next_managed();
       free_obj(to_delete);
     }
   }
-  *prev_next = nullptr;
+  if (prev) {
+    prev->update_next_managed_and_clear(nullptr);
+  } else {
+    managed_ = nullptr;
+  }
 }
 
 }  // namespace emil

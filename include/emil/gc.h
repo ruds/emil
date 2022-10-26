@@ -68,8 +68,7 @@ class Managed {
   friend class MemoryManager;
   friend class managed_ptr_base;
 
-  Managed* next_managed = nullptr;
-  bool is_marked = false;
+  std::uintptr_t next_managed_ = reinterpret_cast<std::uintptr_t>(nullptr);
 
   Managed(const Managed&) = delete;
   Managed& operator=(const Managed&) = delete;
@@ -94,6 +93,10 @@ class Managed {
   virtual std::size_t managed_size() const noexcept = 0;
 
   bool mark();
+  /** Updates the next_managed pointer and clears the mark. */
+  void update_next_managed_and_clear(Managed* next);
+  bool is_marked() const;
+  Managed* next_managed() const;
 };
 
 template <typename T>
@@ -391,7 +394,7 @@ managed_ptr<T> MemoryManager::create(Args&&... args) {
 
   auto t = std::make_unique<T>(std::forward<Args>(args)...);
   assert(static_cast<Managed&>(*t).managed_size() == size);
-  t->next_managed = managed_;
+  t->update_next_managed_and_clear(managed_);
   auto* tptr = t.release();
   managed_ = tptr;
 
