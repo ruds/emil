@@ -115,6 +115,8 @@ using TreePtr = managed_ptr<ManagedTree<K, V>>;
 template <ManagedType K, OptionalManagedType V>
 struct ManagedTree : Managed {
   using payload_type = std::pair<managed_ptr<K>, managed_ptr<V>>;
+  using value_type = managed_ptr<V>;
+  using maybe_value_type = std::optional<managed_ptr<V>>;
 
   TreePtr<K, V> left;
   TreePtr<K, V> right;
@@ -131,6 +133,12 @@ struct ManagedTree : Managed {
   static const managed_ptr<K>& key(const payload_type& payload) {
     return payload.first;
   }
+
+  static maybe_value_type maybe_value(value_type&& v) {
+    return std::make_optional(std::move(v));
+  }
+
+  static maybe_value_type no_value() { return std::nullopt; }
 
   static TreePtr<K, V> double_black_empty(MemoryManager& mgr) {
     return make_tree(mgr, nullptr, nullptr, {nullptr, nullptr},
@@ -168,6 +176,8 @@ struct ManagedTree : Managed {
 template <ManagedType K>
 struct ManagedTree<K, void> : Managed {
   using payload_type = managed_ptr<K>;
+  using value_type = bool;
+  using maybe_value_type = bool;
 
   TreePtr<K, void> left;
   TreePtr<K, void> right;
@@ -185,11 +195,17 @@ struct ManagedTree<K, void> : Managed {
     return payload;
   }
 
+  static bool maybe_value(bool v) { return v; }
+  static bool no_value() { return false; }
+
   static TreePtr<K> double_black_empty(MemoryManager& mgr) {
     return make_tree(mgr, nullptr, nullptr, nullptr, Color::DoubleBlack);
   }
 
   const managed_ptr<K>& key() const { return payload; }
+
+  // cppcheck-suppress functionStatic
+  bool value() const { return true; }
 
   // cppcheck-suppress uninitMemberVar
   ManagedTree(TreePtr<K, void>&& left, TreePtr<K, void>&& right,
@@ -712,39 +728,45 @@ std::pair<TreePtr<K, V>, typename ManagedTree<K, V>::payload_type> erase_min(
 
 /** Delete `key` from `tree`. */
 template <typename U, ManagedType K, OptionalManagedType V, typename Comp>
-std::optional<TreePtr<K, V>> erase_from_subtree(MemoryManager& mgr,
-                                                TreePtr<K, V> tree,
-                                                const U& key,
-                                                const Comp& comp) {
+std::optional<std::pair<TreePtr<K, V>, typename ManagedTree<K, V>::value_type>>
+erase_from_subtree(MemoryManager& mgr, TreePtr<K, V> tree, const U& key,
+                   const Comp& comp) {
   using T = ManagedTree<K, V>;
   if (!tree) {
-    return {};
+    return std::nullopt;
   }
   if (comp(key, *tree->key())) {
     return erase_from_subtree(mgr, tree->left, key, comp)
-        .transform([&](auto&& new_tree) {
-          return rotate_l(mgr, tree->color, std::move(new_tree), tree->right,
-                          tree->payload);
+        .transform([&](auto&& result) {
+          return std::make_pair(
+              rotate_l(mgr, tree->color, std::move(result.first), tree->right,
+                       tree->payload),
+              std::move(result.second));
         });
   } else if (comp(*tree->key(), key)) {
     return erase_from_subtree(mgr, tree->right, key, comp)
-        .transform([&](auto&& new_tree) {
-          return rotate_r(mgr, tree->color, tree->left, std::move(new_tree),
-                          tree->payload);
+        .transform([&](auto&& result) {
+          return std::make_pair(
+              rotate_r(mgr, tree->color, tree->left, std::move(result.first),
+                       tree->payload),
+              std::move(result.second));
         });
   } else if (tree->color == Color::Red && !tree->left && !tree->right) {
-    return nullptr;
+    return std::make_pair(nullptr, tree->value());
   } else if (tree->color == Color::Black && !tree->right) {
     if (!tree->left) {
-      return T::double_black_empty(mgr);
+      return std::make_pair(T::double_black_empty(mgr), tree->value());
     } else if (tree->left->color == Color::Red) {
-      return T::make_tree(mgr, tree->left->left, tree->left->right,
-                          tree->left->payload, Color::Black);
+      return std::make_pair(
+          T::make_tree(mgr, tree->left->left, tree->left->right,
+                       tree->left->payload, Color::Black),
+          tree->value());
     }
   }
   auto [right, payload] = erase_min(mgr, tree->right);
-  return rotate_r(mgr, tree->color, tree->left, std::move(right),
-                  std::move(payload));
+  return std::make_pair(rotate_r(mgr, tree->color, tree->left, std::move(right),
+                                 std::move(payload)),
+                        tree->value());
 }
 
 template <ManagedType K, OptionalManagedType V>
@@ -760,18 +782,27 @@ TreePtr<K, V> redden(MemoryManager& mgr, TreePtr<K, V>&& tree) {
   }
 }
 
-/** Delete `key` from `tree`. */
+/**
+ * Delete `key` from `tree`.
+ *
+ * Returns the new tree and either a flag indicating whether the `key`
+ * was present before erasure (for V=void) or the previously mapped
+ * value for `key` (for V!=void).
+ */
 template <typename U, ManagedType K, OptionalManagedType V, typename Comp>
-std::pair<TreePtr<K, V>, bool> erase(MemoryManager& mgr, TreePtr<K, V> tree,
-                                     const U& key, const Comp& comp) {
+std::pair<TreePtr<K, V>, typename ManagedTree<K, V>::maybe_value_type> erase(
+    MemoryManager& mgr, TreePtr<K, V> tree, const U& key, const Comp& comp) {
+  using T = ManagedTree<K, V>;
   auto hold = mgr.acquire_hold();
   auto result =
       *erase_from_subtree(mgr, redden(mgr, std::move(tree)), key, comp)
-           .transform([&](auto&& new_tree) {
-             return std::make_pair(std::move(new_tree), true);
+           .transform([&](auto&& result) {
+             return std::make_pair(std::move(result.first),
+                                   T::maybe_value(std::move(result.second)));
            })
            .or_else([&]() {
-             return std::make_optional(std::make_pair(std::move(tree), false));
+             return std::make_optional(
+                 std::make_pair(std::move(tree), T::no_value()));
            });
   return result;
 }
@@ -779,8 +810,9 @@ std::pair<TreePtr<K, V>, bool> erase(MemoryManager& mgr, TreePtr<K, V> tree,
 }  // namespace detail
 
 namespace testing {
+class ManagedMapAccessor;
 class ManagedSetAccessor;
-}
+}  // namespace testing
 
 /**
  * A set of managed values, with O(lg n) insertion and deletion times.
@@ -948,4 +980,207 @@ managed_ptr<ManagedSet<T>> managed_set(
   return managed_set(mgr, std::less<T>(), els);
 }
 
+/**
+ * A map whose keys and values are managed, with O(lg n) insertion and deletion
+ * times.
+ *
+ * This map is immutable and *persistent* in the sense described in
+ * https://en.wikipedia.org/wiki/Persistent_data_structure.
+ *
+ * See comments about `detail::tree_iterator`'s interaction with the memory
+ * manager.
+ */
+template <ManagedType K, ManagedType V, typename Comp = std::less<K>>
+class ManagedMap : public ManagedWithSelfPtr<ManagedMap<K, V, Comp>> {
+  struct token {
+   private:
+    token() {}
+    friend ManagedMap;
+  };
+
+ public:
+  using iterator = detail::tree_iterator<K, V, Comp>;
+  using const_iterator = iterator;
+  using reverse_iterator = std::reverse_iterator<iterator>;
+  using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+  using value_type = typename iterator::value_type;
+
+  static_assert(std::bidirectional_iterator<iterator>);
+
+  explicit ManagedMap(MemoryManager& mgr) : ManagedMap(mgr, Comp()) {}
+  ManagedMap(MemoryManager& mgr, const Comp& comp)
+      : ManagedMap(token{}, mgr, comp, nullptr, 0) {}
+  /** Intended for private access only, but MemoryManager::create requires
+   * access. Thus we pass a `token`. See https://abseil.io/tips/134. */
+  ManagedMap(token, MemoryManager& mgr, const Comp& comp,
+             detail::TreePtr<K, V> tree, std::size_t size)
+      : mgr_(&mgr), comp_(&comp), tree_(std::move(tree)), size_(size) {}
+  iterator begin() const { return cbegin(); }
+  const_iterator cbegin() const {
+    auto hold = mgr_->acquire_hold();
+    if (!tree_) return {*mgr_, tree_, *comp_};
+    auto stack = cons(*mgr_, tree_, nullptr);
+    while (stack->car->left) {
+      stack = cons(*mgr_, stack->car->left, std::move(stack));
+    }
+    return {*mgr_, std::move(stack), *comp_};
+  }
+
+  iterator end() const { return cend(); }
+  const_iterator cend() const { return {*mgr_, tree_, *comp_}; }
+
+  reverse_iterator rbegin() const { return crbegin(); }
+  const_reverse_iterator crbegin() const {
+    return const_reverse_iterator(cend());
+  }
+
+  reverse_iterator rend() const { return crend(); }
+  const_reverse_iterator crend() const {
+    return const_reverse_iterator(cbegin());
+  }
+
+  bool empty() const noexcept { return !tree_; }
+  std::size_t size() const noexcept { return size_; }
+
+  template <typename U>
+  const_iterator find(const U& key) const {
+    auto s = detail::find(*mgr_, tree_, key, *comp_);
+    return s ? const_iterator(*mgr_, std::move(s), *comp_) : cend();
+  }
+
+  template <typename U>
+  bool contains(const U& key) const {
+    return static_cast<bool>(detail::find(*mgr_, tree_, key, *comp_));
+  }
+
+  template <typename U>
+  std::optional<managed_ptr<V>> get(const U& key) const {
+    auto s = detail::find(*mgr_, tree_, key, *comp_);
+    return s ? std::make_optional(s->car->value()) : std::nullopt;
+  }
+
+  /**
+   * Insert a mapping from `k` to `v` into this map, replacing any existing
+   * mapping from `k`.
+   *
+   * Returns the resulting map and the previous value, if any.
+   *
+   * `k` and `v` must be reachable or this must be called under a hold.
+   */
+  std::pair<managed_ptr<ManagedMap<K, V, Comp>>, std::optional<managed_ptr<V>>>
+  insert(managed_ptr<K> k, managed_ptr<V> v) const {
+    auto hold = mgr_->acquire_hold();
+    auto stack = detail::find(*mgr_, tree_, *k, *comp_);
+    if (stack) {
+      using T = detail::ManagedTree<K, V>;
+      assert(!(*comp_)(*k, *stack->car->key()) &&
+             !(*comp_)(*stack->car->key(), *k));
+      auto old_value = std::make_optional(stack->car->value());
+      detail::TreePtr<K, V> new_tree = T::make_tree(
+          *mgr_, stack->car->left, stack->car->right,
+          std::make_pair(std::move(k), std::move(v)), stack->car->color);
+      while (stack->cdr) {
+        stack = stack->cdr;
+        const bool is_left = (*comp_)(*new_tree->key(), *stack->car->key());
+        new_tree = T::make_tree(
+            *mgr_, is_left ? std::move(new_tree) : stack->car->left,
+            is_left ? stack->car->right : std::move(new_tree),
+            stack->car->payload, stack->car->color);
+      }
+      return std::make_pair(
+          mgr_->create<ManagedMap<K, V, Comp>>(token{}, *mgr_, *comp_,
+                                               std::move(new_tree), size_),
+          std::move(old_value));
+    }
+    auto result = detail::insert(
+        *mgr_, tree_, std::make_pair(std::move(k), std::move(v)), *comp_, true);
+    assert(result.second);
+    return std::make_pair(
+        mgr_->create<ManagedMap<K, V, Comp>>(
+            token{}, *mgr_, *comp_, std::move(result.first), size_ + 1),
+        std::nullopt);
+  }
+
+  template <typename KTuple, typename VTuple>
+  std::pair<managed_ptr<ManagedMap<K, V, Comp>>, std::optional<managed_ptr<V>>>
+  emplace(KTuple&& kargs, VTuple&& vargs) const {
+    auto hold = mgr_->acquire_hold();
+    return insert(
+        std::apply(
+            [&](auto&&... args) {
+              return mgr_->create<K>(std::forward<decltype(args)>(args)...);
+            },
+            std::forward<KTuple>(kargs)),
+        std::apply(
+            [&](auto&&... args) {
+              return mgr_->create<V>(std::forward<decltype(args)>(args)...);
+            },
+            std::forward<VTuple>(vargs)));
+  }
+
+  /**
+   * Remove `key` from this map.
+   *
+   * Returns the resulting map and the previous value `key` was mapped to, if
+   * any.
+   */
+  template <typename U>
+  std::pair<managed_ptr<ManagedMap<K, V, Comp>>, std::optional<managed_ptr<V>>>
+  erase(const U& key) const {
+    auto hold = mgr_->acquire_hold();
+    auto result = detail::erase(*mgr_, tree_, key, *comp_);
+    if (result.second) {
+      return std::make_pair(
+          mgr_->create<ManagedMap<K, V, Comp>>(
+              token{}, *mgr_, *comp_, std::move(result.first), size_ - 1),
+          std::move(result.second));
+    } else {
+      return std::make_pair(this->self(), std::nullopt);
+    }
+  }
+
+ private:
+  friend class testing::ManagedMapAccessor;
+
+  MemoryManager* mgr_;
+  const Comp* comp_;
+  detail::TreePtr<K, V> tree_;
+  std::size_t size_;
+
+  void visit_subobjects(const ManagedVisitor& visitor) override {
+    if (tree_) tree_.accept(visitor);
+    if constexpr (ManagedType<Comp>) {
+      comp_->accept(visitor);
+    }
+  }
+
+  std::size_t managed_size() const noexcept override {
+    return sizeof(ManagedMap);
+  }
+};
+
+/**
+ * Creates a `ManagedMap` with the given elements.
+ *
+ * All elements must be reachable or else this must be called with a hold.
+ */
+template <ManagedType K, ManagedType V, typename Comp>
+managed_ptr<ManagedMap<K, V, Comp>> managed_map(
+    MemoryManager& mgr, const Comp& comp,
+    std::initializer_list<std::pair<managed_ptr<K>, managed_ptr<V>>> els) {
+  auto hold = mgr.acquire_hold();
+  auto m = mgr.create<ManagedMap<K, V, Comp>>(mgr, comp);
+  for (const auto& el : els) {
+    m = m->insert(el.first, el.second).first;
+  }
+  return m;
+}
+
+/** @overload */
+template <ManagedType K, ManagedType V>
+managed_ptr<ManagedMap<K, V>> managed_map(
+    MemoryManager& mgr,
+    std::initializer_list<std::pair<managed_ptr<K>, managed_ptr<V>>> els) {
+  return managed_map(mgr, std::less<K>(), els);
+}
 }  // namespace emil::collections
