@@ -101,16 +101,6 @@ class ManagedInt : public Managed {
   return l.n > r.n;
 }
 
-struct managed_int_less {
-  bool operator()(const ManagedInt& l, const auto& r) const { return l < r; }
-
-  template <typename T>
-  requires(!std::is_same_v<T, ManagedInt>) bool operator()(
-      const T& l, const ManagedInt& r) const {
-    return l < r;
-  }
-};
-
 [[maybe_unused]] bool operator==(const managed_ptr<ManagedInt>& l, int r) {
   return l->n == r;
 }
@@ -180,9 +170,7 @@ TEST(ConsTest, Cons) {
 TEST(ManagedSetTest, OrderedAfterInserts) {
   TestContext tc;
 
-  auto s =
-      tc.root.add_root(make_managed<ManagedSet<ManagedInt, managed_int_less>>(
-          managed_int_less{}));
+  auto s = tc.root.add_root(make_managed<ManagedSet<ManagedInt>>());
   ManagedSetAccessor::verify_invariants(*s);
   ASSERT_FALSE(s->contains(0));
   ASSERT_FALSE(s->contains(1));
@@ -365,11 +353,11 @@ TEST(ManagedSetTest, Factories) {
 TEST(ManagedSetTest, OrderedAfterDeletions) {
   TestContext tc;
 
-  managed_ptr<ManagedSet<ManagedInt, managed_int_less>> full_set;
+  managed_ptr<ManagedSet<ManagedInt>> full_set;
   {
     auto hold = tc.mgr.acquire_hold();
-    full_set = tc.root.add_root(managed_set(
-        managed_int_less{}, {mi(1), mi(2), mi(3), mi(4), mi(5), mi(6), mi(7)}));
+    full_set = tc.root.add_root(
+        managed_set({mi(1), mi(2), mi(3), mi(4), mi(5), mi(6), mi(7)}));
     ManagedSetAccessor::verify_invariants(*full_set);
     ASSERT_THAT(*full_set, ElementsAre(1, 2, 3, 4, 5, 6, 7));
   }
@@ -516,8 +504,7 @@ TEST(ManagedSetTest, OrderedAfterDeletions) {
     ASSERT_THAT(*full_set, ElementsAre(1, 2, 3, 4, 5, 6, 7));
   }
 
-  auto empty_set =
-      tc.root.add_root(managed_set<ManagedInt>(managed_int_less{}, {}));
+  auto empty_set = tc.root.add_root(managed_set<ManagedInt>({}));
   result = empty_set->erase(3);
   ASSERT_FALSE(result.second);
   ASSERT_EQ(result.first, empty_set);
@@ -535,8 +522,7 @@ TEST(ManagedSetTest, StressTest) {
 
   TestContext tc;
   for (int run = 0; run < 2; ++run) {
-    auto s = tc.root.add_root(
-        make_managed<ManagedSet<ManagedInt, managed_int_less>>());
+    auto s = tc.root.add_root(make_managed<ManagedSet<ManagedInt>>());
     std::size_t size = 0;
     for (int i = 0; i < 1000; ++i) {
       const int num = dist(generator);
@@ -574,10 +560,9 @@ TEST(ManagedSetTest, StressTest) {
   }
 }
 
-std::pair<managed_ptr<ManagedMap<ManagedInt, ManagedDouble, managed_int_less>>,
+std::pair<managed_ptr<ManagedMap<ManagedInt, ManagedDouble>>,
           std::optional<managed_ptr<ManagedDouble>>>
-emplace(const ManagedMap<ManagedInt, ManagedDouble, managed_int_less>& m, int i,
-        double d) {
+emplace(const ManagedMap<ManagedInt, ManagedDouble>& m, int i, double d) {
   return m.emplace(std::make_tuple(i), std::make_tuple(d));
 }
 
@@ -586,8 +571,8 @@ emplace(const ManagedMap<ManagedInt, ManagedDouble, managed_int_less>& m, int i,
 TEST(ManagedMapTest, OrderedAfterInserts) {
   TestContext tc;
 
-  auto m = tc.root.add_root(
-      make_managed<ManagedMap<ManagedInt, ManagedDouble, managed_int_less>>());
+  auto m =
+      tc.root.add_root(make_managed<ManagedMap<ManagedInt, ManagedDouble>>());
   ManagedMapAccessor::verify_invariants(*m);
   ASSERT_FALSE(m->contains(0));
   ASSERT_FALSE(m->contains(1));
@@ -750,8 +735,8 @@ TEST(ManagedMapTest, OrderedAfterInserts) {
 
 TEST(ManagedMapTest, HandlesRemapping) {
   TestContext tc;
-  auto m = tc.root.add_root(
-      make_managed<ManagedMap<ManagedInt, ManagedDouble, managed_int_less>>());
+  auto m =
+      tc.root.add_root(make_managed<ManagedMap<ManagedInt, ManagedDouble>>());
   ManagedMapAccessor::verify_invariants(*m);
   EXPECT_FALSE(m->get(1));
 
@@ -801,19 +786,18 @@ TEST(ManagedMapTest, Factories) {
 TEST(ManagedMapTest, OrderedAfterDeletions) {
   TestContext tc;
 
-  managed_ptr<ManagedMap<ManagedInt, ManagedDouble, managed_int_less>> full_map;
+  managed_ptr<ManagedMap<ManagedInt, ManagedDouble>> full_map;
   {
     auto hold = tc.mgr.acquire_hold();
-    full_map = tc.root.add_root(
-        managed_map(managed_int_less{}, {
-                                            MP(mi(1), md(-1.0)),
-                                            MP(mi(2), md(-2.0)),
-                                            MP(mi(3), md(-3.0)),
-                                            MP(mi(4), md(-4.0)),
-                                            MP(mi(5), md(-5.0)),
-                                            MP(mi(6), md(-6.0)),
-                                            MP(mi(7), md(-7.0)),
-                                        }));
+    full_map = tc.root.add_root(managed_map({
+        MP(mi(1), md(-1.0)),
+        MP(mi(2), md(-2.0)),
+        MP(mi(3), md(-3.0)),
+        MP(mi(4), md(-4.0)),
+        MP(mi(5), md(-5.0)),
+        MP(mi(6), md(-6.0)),
+        MP(mi(7), md(-7.0)),
+    }));
     ManagedMapAccessor::verify_invariants(*full_map);
     ASSERT_THAT(*full_map,
                 ElementsAre(MP(1, -1.0), MP(2, -2.0), MP(3, -3.0), MP(4, -4.0),
@@ -979,8 +963,7 @@ TEST(ManagedMapTest, OrderedAfterDeletions) {
                             MP(5, -5.0), MP(6, -6.0), MP(7, -7.0)));
   }
 
-  auto empty_map = tc.root.add_root(
-      managed_map<ManagedInt, ManagedDouble>(managed_int_less{}, {}));
+  auto empty_map = tc.root.add_root(managed_map<ManagedInt, ManagedDouble>({}));
   result = empty_map->erase(3);
   ASSERT_FALSE(result.second);
   ASSERT_EQ(result.first, empty_map);
@@ -1006,8 +989,8 @@ TEST(ManagedMapTest, StressTest) {
     int num_remaps = 0;
     int num_inserts = 0;
 
-    auto m = tc.root.add_root(
-        make_managed<ManagedMap<ManagedInt, ManagedInt, managed_int_less>>());
+    auto m =
+        tc.root.add_root(make_managed<ManagedMap<ManagedInt, ManagedInt>>());
     std::size_t size = 0;
     for (int i = 0; i < 1000; ++i) {
       const int key = dist(generator);

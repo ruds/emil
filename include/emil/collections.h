@@ -787,7 +787,7 @@ class ManagedSetAccessor;
  * See comments about `detail::tree_iterator`'s interaction with the
  * memory manager.
  */
-template <ManagedType T, typename Comp = std::less<T>>
+template <ManagedType T, typename Comp = std::less<>>
 class ManagedSet : public ManagedWithSelfPtr<ManagedSet<T, Comp>> {
   struct token {
    private:
@@ -938,7 +938,7 @@ managed_ptr<ManagedSet<T, Comp>> managed_set(
 template <ManagedType T>
 managed_ptr<ManagedSet<T>> managed_set(
     std::initializer_list<managed_ptr<T>> els) {
-  return managed_set(std::less<T>(), els);
+  return managed_set(std::less<>(), els);
 }
 
 /**
@@ -951,7 +951,7 @@ managed_ptr<ManagedSet<T>> managed_set(
  * See comments about `detail::tree_iterator`'s interaction with the memory
  * manager.
  */
-template <ManagedType K, ManagedType V, typename Comp = std::less<K>>
+template <ManagedType K, ManagedType V, typename Comp = std::less<>>
 class ManagedMap : public ManagedWithSelfPtr<ManagedMap<K, V, Comp>> {
   struct token {
    private:
@@ -1139,6 +1139,6 @@ managed_ptr<ManagedMap<K, V, Comp>> managed_map(
 template <ManagedType K, ManagedType V>
 managed_ptr<ManagedMap<K, V>> managed_map(
     std::initializer_list<std::pair<managed_ptr<K>, managed_ptr<V>>> els) {
-  return managed_map(std::less<K>(), els);
+  return managed_map(std::less<>(), els);
 }
 }  // namespace emil::collections
