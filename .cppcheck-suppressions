@@ -1,2 +1,3 @@
 *:*/extern/utfcpp/*
 unusedStructMember:*/test/*
+duplicateExpression:*/test/string_test.cc

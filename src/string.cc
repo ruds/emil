@@ -86,4 +86,86 @@ bool ManagedString::is_short() const {
   return !(*reinterpret_cast<const unsigned char*>(&data_) & STORAGE_FLAG);
 }
 
+managed_ptr<ManagedString> make_string(std::u8string_view s) {
+  return make_managed<ManagedString>(s);
+}
+
+bool operator==(const ManagedString& l, const ManagedString& r) {
+  return static_cast<std::u8string_view>(l) ==
+         static_cast<std::u8string_view>(r);
+}
+
+bool operator==(const std::u8string_view& l, const ManagedString& r) {
+  return l == static_cast<std::u8string_view>(r);
+}
+
+bool operator==(const ManagedString& l, const std::u8string_view& r) {
+  return static_cast<std::u8string_view>(l) == r;
+}
+
+bool operator!=(const ManagedString& l, const ManagedString& r) {
+  return static_cast<std::u8string_view>(l) !=
+         static_cast<std::u8string_view>(r);
+}
+
+bool operator!=(const std::u8string_view& l, const ManagedString& r) {
+  return l != static_cast<std::u8string_view>(r);
+}
+
+bool operator!=(const ManagedString& l, const std::u8string_view& r) {
+  return static_cast<std::u8string_view>(l) != r;
+}
+
+bool operator<(const ManagedString& l, const ManagedString& r) {
+  return static_cast<std::u8string_view>(l) <
+         static_cast<std::u8string_view>(r);
+}
+
+bool operator<(const std::u8string_view& l, const ManagedString& r) {
+  return l < static_cast<std::u8string_view>(r);
+}
+
+bool operator<(const ManagedString& l, const std::u8string_view& r) {
+  return static_cast<std::u8string_view>(l) < r;
+}
+
+bool operator<=(const ManagedString& l, const ManagedString& r) {
+  return static_cast<std::u8string_view>(l) <=
+         static_cast<std::u8string_view>(r);
+}
+
+bool operator<=(const std::u8string_view& l, const ManagedString& r) {
+  return l <= static_cast<std::u8string_view>(r);
+}
+
+bool operator<=(const ManagedString& l, const std::u8string_view& r) {
+  return static_cast<std::u8string_view>(l) <= r;
+}
+
+bool operator>(const ManagedString& l, const ManagedString& r) {
+  return static_cast<std::u8string_view>(l) >
+         static_cast<std::u8string_view>(r);
+}
+
+bool operator>(const std::u8string_view& l, const ManagedString& r) {
+  return l > static_cast<std::u8string_view>(r);
+}
+
+bool operator>(const ManagedString& l, const std::u8string_view& r) {
+  return static_cast<std::u8string_view>(l) > r;
+}
+
+bool operator>=(const ManagedString& l, const ManagedString& r) {
+  return static_cast<std::u8string_view>(l) >=
+         static_cast<std::u8string_view>(r);
+}
+
+bool operator>=(const std::u8string_view& l, const ManagedString& r) {
+  return l >= static_cast<std::u8string_view>(r);
+}
+
+bool operator>=(const ManagedString& l, const std::u8string_view& r) {
+  return static_cast<std::u8string_view>(l) >= r;
+}
+
 }  // namespace emil

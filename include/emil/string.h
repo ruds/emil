@@ -94,4 +94,30 @@ class ManagedString : public Managed {
   }
 };
 
+managed_ptr<ManagedString> make_string(std::u8string_view s = u8"");
+
+bool operator==(const ManagedString& l, const ManagedString& r);
+bool operator==(const std::u8string_view& l, const ManagedString& r);
+bool operator==(const ManagedString& l, const std::u8string_view& r);
+
+bool operator!=(const ManagedString& l, const ManagedString& r);
+bool operator!=(const std::u8string_view& l, const ManagedString& r);
+bool operator!=(const ManagedString& l, const std::u8string_view& r);
+
+bool operator<(const ManagedString& l, const ManagedString& r);
+bool operator<(const std::u8string_view& l, const ManagedString& r);
+bool operator<(const ManagedString& l, const std::u8string_view& r);
+
+bool operator<=(const ManagedString& l, const ManagedString& r);
+bool operator<=(const std::u8string_view& l, const ManagedString& r);
+bool operator<=(const ManagedString& l, const std::u8string_view& r);
+
+bool operator>(const ManagedString& l, const ManagedString& r);
+bool operator>(const std::u8string_view& l, const ManagedString& r);
+bool operator>(const ManagedString& l, const std::u8string_view& r);
+
+bool operator>=(const ManagedString& l, const ManagedString& r);
+bool operator>=(const std::u8string_view& l, const ManagedString& r);
+bool operator>=(const ManagedString& l, const std::u8string_view& r);
+
 }  // namespace emil
