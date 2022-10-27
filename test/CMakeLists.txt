@@ -47,4 +47,5 @@ endmacro()
 
 emil_add_gtest(source_test source_test.cc lexer)
 emil_add_gtest(gc_test gc_test.cc runtime)
+emil_add_gtest(string_test string_test.cc runtime util)
 emil_add_gtest(collections_test collections_test.cc collections)

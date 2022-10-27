@@ -18,12 +18,18 @@ find_package(GMPXX REQUIRED)
 
 add_subdirectory("${PROJECT_SOURCE_DIR}/extern/utfcpp" "extern/utfcpp")
 
-add_library(lexer STATIC lexer.cc source.cc strconvert.cc)
+add_library(util STATIC strconvert.cc)
+add_emil_options(util)
+target_include_directories(util PUBLIC ../include)
+target_link_libraries(util PRIVATE fmt::fmt utf8cpp)
+
+add_library(lexer STATIC lexer.cc source.cc)
 add_emil_options(lexer)
 target_include_directories(lexer PUBLIC ../include "${GMPXX_INCLUDE_DIRS}")
 target_include_directories(lexer PRIVATE ./private)
 target_link_libraries(lexer PUBLIC
-  fmt::fmt utf8cpp ICU::uc ICU::data "${GMPXX_LIBRARIES}")
+  fmt::fmt utf8cpp ICU::uc ICU::data "${GMPXX_LIBRARIES}"
+  PRIVATE util)
 
 add_custom_command(
   OUTPUT
@@ -44,11 +50,11 @@ target_include_directories(parser
   PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/include" ../include)
 target_include_directories(parser PRIVATE .)
 
-add_library(runtime STATIC gc.cc runtime.cc)
+add_library(runtime STATIC gc.cc runtime.cc string.cc)
 add_emil_options(runtime)
 target_include_directories(runtime
   PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/include" ../include)
-target_link_libraries(runtime PRIVATE fmt::fmt)
+target_link_libraries(runtime PRIVATE fmt::fmt utf8cpp)
 
 add_library(collections INTERFACE)
 target_sources(collections INTERFACE ../include/emil/collections.h)

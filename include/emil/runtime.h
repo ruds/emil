@@ -16,7 +16,6 @@
 
 namespace emil {
 
-class Runtime;
 class MemoryManager;
 
 namespace testing {
