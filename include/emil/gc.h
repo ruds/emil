@@ -26,7 +26,6 @@
 
 namespace emil {
 
-class MemoryManager;
 class managed_ptr_base;
 
 /** Returns true if subobjects should be visited. */
@@ -233,10 +232,14 @@ class PrivateBuffer {
  public:
   ~PrivateBuffer();
 
-  char* buf() const { return buf_; }
-  std::size_t size() const { return size_; }
+  void* buf() const noexcept { return buf_; }
+  std::size_t size() const noexcept { return size_; }
 
-  friend void swap(PrivateBuffer& lhs, PrivateBuffer& rhs) {
+  /** Releases the buffer -- you must return it to the MemoryManager yourself
+   * using `free_private_buffer`. */
+  void* release() noexcept;
+
+  friend void swap(PrivateBuffer& lhs, PrivateBuffer& rhs) noexcept {
     using std::swap;
     swap(lhs.buf_, rhs.buf_);
     swap(lhs.size_, rhs.size_);
@@ -245,10 +248,10 @@ class PrivateBuffer {
  private:
   friend class MemoryManager;
 
-  char* buf_;
+  void* buf_;
   std::size_t size_;
 
-  PrivateBuffer(char* buf, std::size_t size);
+  PrivateBuffer(void* buf, std::size_t size) noexcept;
 
   PrivateBuffer(const PrivateBuffer&) = delete;
   PrivateBuffer& operator=(const PrivateBuffer&) = delete;
@@ -341,6 +344,15 @@ class MemoryManager {
    */
   [[nodiscard]] PrivateBuffer allocate_private_buffer(std::size_t size);
 
+  /**
+   * Returns a private buffer to the memory manager.
+   *
+   * This is normally called by `PrivateBuffer`'s destructor. Users should only
+   * call this if they have taken ownership of the buffer by calling
+   * `PrivateBuffer::release`.
+   */
+  void free_private_buffer(void* buf, std::size_t size);
+
   /** As long as this object lives, no garbage will be collected. */
   class hold {
    public:
@@ -361,7 +373,6 @@ class MemoryManager {
   Stats stats() const;
 
  private:
-  friend class PrivateBuffer;
   friend class hold;
 
   Root& root_;
@@ -375,7 +386,6 @@ class MemoryManager {
   MemoryManager& operator=(MemoryManager&&) = delete;
 
   void free_obj(Managed* m);
-  void free_private_buffer(char* buf, std::size_t size);
 
   void enact_decision(GcPolicy::Decision decision);
   void full_gc();

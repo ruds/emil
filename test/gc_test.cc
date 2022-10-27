@@ -113,7 +113,7 @@ class ManagedPayload : public Managed {
                  double bar)
       : alive(alive), buf(mgr.allocate_private_buffer(sizeof(Payload))) {
     alive = true;
-    new (buf.buf()) Payload(payload_alive, foo, bar);
+    new (payload()) Payload(payload_alive, foo, bar);
   }
 
   ~ManagedPayload() {

@@ -66,7 +66,7 @@ PrivateBuffer::~PrivateBuffer() {
   if (buf_) ctx().mgr->free_private_buffer(buf_, size_);
 }
 
-PrivateBuffer::PrivateBuffer(char* buf, std::size_t size)
+PrivateBuffer::PrivateBuffer(void* buf, std::size_t size) noexcept
     : buf_(buf), size_(size) {}
 
 PrivateBuffer::PrivateBuffer(PrivateBuffer&& o) noexcept
@@ -81,6 +81,12 @@ PrivateBuffer& PrivateBuffer::operator=(PrivateBuffer&& o) noexcept {
   size_ = o.size_;
   o.buf_ = nullptr;
   return *this;
+}
+
+void* PrivateBuffer::release() noexcept {
+  void* p = buf_;
+  buf_ = nullptr;
+  return p;
 }
 
 std::ostream& operator<<(std::ostream& os, const MemoryManagerStats& stats) {
@@ -132,7 +138,7 @@ PrivateBuffer MemoryManager::allocate_private_buffer(std::size_t size) {
     enact_decision(gc_policy_->on_private_buffer_request(stats_, size));
   stats_.allocated += size;
   ++stats_.num_private_buffers;
-  return PrivateBuffer(new char[size], size);
+  return PrivateBuffer(operator new(size), size);
 }
 
 MemoryManager::hold::~hold() {
@@ -172,12 +178,12 @@ void MemoryManager::free_obj(Managed* m) {
   delete m;
 }
 
-void MemoryManager::free_private_buffer(char* buf, std::size_t size) {
+void MemoryManager::free_private_buffer(void* buf, std::size_t size) {
   assert(stats_.allocated >= size);
   stats_.allocated -= size;
   assert(stats_.num_private_buffers != 0);
   --stats_.num_private_buffers;
-  delete[] buf;
+  operator delete(buf);
 }
 
 void MemoryManager::enact_decision(GcPolicy::Decision decision) {
