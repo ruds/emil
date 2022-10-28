@@ -918,14 +918,17 @@ class ManagedSet : public ManagedWithSelfPtr<ManagedSet<T, Comp>> {
   }
 };
 
+template <ManagedType T, typename Comp = std::less<>>
+using SetPtr = managed_ptr<ManagedSet<T, Comp>>;
+
 /**
  * Creates a `ManagedSet` with the given elements.
  *
  * All elements must be reachable or else this must be called with a hold.
  */
 template <ManagedType T, typename Comp>
-managed_ptr<ManagedSet<T, Comp>> managed_set(
-    const Comp& comp, std::initializer_list<managed_ptr<T>> els) {
+SetPtr<T, Comp> managed_set(const Comp& comp,
+                            std::initializer_list<managed_ptr<T>> els) {
   auto hold = ctx().mgr->acquire_hold();
   auto s = make_managed<ManagedSet<T, Comp>>(comp);
   for (const auto& el : els) {
@@ -936,8 +939,7 @@ managed_ptr<ManagedSet<T, Comp>> managed_set(
 
 /** @overload */
 template <ManagedType T>
-managed_ptr<ManagedSet<T>> managed_set(
-    std::initializer_list<managed_ptr<T>> els) {
+SetPtr<T> managed_set(std::initializer_list<managed_ptr<T>> els) {
   return managed_set(std::less<>(), els);
 }
 
@@ -1118,13 +1120,16 @@ class ManagedMap : public ManagedWithSelfPtr<ManagedMap<K, V, Comp>> {
   }
 };
 
+template <ManagedType K, ManagedType V, typename Comp = std::less<>>
+using MapPtr = managed_ptr<ManagedMap<K, V, Comp>>;
+
 /**
  * Creates a `ManagedMap` with the given elements.
  *
  * All elements must be reachable or else this must be called with a hold.
  */
 template <ManagedType K, ManagedType V, typename Comp>
-managed_ptr<ManagedMap<K, V, Comp>> managed_map(
+MapPtr<K, V, Comp> managed_map(
     const Comp& comp,
     std::initializer_list<std::pair<managed_ptr<K>, managed_ptr<V>>> els) {
   auto hold = ctx().mgr->acquire_hold();
@@ -1137,7 +1142,7 @@ managed_ptr<ManagedMap<K, V, Comp>> managed_map(
 
 /** @overload */
 template <ManagedType K, ManagedType V>
-managed_ptr<ManagedMap<K, V>> managed_map(
+MapPtr<K, V> managed_map(
     std::initializer_list<std::pair<managed_ptr<K>, managed_ptr<V>>> els) {
   return managed_map(std::less<>(), els);
 }

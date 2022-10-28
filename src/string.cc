@@ -86,7 +86,7 @@ bool ManagedString::is_short() const {
   return !(*reinterpret_cast<const unsigned char*>(&data_) & STORAGE_FLAG);
 }
 
-managed_ptr<ManagedString> make_string(std::u8string_view s) {
+StringPtr make_string(std::u8string_view s) {
   return make_managed<ManagedString>(s);
 }
 
