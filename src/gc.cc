@@ -62,6 +62,8 @@ void managed_ptr_base::accept(const ManagedVisitor& visitor) {
 
 bool managed_ptr_base::mark() { return val_->mark(); }
 
+PrivateBuffer::PrivateBuffer() : buf_(nullptr), size_(0) {}
+
 PrivateBuffer::~PrivateBuffer() {
   if (buf_) ctx().mgr->free_private_buffer(buf_, size_);
 }

@@ -18,12 +18,16 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstring>
 #include <functional>
 #include <iostream>
 #include <iterator>
+#include <new>
 #include <optional>
 #include <random>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "emil/gc.h"
@@ -152,19 +156,104 @@ managed_ptr<ManagedDouble> md(double d) {
   return l.first == r.first && l.second == r.second;
 }
 
-TEST(ConsTest, Cons) {
+TEST(ManagedConsTest, Cons) {
   TestContext tc;
   auto l = tc.root.add_root(cons_in_place<ManagedInt>(nullptr, 1));
+  EXPECT_EQ(len(l), 1);
   auto i = tc.root.add_root(mi(2));
   l = tc.root.replace_root(l, cons(i, l));
+  EXPECT_EQ(len(l), 2);
   tc.root.remove_root(i);
   l = tc.root.replace_root(l, cons_in_place(l, 3));
+  EXPECT_EQ(len(l), 3);
   l = tc.root.replace_root(l, cons(nullptr, l));
+  auto force_gc = mi(4);
+  EXPECT_EQ(len(l), 4);
   ASSERT_FALSE(l->car);
   ASSERT_EQ(l->cdr->car, 3);
   ASSERT_EQ(l->cdr->cdr->car, 2);
   ASSERT_EQ(l->cdr->cdr->cdr->car, 1);
   ASSERT_FALSE(l->cdr->cdr->cdr->cdr);
+}
+
+TEST(ManagedArrayTest, Empty) {
+  TestContext tc;
+  auto arr = tc.root.add_root(make_managed<ManagedArray<ManagedInt>>());
+  EXPECT_TRUE(arr->empty());
+  EXPECT_EQ(arr->size(), 0);
+  EXPECT_THROW(arr->at(0), std::out_of_range);
+  EXPECT_THAT(*arr, ElementsAre());
+}
+
+TEST(ManagedArrayTest, FromInitializerList) {
+  TestContext tc;
+  auto i1 = tc.root.add_root(mi(1));
+  auto i2 = tc.root.add_root(mi(2));
+  auto i3 = tc.root.add_root(mi(3));
+
+  auto arr = tc.root.add_root(make_array({i1, i2, i3}));
+  auto force_gc = mi(4);
+  EXPECT_FALSE(arr->empty());
+  EXPECT_EQ(arr->size(), 3);
+  EXPECT_EQ((*arr)[0], 1);
+  EXPECT_EQ((*arr)[1], 2);
+  EXPECT_EQ((*arr)[2], 3);
+  EXPECT_EQ(arr->at(0), 1);
+  EXPECT_EQ(arr->at(1), 2);
+  EXPECT_EQ(arr->at(2), 3);
+  EXPECT_THROW(arr->at(3), std::out_of_range);
+  EXPECT_THAT(*arr, ElementsAre(1, 2, 3));
+}
+
+TEST(ManagedArrayTest, FromTuples) {
+  TestContext tc;
+  auto arr = tc.root.add_root(make_array<ManagedInt>(
+      std::make_tuple(1), std::make_tuple(2), std::make_tuple(3)));
+  auto force_gc = mi(4);
+  EXPECT_FALSE(arr->empty());
+  EXPECT_EQ(arr->size(), 3);
+  EXPECT_EQ((*arr)[0], 1);
+  EXPECT_EQ((*arr)[1], 2);
+  EXPECT_EQ((*arr)[2], 3);
+  EXPECT_EQ(arr->at(0), 1);
+  EXPECT_EQ(arr->at(1), 2);
+  EXPECT_EQ(arr->at(2), 3);
+  EXPECT_THROW(arr->at(3), std::out_of_range);
+  EXPECT_THAT(*arr, ElementsAre(1, 2, 3));
+}
+
+TEST(ManagedArrayTest, FromList) {
+  TestContext tc;
+  auto list = tc.root.add_root(cons_in_place<ManagedInt>(nullptr, 3));
+  list = tc.root.replace_root(list, cons_in_place(list, 2));
+  list = tc.root.replace_root(list, cons_in_place(list, 1));
+  EXPECT_EQ(len(list), 3);
+
+  auto arr = tc.root.add_root(to_array(list));
+  auto force_gc = mi(4);
+  EXPECT_FALSE(arr->empty());
+  EXPECT_EQ(arr->size(), 3);
+  EXPECT_EQ((*arr)[0], 1);
+  EXPECT_EQ((*arr)[1], 2);
+  EXPECT_EQ((*arr)[2], 3);
+  EXPECT_EQ(arr->at(0), 1);
+  EXPECT_EQ(arr->at(1), 2);
+  EXPECT_EQ(arr->at(2), 3);
+  EXPECT_THROW(arr->at(3), std::out_of_range);
+  EXPECT_THAT(*arr, ElementsAre(1, 2, 3));
+
+  auto rarr = tc.root.add_root(to_array(list, true));
+  force_gc = mi(4);
+  EXPECT_FALSE(rarr->empty());
+  EXPECT_EQ(rarr->size(), 3);
+  EXPECT_EQ((*rarr)[0], 3);
+  EXPECT_EQ((*rarr)[1], 2);
+  EXPECT_EQ((*rarr)[2], 1);
+  EXPECT_EQ(rarr->at(0), 3);
+  EXPECT_EQ(rarr->at(1), 2);
+  EXPECT_EQ(rarr->at(2), 1);
+  EXPECT_THROW(rarr->at(3), std::out_of_range);
+  EXPECT_THAT(*rarr, ElementsAre(3, 2, 1));
 }
 
 TEST(ManagedSetTest, OrderedAfterInserts) {

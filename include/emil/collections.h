@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <functional>
@@ -21,9 +22,11 @@
 #include <iterator>
 #include <optional>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
 
 #include "emil/gc.h"
+#include "emil/runtime.h"
 
 /**
  * @file collections.h
@@ -79,6 +82,16 @@ ConsPtr<T> cons(std::nullptr_t, ConsPtr<T> cdr) {
   return make_managed<ManagedCons<T>>(nullptr, std::move(cdr));
 }
 
+template <ManagedType T>
+std::size_t len(ConsPtr<T> list) {
+  std::size_t l = 0;
+  while (list) {
+    ++l;
+    list = list->cdr;
+  }
+  return l;
+}
+
 /**
  * Construct and prepend a `T` to `cdr`.
  */
@@ -88,6 +101,164 @@ ConsPtr<T> cons_in_place(ConsPtr<T> cdr, Args&&... args) {
   // cppcheck-suppress redundantInitialization
   auto car = make_managed<T>(std::forward<Args>(args)...);
   return make_managed<ManagedCons<T>>(std::move(car), std::move(cdr));
+}
+
+/** A fixed-size (mutable) array. */
+template <ManagedType T>
+class ManagedArray : public Managed {
+ public:
+  using iterator = managed_ptr<T>*;
+  using const_iterator = const managed_ptr<T>*;
+  using reverse_iterator = std::reverse_iterator<iterator>;
+  using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+  using value_type = managed_ptr<T>;
+  using reference = managed_ptr<T>&;
+  using const_reference = const managed_ptr<T>&;
+  using pointer = managed_ptr<T>*;
+  using const_pointer = const managed_ptr<T>*;
+
+  ManagedArray() : buf_() {}
+
+  /** Create an array of `len` nullptrs. */
+  explicit ManagedArray(std::size_t len)
+      : ManagedArray(len, [](std::size_t) { return nullptr; }) {}
+
+  ManagedArray(std::initializer_list<managed_ptr<T>> els)
+      : ManagedArray(els.size(),
+                     [&els](std::size_t i) { return std::data(els)[i]; }) {}
+
+  /**
+   * Initialize the `len` elements of the array with `initializer`.
+   *
+   * The same instance of `initializer` is guaranteed to be called in order with
+   * the arguments `0`, `1`, `2`, ..., `len - 1`.
+   */
+  template <typename F>
+  ManagedArray(std::size_t len, F initializer) : buf_(allocate(len)) {
+    for (std::size_t i = 0; i < len; ++i) {
+      new (data() + i) managed_ptr<T>(initializer(i));
+    }
+  }
+
+  bool empty() const { return buf_.size() == 0; }
+  std::size_t size() const { return buf_.size() / sizeof(T); }
+
+  managed_ptr<T>& operator[](std::size_t n) { return *(data() + n); }
+  const managed_ptr<T>& operator[](std::size_t n) const {
+    return *(data() + n);
+  }
+
+  managed_ptr<T>& at(std::size_t n) {
+    if (size() <= n) throw std::out_of_range("Access out of bounds.");
+    return (*this)[n];
+  }
+
+  const managed_ptr<T>& at(std::size_t n) const {
+    if (size() <= n) throw std::out_of_range("Access out of bounds.");
+    return (*this)[n];
+  }
+
+  iterator begin() { return data(); }
+  const_iterator begin() const { return cbegin(); }
+
+  iterator end() { return data() + size(); }
+  const_iterator end() const { return cend(); }
+
+  const_iterator cbegin() const { return data(); }
+
+  const_iterator cend() const { return data() + size(); }
+
+  reverse_iterator rbegin() { return std::reverse_iterator(end()); }
+  const_reverse_iterator rbegin() const { return crbegin(); }
+
+  reverse_iterator rend() { return std::reverse_iterator(begin()); }
+  const_reverse_iterator rend() const { return crend(); }
+
+  const_reverse_iterator crbegin() const {
+    return std::reverse_iterator(cend());
+  }
+
+  const_reverse_iterator crend() const {
+    return std::reverse_iterator(cbegin());
+  }
+
+ private:
+  PrivateBuffer buf_;
+
+  static PrivateBuffer allocate(std::size_t n) {
+    return ctx().mgr->allocate_private_buffer(n * sizeof(T));
+  }
+
+  managed_ptr<T>* data() {
+    return reinterpret_cast<managed_ptr<T>*>(buf_.buf());
+  }
+
+  const managed_ptr<T>* data() const {
+    return reinterpret_cast<managed_ptr<T>*>(buf_.buf());
+  }
+
+  void visit_subobjects(const ManagedVisitor& visitor) override {
+    std::for_each(begin(), end(),
+                  [&visitor](managed_ptr<T>& t) { t.accept(visitor); });
+  }
+
+  std::size_t managed_size() const noexcept override {
+    return sizeof(ManagedArray);
+  }
+};
+
+template <ManagedType T>
+using ArrayPtr = managed_ptr<ManagedArray<T>>;
+
+template <ManagedType T>
+ArrayPtr<T> make_array(std::initializer_list<managed_ptr<T>> els) {
+  return make_managed<ManagedArray<T>>(els);
+}
+
+namespace detail {
+
+template <typename T, typename... Args>
+requires std::is_constructible_v<T, Args...>
+void is_constructible_from_tuple_impl(const std::tuple<Args...>&);
+
+template <typename Tuple, typename T>
+concept is_constructible_from_tuple = requires(const Tuple& t) {
+  is_constructible_from_tuple_impl<T>(t);
+};
+
+}  // namespace detail
+
+/** Construct elements of the new array using tuples as the constructor
+ * arguments. */
+template <ManagedType T, detail::is_constructible_from_tuple<T>... Tuples>
+ArrayPtr<T> make_array(Tuples&&... tuples) {
+  auto hold = ctx().mgr->acquire_hold();
+  return make_array(
+      {make_managed_from_tuple<T>(std::forward<Tuples>(tuples))...});
+}
+
+/**
+ * Creates an array with the same elements as `list`.
+ *
+ * If `reverse_list` is false, the array is built in opposite order.
+ */
+template <ManagedType T>
+ArrayPtr<T> to_array(ConsPtr<T> list, bool reverse_list = false) {
+  const auto l = len(list);
+  if (reverse_list) {
+    auto arr = make_managed<ManagedArray<T>>(l);
+    for (auto it = arr->rbegin(); it != arr->rend(); ++it) {
+      *it = list->car;
+      list = list->cdr;
+    }
+    return arr;
+  } else {
+    return make_managed<ManagedArray<T>>(l, [&list](std::size_t) mutable {
+      auto p = list->car;
+      list = list->cdr;
+      return p;
+    });
+  }
 }
 
 namespace detail {

@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <iosfwd>
 #include <memory>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -230,6 +231,7 @@ class ManagedWithSelfPtr : public Managed {
 
 class PrivateBuffer {
  public:
+  PrivateBuffer();
   ~PrivateBuffer();
 
   void* buf() const noexcept { return buf_; }
@@ -394,6 +396,11 @@ class MemoryManager {
 template <ManagedType T, class... Args>
 managed_ptr<T> make_managed(Args&&... args) {
   return ctx().mgr->create<T>(std::forward<Args>(args)...);
+}
+
+template <ManagedType T, class... Args>
+managed_ptr<T> make_managed_from_tuple(std::tuple<Args...>&& args) {
+  return std::apply(make_managed<T, Args...>, std::move(args));
 }
 
 template <ManagedType T, class... Args>
