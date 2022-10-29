@@ -44,7 +44,7 @@ class ManagedSetAccessor {
   template <ManagedType T, typename Comp>
   static void verify_invariants(const ManagedSet<T, Comp>& set) {
     auto hold = ctx().mgr->acquire_hold();
-    detail::verify_invariants(set.tree_, *set.comp_);
+    trees::verify_invariants(set.tree_, *set.comp_);
     ASSERT_EQ(std::distance(set.cbegin(), set.cend()), set.size_);
     for (auto it = set.cbegin();
          it != set.cend() && std::next(it) != set.cend(); ++it) {
@@ -58,7 +58,7 @@ class ManagedMapAccessor {
   template <ManagedType K, ManagedType V, typename Comp>
   static void verify_invariants(const ManagedMap<K, V, Comp>& map) {
     auto hold = ctx().mgr->acquire_hold();
-    detail::verify_invariants(map.tree_, *map.comp_);
+    trees::verify_invariants(map.tree_, *map.comp_);
     ASSERT_EQ(std::distance(map.cbegin(), map.cend()), map.size_);
     for (auto it = map.cbegin();
          it != map.cend() && std::next(it) != map.cend(); ++it) {
