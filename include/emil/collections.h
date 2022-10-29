@@ -1110,9 +1110,21 @@ SetPtr<T, Comp> managed_set(const Comp& comp,
 }
 
 /** @overload */
+template <ManagedType T, typename Comp>
+SetPtr<T, Comp> managed_set(const Comp& comp) {
+  return managed_set<T>(comp, {});
+}
+
+/** @overload */
 template <ManagedType T>
 SetPtr<T> managed_set(std::initializer_list<managed_ptr<T>> els) {
   return managed_set(std::less<>(), els);
+}
+
+/** @overload */
+template <ManagedType T>
+SetPtr<T> managed_set() {
+  return managed_set<T>(std::less<>());
 }
 
 /**
