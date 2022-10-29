@@ -131,8 +131,6 @@ const std::vector<Category> CATEGORIES{
      }},
 };
 
-const std::vector<AstNodeSpec> DECLARATIONS{};
-
 const std::string COPYRIGHT = R"(// Copyright 2022 Matt Rudary
 
 // Licensed under the Apache License, Version 2.0 (the "License");
