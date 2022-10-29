@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iterator>
+#include <string>
 
 #include "emil/runtime.h"
 

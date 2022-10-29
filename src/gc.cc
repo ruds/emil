@@ -19,6 +19,7 @@
 
 #include <cassert>
 #include <memory>
+#include <utility>
 
 #include "emil/runtime.h"
 

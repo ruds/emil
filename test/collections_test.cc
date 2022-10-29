@@ -18,11 +18,9 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
-#include <cstring>
 #include <functional>
 #include <iostream>
 #include <iterator>
-#include <new>
 #include <optional>
 #include <random>
 #include <stdexcept>

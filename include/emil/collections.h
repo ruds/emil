@@ -20,6 +20,7 @@
 #include <functional>
 #include <initializer_list>
 #include <iterator>
+#include <new>
 #include <optional>
 #include <stdexcept>
 #include <tuple>

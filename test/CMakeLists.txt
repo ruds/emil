@@ -48,6 +48,4 @@ endmacro()
 emil_add_gtest(source_test source_test.cc lexer)
 emil_add_gtest(gc_test gc_test.cc runtime)
 emil_add_gtest(string_test string_test.cc runtime util)
-emil_add_gtest(collections_test collections_test.cc collections)
-# IWYU seems to play badly with precompiled headers.
-set_property(TARGET collections_test PROPERTY CXX_INCLUDE_WHAT_YOU_USE)
+emil_add_gtest(collections_test collections_test.cc runtime)
