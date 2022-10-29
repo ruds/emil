@@ -247,7 +247,7 @@ class CountingVisitor : public ManagedVisitor {
 
  private:
   int& count_;
-  bool visit(managed_ptr_base&) const override {
+  bool visit(const managed_ptr_base&) const override {
     ++count_;
     return true;
   }

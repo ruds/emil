@@ -38,7 +38,7 @@ class ManagedVisitor {
  private:
   friend class managed_ptr_base;
 
-  virtual bool visit(managed_ptr_base& ptr) const = 0;
+  virtual bool visit(const managed_ptr_base& ptr) const = 0;
 
   ManagedVisitor(const ManagedVisitor&) = delete;
   ManagedVisitor& operator=(const ManagedVisitor&) = delete;
@@ -70,7 +70,8 @@ class Managed {
   friend class MemoryManager;
   friend class managed_ptr_base;
 
-  std::uintptr_t next_managed_ = reinterpret_cast<std::uintptr_t>(nullptr);
+  mutable std::uintptr_t next_managed_ =
+      reinterpret_cast<std::uintptr_t>(nullptr);
 
   Managed(const Managed&) = delete;
   Managed& operator=(const Managed&) = delete;
@@ -94,9 +95,9 @@ class Managed {
    */
   virtual std::size_t managed_size() const noexcept = 0;
 
-  bool mark();
+  bool mark() const;
   /** Updates the next_managed pointer and clears the mark. */
-  void update_next_managed_and_clear(Managed* next);
+  void update_next_managed_and_clear(Managed* next) const;
   bool is_marked() const;
   Managed* next_managed() const;
 };
@@ -138,7 +139,7 @@ class managed_ptr_base {
   Managed* operator->() { return val_; }
   const Managed* operator->() const { return val_; }
 
-  void accept(const ManagedVisitor& visitor);
+  void accept(const ManagedVisitor& visitor) const;
 
   explicit operator bool() const noexcept { return val_; }
 
@@ -155,7 +156,7 @@ class managed_ptr_base {
   friend class MemoryManager;
   friend class MarkVisitor;
 
-  bool mark();
+  bool mark() const;
 };
 
 /**

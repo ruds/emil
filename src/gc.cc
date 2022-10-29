@@ -37,13 +37,13 @@ constexpr std::uintptr_t TAG_MASK = 1;
 constexpr std::uintptr_t PTR_MASK = ~TAG_MASK;
 }  // namespace
 
-bool Managed::mark() {
+bool Managed::mark() const {
   bool was_marked = is_marked();
   next_managed_ |= TAG_MASK;
   return !was_marked;
 }
 
-void Managed::update_next_managed_and_clear(Managed* next) {
+void Managed::update_next_managed_and_clear(Managed* next) const {
   next_managed_ = reinterpret_cast<std::uintptr_t>(next);
   assert(!is_marked());
 }
@@ -57,11 +57,11 @@ Managed* Managed::next_managed() const {
 managed_ptr_base::managed_ptr_base(Managed* val) noexcept : val_(val) {}
 managed_ptr_base::~managed_ptr_base() = default;
 
-void managed_ptr_base::accept(const ManagedVisitor& visitor) {
+void managed_ptr_base::accept(const ManagedVisitor& visitor) const {
   if (visitor.visit(*this)) val_->visit_subobjects(visitor);
 }
 
-bool managed_ptr_base::mark() { return val_->mark(); }
+bool managed_ptr_base::mark() const { return val_->mark(); }
 
 PrivateBuffer::PrivateBuffer() : buf_(nullptr), size_(0) {}
 
@@ -201,7 +201,7 @@ void MemoryManager::enact_decision(GcPolicy::Decision decision) {
 }
 
 class MarkVisitor : public ManagedVisitor {
-  bool visit(managed_ptr_base& ptr) const override { return ptr.mark(); }
+  bool visit(const managed_ptr_base& ptr) const override { return ptr.mark(); }
 };
 
 void MemoryManager::full_gc() {
