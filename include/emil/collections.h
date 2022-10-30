@@ -322,6 +322,23 @@ class ManagedSet : public ManagedWithSelfPtr<ManagedSet<T, Comp>> {
     }
   }
 
+  friend managed_ptr<ManagedSet> operator|(managed_ptr<ManagedSet> l,
+                                           managed_ptr<ManagedSet> r) {
+    if (l->empty()) return r;
+    if (r->empty()) return l;
+    auto hold = ctx().mgr->acquire_hold();
+    trees::union_result_t<T, void> u;
+    if (l->size() < r->size()) {
+      u = union_right(r->tree_, black_height(r->tree_), l->tree_,
+                      black_height(l->tree_), *l->comp_);
+    } else {
+      u = union_right(l->tree_, black_height(l->tree_), r->tree_,
+                      black_height(r->tree_), *l->comp_);
+    }
+    return make_managed<ManagedSet>(token{}, *l->comp_, std::move(u.tree),
+                                    l->size() + r->size() - u.num_overlaps);
+  }
+
  private:
   friend class MemoryManager;
   friend class testing::ManagedSetAccessor;
@@ -537,6 +554,23 @@ class ManagedMap : public ManagedWithSelfPtr<ManagedMap<K, V, Comp>> {
     }
   }
 
+  friend managed_ptr<ManagedMap> operator|(managed_ptr<ManagedMap> l,
+                                           managed_ptr<ManagedMap> r) {
+    if (l->empty()) return r;
+    if (r->empty()) return l;
+    auto hold = ctx().mgr->acquire_hold();
+    trees::union_result_t<K, V> u;
+    if (l->size() < r->size()) {
+      u = union_left(r->tree_, black_height(r->tree_), l->tree_,
+                     black_height(l->tree_), *l->comp_);
+    } else {
+      u = union_right(l->tree_, black_height(l->tree_), r->tree_,
+                      black_height(r->tree_), *l->comp_);
+    }
+    return make_managed<ManagedMap>(token{}, *l->comp_, std::move(u.tree),
+                                    l->size() + r->size() - u.num_overlaps);
+  }
+
  private:
   friend class testing::ManagedMapAccessor;
 
@@ -567,7 +601,7 @@ using MapPtr = managed_ptr<ManagedMap<K, V, Comp>>;
 template <ManagedType K, ManagedType V, typename Comp>
 MapPtr<K, V, Comp> managed_map(
     const Comp& comp,
-    std::initializer_list<std::pair<managed_ptr<K>, managed_ptr<V>>> els) {
+    std::initializer_list<std::pair<managed_ptr<K>, managed_ptr<V>>> els = {}) {
   auto hold = ctx().mgr->acquire_hold();
   auto m = make_managed<ManagedMap<K, V, Comp>>(comp);
   for (const auto& el : els) {
@@ -579,7 +613,7 @@ MapPtr<K, V, Comp> managed_map(
 /** @overload */
 template <ManagedType K, ManagedType V>
 MapPtr<K, V> managed_map(
-    std::initializer_list<std::pair<managed_ptr<K>, managed_ptr<V>>> els) {
+    std::initializer_list<std::pair<managed_ptr<K>, managed_ptr<V>>> els = {}) {
   return managed_map(std::less<>(), els);
 }
 }  // namespace emil::collections

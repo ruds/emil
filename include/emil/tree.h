@@ -32,6 +32,11 @@
 
 namespace emil::collections::trees {
 
+// TODO: There's some inconsistencies in ordering between left
+// subtree, right subtree, and payload in the various functions that
+// build tree (e.g. balance, make_tree, rotate, join). These should be
+// fixed.
+
 enum class Color {
   Red,    // Red nodes have no red children
   Black,  // Every path from a leaf to a given node has the same number of black
@@ -48,7 +53,8 @@ template <ManagedType K, OptionalManagedType V = void>
 using TreePtr = managed_ptr<ManagedTree<K, V>>;
 
 /**
- * Trees with a key, used for sorting, and a side value, ignored for sorting.
+ * @brief Trees with a key, used for sorting, and a side value, ignored for
+ * sorting.
  *
  * Null keys are not supported.
  */
@@ -73,7 +79,7 @@ struct ManagedTree : Managed {
     return payload.first;
   }
 
-  static maybe_value_type maybe_value(value_type&& v) {
+  static maybe_value_type maybe_value(value_type v) {
     return std::make_optional(std::move(v));
   }
 
@@ -107,7 +113,7 @@ struct ManagedTree : Managed {
 };
 
 /**
- * Specialization for "sets" -- trees with just keys, no side values.
+ * @brief Specialization for "sets" -- trees with just keys, no side values.
  *
  * Null keys are not supported.
  */
@@ -163,6 +169,12 @@ struct ManagedTree<K, void> : Managed {
   }
 };
 
+template <ManagedType K, OptionalManagedType V>
+TreePtr<K, V> to_black(const TreePtr<K, V>& t) {
+  return ManagedTree<K, V>::make_tree(t->left, t->right, t->payload,
+                                      Color::Black);
+}
+
 /**
  * Invariants:
  * 1. Red trees have no red children.
@@ -205,7 +217,7 @@ template <ManagedType K, OptionalManagedType V>
 using TreeStack = ConsPtr<ManagedTree<K, V>>;
 
 /**
- * Iterates over a `ManagedTree`.
+ * @brief Iterates over a `ManagedTree`.
  *
  * While `tree_iterator` is not a managed type, it both contains
  * references to managed objects and allocates managed objects.
@@ -343,8 +355,7 @@ TreePtr<K, V> balance_ll(Color color, TreePtr<K, V> left, TreePtr<K, V> right,
   using T = ManagedTree<K, V>;
   if (color == Color::Black && left && left->left &&
       left->color == Color::Red && left->left->color == Color::Red) {
-    return T::make_tree(T::make_tree(left->left->left, left->left->right,
-                                     left->left->payload, Color::Black),
+    return T::make_tree(to_black(left->left),
                         T::make_tree(left->right, std::move(right),
                                      std::move(payload), Color::Black),
                         left->payload, Color::Red);
@@ -396,16 +407,14 @@ TreePtr<K, V> balance_rr(Color color, TreePtr<K, V> left, TreePtr<K, V> right,
       right->color == Color::Red && right->right->color == Color::Red) {
     return T::make_tree(T::make_tree(std::move(left), right->left,
                                      std::move(payload), Color::Black),
-                        T::make_tree(right->right->left, right->right->right,
-                                     right->right->payload, Color::Black),
-                        right->payload, Color::Red);
+                        to_black(right->right), right->payload, Color::Red);
   }
   return T::make_tree(std::move(left), std::move(right), std::move(payload),
                       color);
 }
 
 /**
- * Possibly replace `tree` with a new tree with equivalent payload.
+ * @brief Possibly replace `tree` with a new tree with equivalent payload.
  *
  * Precondition: Payload is equal to tree's payload.
  *
@@ -479,8 +488,7 @@ TreePtr<K, V> blacken(TreePtr<K, V>&& tree) {
   if (tree && tree->color == Color::Red &&
       ((tree->left && tree->left->color == Color::Red) ||
        (tree->right && tree->right->color == Color::Red))) {
-    using T = ManagedTree<K, V>;
-    return T::make_tree(tree->left, tree->right, tree->payload, Color::Black);
+    return to_black(std::move(tree));
   } else {
     return tree;
   }
@@ -507,8 +515,7 @@ template <ManagedType K, OptionalManagedType V>
 TreePtr<K, V> undouble(const TreePtr<K, V>& tree) {
   assert(tree && tree->color == Color::DoubleBlack);
   if (!tree->key()) return nullptr;
-  using T = ManagedTree<K, V>;
-  return T::make_tree(tree->left, tree->right, tree->payload, Color::Black);
+  return to_black(std::move(tree));
 }
 
 template <ManagedType K, OptionalManagedType V>
@@ -623,9 +630,7 @@ std::pair<TreePtr<K, V>, typename ManagedTree<K, V>::payload_type> erase_min(
     if (!tree->right) {
       return std::make_pair(T::double_black_empty(), tree->payload);
     } else if (tree->right->color == Color::Red) {
-      return std::make_pair(T::make_tree(tree->right->left, tree->right->right,
-                                         tree->right->payload, Color::Black),
-                            tree->payload);
+      return std::make_pair(to_black(tree->right), tree->payload);
     }
   }
   auto [left, payload] = erase_min(tree->left);
@@ -663,9 +668,7 @@ erase_from_subtree(TreePtr<K, V> tree, const U& key, const Comp& comp) {
     if (!tree->left) {
       return std::make_pair(T::double_black_empty(), tree->value());
     } else if (tree->left->color == Color::Red) {
-      return std::make_pair(T::make_tree(tree->left->left, tree->left->right,
-                                         tree->left->payload, Color::Black),
-                            tree->value());
+      return std::make_pair(to_black(tree->left), tree->value());
     }
   }
   auto [right, payload] = erase_min(tree->right);
@@ -680,6 +683,7 @@ TreePtr<K, V> redden(TreePtr<K, V>&& tree) {
       (!tree->left || tree->left->color == Color::Black) &&
       (!tree->right || tree->right->color == Color::Black)) {
     using T = ManagedTree<K, V>;
+    // to_red
     return T::make_tree(tree->left, tree->right, tree->payload, Color::Red);
   } else {
     return tree;
@@ -687,7 +691,7 @@ TreePtr<K, V> redden(TreePtr<K, V>&& tree) {
 }
 
 /**
- * Delete `key` from `tree`.
+ * @brief Delete `key` from `tree`.
  *
  * Returns the new tree and either a flag indicating whether the `key`
  * was present before erasure (for V=void) or the previously mapped
@@ -709,6 +713,257 @@ std::pair<TreePtr<K, V>, typename ManagedTree<K, V>::maybe_value_type> erase(
                  std::make_pair(std::move(tree), T::no_value()));
            });
   return result;
+}
+
+template <ManagedType K, OptionalManagedType V>
+std::size_t black_height(TreePtr<K, V> tree) {
+  std::size_t height = 0;
+  while (tree) {
+    height += tree->color == Color::Black;
+    tree = tree->left;
+  }
+  return height;
+}
+
+/**
+ * @brief Join left and right on mid.
+ *
+ * Preconditions:
+ * 0. There is a hold on the memory manager.
+ * 1. All keys in left are less than key(mid).
+ * 2. key(mid) is less than all keys in right.
+ * 3. left_height == black_height(left)
+ * 4. right_height == black_height(right)
+ * 5. left_height >= right_height
+ *
+ * Postconditions:
+ * 0. The result contains all elements from left and right along with mid.
+ * 1. The black height of the result is left_height.
+ * 2. The local RB invariant may be broken at the root of the result by the root
+ * being red with the right child being red.
+ * 3. The size of the tree is one more than the sum of the sizes of left and
+ * right.
+ */
+template <ManagedType K, OptionalManagedType V>
+TreePtr<K, V> join_right(TreePtr<K, V> left, std::size_t left_height,
+                         typename ManagedTree<K, V>::payload_type&& mid,
+                         TreePtr<K, V> right, std::size_t right_height) {
+  assert(left_height == black_height(left));
+  assert(right_height == black_height(right));
+  assert(left_height >= right_height);
+  using T = ManagedTree<K, V>;
+  if (!left || (left->color == Color::Black && left_height == right_height)) {
+    return T::make_tree(std::move(left), std::move(right), std::move(mid),
+                        Color::Red);
+  }
+  assert(left->color != Color::DoubleBlack);
+  auto t = join_right(left->right, left_height - (left->color == Color::Black),
+                      std::move(mid), std::move(right), right_height);
+  if (left->color == Color::Black && t && t->right && t->color == Color::Red &&
+      t->right->color == Color::Red) {
+    auto new_left =
+        T::make_tree(left->left, t->left, left->payload, Color::Black);
+    return T::make_tree(std::move(new_left), to_black(t->right), t->payload,
+                        Color::Red);
+  }
+  return T::make_tree(left->left, std::move(t), left->payload, left->color);
+}
+
+/**
+ * @brief Join left and right on mid.
+ *
+ * Preconditions:
+ * 0. There is a hold on the memory manager.
+ * 1. All keys in left are less than key(mid).
+ * 2. key(mid) is less than all keys in right.
+ * 3. left_height == black_height(left)
+ * 4. right_height == black_height(right)
+ * 5. left_height <= right_height
+ *
+ * Postconditions:
+ * 0. The result contains all elements from left and right along with mid.
+ * 1. The black height of the result is right_height.
+ * 2. The local RB invariant may be broken at the root of the result by the root
+ * being red with the left child being red.
+ */
+template <ManagedType K, OptionalManagedType V>
+TreePtr<K, V> join_left(TreePtr<K, V> left, std::size_t left_height,
+                        typename ManagedTree<K, V>::payload_type&& mid,
+                        TreePtr<K, V> right, std::size_t right_height) {
+  assert(left_height == black_height(left));
+  assert(right_height == black_height(right));
+  assert(left_height <= right_height);
+  using T = ManagedTree<K, V>;
+  if (!right || (right->color == Color::Black && left_height == right_height)) {
+    return T::make_tree(std::move(left), std::move(right), std::move(mid),
+                        Color::Red);
+  }
+  assert(right->color != Color::DoubleBlack);
+  auto t = join_left(std::move(left), left_height, std::move(mid), right->left,
+                     right_height - (right->color == Color::Black));
+  if (right->color == Color::Black && t && t->left && t->color == Color::Red &&
+      t->left->color == Color::Red) {
+    auto new_right =
+        T::make_tree(t->right, right->right, right->payload, Color::Black);
+    return T::make_tree(to_black(t->left), std::move(new_right), t->payload,
+                        Color::Red);
+  }
+  return T::make_tree(std::move(t), right->right, right->payload, right->color);
+}
+
+/**
+ * @brief Join left and right on mid.
+ *
+ * Preconditions:
+ * 0. There is a hold on the memory manager.
+ * 1. All keys in left are less than key(mid).
+ * 2. key(mid) is less than all keys in right.
+ * 3. left_height == black_height(left)
+ * 4. right_height == black_height(right)
+ * 5. left_height <= right_height
+ *
+ * Postconditions:
+ * 0. The resulting tree contains all elements from left and right along with
+ * mid.
+ * 1. The black height of the resulting tree is the second element of the pair.
+ */
+template <ManagedType K, OptionalManagedType V>
+std::pair<TreePtr<K, V>, std::size_t> join(
+    TreePtr<K, V> left, std::size_t left_height,
+    typename ManagedTree<K, V>::payload_type mid, TreePtr<K, V> right,
+    std::size_t right_height) {
+  using T = ManagedTree<K, V>;
+  if (left_height < right_height) {
+    auto tree = join_left(std::move(left), left_height, std::move(mid),
+                          std::move(right), right_height);
+    if (tree->color == Color::Red && tree->left &&
+        tree->left->color == Color::Red) {
+      return std::make_pair(to_black(std::move(tree)), right_height + 1);
+    }
+    return std::make_pair(std::move(tree), right_height);
+  } else if (right_height < left_height) {
+    auto tree = join_right(std::move(left), left_height, std::move(mid),
+                           std::move(right), right_height);
+    if (tree->color == Color::Red && tree->right &&
+        tree->right->color == Color::Red) {
+      return std::make_pair(to_black(std::move(tree)), left_height + 1);
+    }
+    return std::make_pair(std::move(tree), left_height);
+  }
+  if ((!left || left->color == Color::Black) &&
+      (!right || right->color == Color::Black)) {
+    return std::make_pair(T::make_tree(std::move(left), std::move(right),
+                                       std::move(mid), Color::Red),
+                          left_height);
+  }
+  return std::make_pair(T::make_tree(std::move(left), std::move(right),
+                                     std::move(mid), Color::Black),
+                        left_height + 1);
+}
+
+template <ManagedType K, OptionalManagedType V>
+struct split_result_t {
+  TreePtr<K, V> left;
+  std::size_t left_height;
+  TreePtr<K, V> right;
+  std::size_t right_height;
+  typename ManagedTree<K, V>::maybe_value_type found;
+};
+
+/**
+ * @brief Split `tree` by `key`.
+ *
+ * The result is a left tree, with keys less than `key`, and a right tree,
+ * with keys greater than `key`. Returns the existing mapping, if any.
+ *
+ * Must be called with a hold on the memory manager.
+ */
+template <ManagedType K, OptionalManagedType V, typename Comp>
+split_result_t<K, V> split(TreePtr<K, V> tree, std::size_t height, const K& key,
+                           const Comp& comp) {
+  using T = ManagedTree<K, V>;
+  if (!tree) {
+    assert(height == 0);
+    return {nullptr, 0, nullptr, 0, T::no_value()};
+  }
+  const std::size_t subtree_height = height - (tree->color == Color::Black);
+  if (comp(key, *tree->key())) {
+    auto result = split(tree->left, subtree_height, key, comp);
+    std::tie(result.right, result.right_height) =
+        join(result.right, result.right_height, tree->payload, tree->right,
+             subtree_height);
+    return result;
+  } else if (comp(*tree->key(), key)) {
+    auto result = split(tree->right, subtree_height, key, comp);
+    std::tie(result.left, result.left_height) =
+        join(tree->left, subtree_height, tree->payload, result.left,
+             result.left_height);
+    return result;
+  }
+  return {tree->left, subtree_height, tree->right, subtree_height,
+          T::maybe_value(tree->value())};
+}
+
+template <ManagedType K, OptionalManagedType V>
+struct union_result_t {
+  TreePtr<K, V> tree;
+  /** black height of tree. */
+  std::size_t height;
+  /** The number of keys that were in both left and right. */
+  std::size_t num_overlaps;
+};
+
+/**
+ * @brief Computes the union of two sets or maps, preferring values from the
+ * right.
+ *
+ * right should be smaller than left for peak efficiency.
+ *
+ * Must be called with a hold on the memory manager.
+ */
+template <ManagedType K, OptionalManagedType V, typename Comp>
+union_result_t<K, V> union_right(TreePtr<K, V> left, std::size_t left_height,
+                                 TreePtr<K, V> right, std::size_t right_height,
+                                 const Comp& comp) {
+  if (!left) return {std::move(right), right_height, 0};
+  if (!right) return {std::move(left), left_height, 0};
+  auto s = split(std::move(left), left_height, *right->key(), comp);
+  const std::size_t right_subtree_height =
+      right_height - (right->color == Color::Black);
+  auto l = union_right(std::move(s.left), s.left_height, right->left,
+                       right_subtree_height, comp);
+  auto r = union_right(std::move(s.right), s.right_height, right->right,
+                       right_subtree_height, comp);
+  auto j = join(std::move(l.tree), l.height, right->payload, std::move(r.tree),
+                r.height);
+  return {std::move(j.first), j.second,
+          l.num_overlaps + r.num_overlaps + static_cast<bool>(s.found)};
+}
+
+/**
+ * @brief Computes the union of two maps, preferring values from the left.
+ *
+ * left should be smaller than right for peak efficiency.
+ *
+ * Must be called with a hold on the memory manager.
+ */
+template <ManagedType K, ManagedType V, typename Comp>
+union_result_t<K, V> union_left(TreePtr<K, V> left, std::size_t left_height,
+                                TreePtr<K, V> right, std::size_t right_height,
+                                const Comp& comp) {
+  if (!left) return {std::move(right), right_height, 0};
+  if (!right) return {std::move(left), left_height, 0};
+  auto s = split(std::move(right), right_height, *left->key(), comp);
+  const std::size_t left_subtree_height =
+      left_height - (left->color == Color::Black);
+  auto l = union_left(left->left, left_subtree_height, std::move(s.left),
+                      s.left_height, comp);
+  auto r = union_left(left->right, left_subtree_height, std::move(s.right),
+                      s.right_height, comp);
+  auto j = join(std::move(l.tree), l.height, left->payload, std::move(r.tree),
+                r.height);
+  return {std::move(j.first), j.second,
+          l.num_overlaps + r.num_overlaps + static_cast<bool>(s.found)};
 }
 
 }  // namespace emil::collections::trees
