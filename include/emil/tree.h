@@ -85,6 +85,12 @@ struct ManagedTree : Managed {
 
   static maybe_value_type no_value() { return std::nullopt; }
 
+  static payload_type make_payload(managed_ptr<K> key,
+                                   maybe_value_type&& value) {
+    assert(value);
+    return std::make_pair(std::move(key), std::move(*value));
+  }
+
   static TreePtr<K, V> double_black_empty() {
     return make_tree(nullptr, nullptr, {nullptr, nullptr}, Color::DoubleBlack);
   }
@@ -140,6 +146,11 @@ struct ManagedTree<K, void> : Managed {
 
   static bool maybe_value(bool v) { return v; }
   static bool no_value() { return false; }
+
+  static payload_type make_payload(managed_ptr<K> key, maybe_value_type value) {
+    assert(value);
+    return std::move(key);
+  }
 
   static TreePtr<K> double_black_empty() {
     return make_tree(nullptr, nullptr, nullptr, Color::DoubleBlack);
@@ -690,6 +701,27 @@ TreePtr<K, V> redden(TreePtr<K, V>&& tree) {
   }
 }
 
+template <ManagedType K, OptionalManagedType V>
+struct remove_min_result_t {
+  TreePtr<K, V> tree;
+  std::size_t height;
+  typename ManagedTree<K, V>::payload_type min_payload;
+};
+
+/** Remove the minimum (left-most) node from `tree`. */
+template <ManagedType K, OptionalManagedType V>
+remove_min_result_t<K, V> remove_min(TreePtr<K, V> tree, std::size_t height) {
+  assert(tree);
+  const std::size_t subtree_height = height - (tree->color == Color::Black);
+  if (!tree->left) {
+    return {tree->right, subtree_height, tree->payload};
+  }
+  auto rml = remove_min(tree->left, subtree_height);
+  auto j = join(std::move(rml.tree), rml.height, tree->payload, tree->right,
+                subtree_height);
+  return {std::move(j.tree), j.height, std::move(rml.min_payload)};
+}
+
 /**
  * @brief Delete `key` from `tree`.
  *
@@ -811,6 +843,12 @@ TreePtr<K, V> join_left(TreePtr<K, V> left, std::size_t left_height,
   return T::make_tree(std::move(t), right->right, right->payload, right->color);
 }
 
+template <ManagedType K, OptionalManagedType V>
+struct join_result_t {
+  TreePtr<K, V> tree;
+  std::size_t height;
+};
+
 /**
  * @brief Join left and right on mid.
  *
@@ -828,37 +866,59 @@ TreePtr<K, V> join_left(TreePtr<K, V> left, std::size_t left_height,
  * 1. The black height of the resulting tree is the second element of the pair.
  */
 template <ManagedType K, OptionalManagedType V>
-std::pair<TreePtr<K, V>, std::size_t> join(
-    TreePtr<K, V> left, std::size_t left_height,
-    typename ManagedTree<K, V>::payload_type mid, TreePtr<K, V> right,
-    std::size_t right_height) {
+join_result_t<K, V> join(TreePtr<K, V> left, std::size_t left_height,
+                         typename ManagedTree<K, V>::payload_type mid,
+                         TreePtr<K, V> right, std::size_t right_height) {
   using T = ManagedTree<K, V>;
   if (left_height < right_height) {
     auto tree = join_left(std::move(left), left_height, std::move(mid),
                           std::move(right), right_height);
     if (tree->color == Color::Red && tree->left &&
         tree->left->color == Color::Red) {
-      return std::make_pair(to_black(std::move(tree)), right_height + 1);
+      return {to_black(std::move(tree)), right_height + 1};
     }
-    return std::make_pair(std::move(tree), right_height);
+    return {std::move(tree), right_height};
   } else if (right_height < left_height) {
     auto tree = join_right(std::move(left), left_height, std::move(mid),
                            std::move(right), right_height);
     if (tree->color == Color::Red && tree->right &&
         tree->right->color == Color::Red) {
-      return std::make_pair(to_black(std::move(tree)), left_height + 1);
+      return {to_black(std::move(tree)), left_height + 1};
     }
-    return std::make_pair(std::move(tree), left_height);
+    return {std::move(tree), left_height};
   }
   if ((!left || left->color == Color::Black) &&
       (!right || right->color == Color::Black)) {
-    return std::make_pair(T::make_tree(std::move(left), std::move(right),
-                                       std::move(mid), Color::Red),
-                          left_height);
+    return {T::make_tree(std::move(left), std::move(right), std::move(mid),
+                         Color::Red),
+            left_height};
   }
-  return std::make_pair(T::make_tree(std::move(left), std::move(right),
-                                     std::move(mid), Color::Black),
-                        left_height + 1);
+  return {T::make_tree(std::move(left), std::move(right), std::move(mid),
+                       Color::Black),
+          left_height + 1};
+}
+
+/**
+ * @brief Join left and right on the min value from right.
+ *
+ * Preconditions:
+ * 0. There is a hold on the memory manager.
+ * 1. All keys in left are less than all keys in right.
+ * 3. left_height == black_height(left)
+ * 4. right_height == black_height(right)
+ *
+ * Postcondition:
+ * The resulting tree contains all elements from left and right.
+ */
+template <ManagedType K, OptionalManagedType V>
+join_result_t<K, V> join(TreePtr<K, V> left, std::size_t left_height,
+                         TreePtr<K, V> right, std::size_t right_height) {
+  if (!right) {
+    return {std::move(left), left_height};
+  }
+  auto rmr = remove_min(std::move(right), right_height);
+  return join(std::move(left), left_height, std::move(rmr.min_payload),
+              std::move(rmr.tree), rmr.height);
 }
 
 template <ManagedType K, OptionalManagedType V>
@@ -889,15 +949,17 @@ split_result_t<K, V> split(TreePtr<K, V> tree, std::size_t height, const K& key,
   const std::size_t subtree_height = height - (tree->color == Color::Black);
   if (comp(key, *tree->key())) {
     auto result = split(tree->left, subtree_height, key, comp);
-    std::tie(result.right, result.right_height) =
-        join(result.right, result.right_height, tree->payload, tree->right,
-             subtree_height);
+    auto j = join(result.right, result.right_height, tree->payload, tree->right,
+                  subtree_height);
+    result.right = std::move(j.tree);
+    result.right_height = j.height;
     return result;
   } else if (comp(*tree->key(), key)) {
     auto result = split(tree->right, subtree_height, key, comp);
-    std::tie(result.left, result.left_height) =
-        join(tree->left, subtree_height, tree->payload, result.left,
-             result.left_height);
+    auto j = join(tree->left, subtree_height, tree->payload, result.left,
+                  result.left_height);
+    result.left = std::move(j.tree);
+    result.left_height = j.height;
     return result;
   }
   return {tree->left, subtree_height, tree->right, subtree_height,
@@ -905,12 +967,16 @@ split_result_t<K, V> split(TreePtr<K, V> tree, std::size_t height, const K& key,
 }
 
 template <ManagedType K, OptionalManagedType V>
-struct union_result_t {
+struct set_set_result_t {
   TreePtr<K, V> tree;
   /** black height of tree. */
   std::size_t height;
-  /** The number of keys that were in both left and right. */
-  std::size_t num_overlaps;
+  /**
+   * @brief A count that depends on the set-set operation.
+   *
+   * For union: The number of keys that were in both left and right.
+   */
+  std::size_t count;
 };
 
 /**
@@ -922,9 +988,9 @@ struct union_result_t {
  * Must be called with a hold on the memory manager.
  */
 template <ManagedType K, OptionalManagedType V, typename Comp>
-union_result_t<K, V> union_right(TreePtr<K, V> left, std::size_t left_height,
-                                 TreePtr<K, V> right, std::size_t right_height,
-                                 const Comp& comp) {
+set_set_result_t<K, V> union_right(TreePtr<K, V> left, std::size_t left_height,
+                                   TreePtr<K, V> right,
+                                   std::size_t right_height, const Comp& comp) {
   if (!left) return {std::move(right), right_height, 0};
   if (!right) return {std::move(left), left_height, 0};
   auto s = split(std::move(left), left_height, *right->key(), comp);
@@ -936,34 +1002,106 @@ union_result_t<K, V> union_right(TreePtr<K, V> left, std::size_t left_height,
                        right_subtree_height, comp);
   auto j = join(std::move(l.tree), l.height, right->payload, std::move(r.tree),
                 r.height);
-  return {std::move(j.first), j.second,
-          l.num_overlaps + r.num_overlaps + static_cast<bool>(s.found)};
+  return {std::move(j.tree), j.height,
+          l.count + r.count + static_cast<bool>(s.found)};
 }
 
 /**
  * @brief Computes the union of two maps, preferring values from the left.
  *
- * left should be smaller than right for peak efficiency.
+ * right should be smaller than left for peak efficiency.
  *
  * Must be called with a hold on the memory manager.
  */
 template <ManagedType K, ManagedType V, typename Comp>
-union_result_t<K, V> union_left(TreePtr<K, V> left, std::size_t left_height,
-                                TreePtr<K, V> right, std::size_t right_height,
-                                const Comp& comp) {
+set_set_result_t<K, V> union_left(TreePtr<K, V> left, std::size_t left_height,
+                                  TreePtr<K, V> right, std::size_t right_height,
+                                  const Comp& comp) {
   if (!left) return {std::move(right), right_height, 0};
   if (!right) return {std::move(left), left_height, 0};
-  auto s = split(std::move(right), right_height, *left->key(), comp);
-  const std::size_t left_subtree_height =
-      left_height - (left->color == Color::Black);
-  auto l = union_left(left->left, left_subtree_height, std::move(s.left),
-                      s.left_height, comp);
-  auto r = union_left(left->right, left_subtree_height, std::move(s.right),
-                      s.right_height, comp);
-  auto j = join(std::move(l.tree), l.height, left->payload, std::move(r.tree),
-                r.height);
-  return {std::move(j.first), j.second,
-          l.num_overlaps + r.num_overlaps + static_cast<bool>(s.found)};
+  auto s = split(std::move(left), left_height, *right->key(), comp);
+  const std::size_t right_subtree_height =
+      right_height - (right->color == Color::Black);
+  auto l = union_left(std::move(s.left), s.left_height, right->left,
+                      right_subtree_height, comp);
+  auto r = union_left(std::move(s.right), s.right_height, right->right,
+                      right_subtree_height, comp);
+  const bool found = static_cast<bool>(s.found);
+  join_result_t<K, V> j;
+  if (found) {
+    j = join(std::move(l.tree), l.height,
+             ManagedTree<K, V>::make_payload(right->key(), std::move(s.found)),
+             std::move(r.tree), r.height);
+  } else {
+    j = join(std::move(l.tree), l.height, right->payload, std::move(r.tree),
+             r.height);
+  }
+  return {std::move(j.tree), j.height, l.count + r.count + found};
+}
+
+/**
+ * @brief Computes the union of two maps or set, taking values from the right.
+ *
+ * right should be smaller than left for peak efficiency.
+ *
+ * Must be called with a hold on the memory manager.
+ */
+template <ManagedType K, OptionalManagedType V, typename Comp>
+set_set_result_t<K, V> intersection_right(TreePtr<K, V> left,
+                                          std::size_t left_height,
+                                          TreePtr<K, V> right,
+                                          std::size_t right_height,
+                                          const Comp& comp) {
+  if (!left || !right) return {nullptr, 0, 0};
+  auto s = split(std::move(left), left_height, *right->key(), comp);
+  const std::size_t right_subtree_height =
+      right_height - (right->color == Color::Black);
+  auto l = intersection_right(std::move(s.left), s.left_height, right->left,
+                              right_subtree_height, comp);
+  auto r = intersection_right(std::move(s.right), s.right_height, right->right,
+                              right_subtree_height, comp);
+  join_result_t<K, V> j;
+  const bool found = static_cast<bool>(s.found);
+  if (found) {
+    j = join(std::move(l.tree), l.height, right->payload, std::move(r.tree),
+             r.height);
+  } else {
+    j = join(std::move(l.tree), l.height, std::move(r.tree), r.height);
+  }
+  return {std::move(j.tree), j.height, l.count + r.count + found};
+}
+
+/**
+ * @brief Computes the intersection of two maps, taking values from the left.
+ *
+ * right should be smaller than left for peak efficiency.
+ *
+ * Must be called with a hold on the memory manager.
+ */
+template <ManagedType K, ManagedType V, typename Comp>
+set_set_result_t<K, V> intersection_left(TreePtr<K, V> left,
+                                         std::size_t left_height,
+                                         TreePtr<K, V> right,
+                                         std::size_t right_height,
+                                         const Comp& comp) {
+  if (!left || !right) return {nullptr, 0, 0};
+  auto s = split(std::move(left), left_height, *right->key(), comp);
+  const std::size_t right_subtree_height =
+      right_height - (right->color == Color::Black);
+  auto l = intersection_left(std::move(s.left), s.left_height, right->left,
+                             right_subtree_height, comp);
+  auto r = intersection_left(std::move(s.right), s.right_height, right->right,
+                             right_subtree_height, comp);
+  join_result_t<K, V> j;
+  const bool found = static_cast<bool>(s.found);
+  if (found) {
+    j = join(std::move(l.tree), l.height,
+             ManagedTree<K, V>::make_payload(right->key(), std::move(s.found)),
+             std::move(r.tree), r.height);
+  } else {
+    j = join(std::move(l.tree), l.height, std::move(r.tree), r.height);
+  }
+  return {std::move(j.tree), j.height, l.count + r.count + found};
 }
 
 }  // namespace emil::collections::trees

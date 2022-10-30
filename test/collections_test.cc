@@ -661,6 +661,59 @@ TEST(ManagedSetTest, UnionTest) {
   EXPECT_THAT(*all_e, ElementsAre(1, 2, 3, 4, 5, 6));
 }
 
+TEST(ManagedSetTest, IntersectionTest) {
+  TestContext tc;
+  managed_ptr<ManagedSet<ManagedInt>> empty;
+  managed_ptr<ManagedSet<ManagedInt>> all;
+  managed_ptr<ManagedSet<ManagedInt>> s234;
+  managed_ptr<ManagedSet<ManagedInt>> s56;
+  managed_ptr<ManagedSet<ManagedInt>> s135;
+
+  {
+    auto hold = tc.mgr.acquire_hold();
+    empty = managed_set<ManagedInt>();
+    all = managed_set({mi(1), mi(2), mi(3), mi(4), mi(5), mi(6), mi(7)});
+    s234 = managed_set({mi(2), mi(3), mi(4)});
+    s56 = managed_set({mi(5), mi(6)});
+    s135 = managed_set({mi(1), mi(3), mi(5)});
+    tc.root.add_root(empty);
+    tc.root.add_root(all);
+    tc.root.add_root(s234);
+    tc.root.add_root(s56);
+    tc.root.add_root(s135);
+  }
+  auto empty_and_empty = tc.root.add_root(empty & empty);
+  auto empty_and_s234 = tc.root.add_root(empty & s234);
+  auto s234_and_empty = tc.root.add_root(s234 & empty);
+
+  auto s234_and_s234 = tc.root.add_root(s234 & s234);
+  auto s234_and_s56 = tc.root.add_root(s234 & s56);
+  auto s56_and_s234 = tc.root.add_root(s56 & s234);
+  auto s234_and_s135 = tc.root.add_root(s234 & s135);
+  auto s135_and_s234 = tc.root.add_root(s135 & s234);
+  auto s234_and_all = tc.root.add_root(s234 & all);
+  auto all_and_s234 = tc.root.add_root(all & s234);
+
+  auto s56_and_s135 = tc.root.add_root(s56 & s135);
+  auto s135_and_s56 = tc.root.add_root(s135 & s56);
+
+  auto hold = tc.mgr.acquire_hold();
+  EXPECT_THAT(*empty_and_empty, ElementsAre());
+  EXPECT_THAT(*empty_and_s234, ElementsAre());
+  EXPECT_THAT(*s234_and_empty, ElementsAre());
+
+  EXPECT_THAT(*s234_and_s234, ElementsAre(2, 3, 4));
+  EXPECT_THAT(*s234_and_s56, ElementsAre());
+  EXPECT_THAT(*s56_and_s234, ElementsAre());
+  EXPECT_THAT(*s234_and_s135, ElementsAre(3));
+  EXPECT_THAT(*s135_and_s234, ElementsAre(3));
+  EXPECT_THAT(*s234_and_all, ElementsAre(2, 3, 4));
+  EXPECT_THAT(*all_and_s234, ElementsAre(2, 3, 4));
+
+  EXPECT_THAT(*s56_and_s135, ElementsAre(5));
+  EXPECT_THAT(*s135_and_s56, ElementsAre(5));
+}
+
 TEST(ManagedSetTest, StressTest) {
   std::random_device rand_dev;
   std::mt19937 generator(rand_dev());
@@ -708,23 +761,37 @@ TEST(ManagedSetTest, StressTest) {
     auto u2 = tc.root.add_root(s | prev);
     ManagedSetAccessor::verify_invariants(*u1);
     ManagedSetAccessor::verify_invariants(*u2);
+    auto i1 = tc.root.add_root(prev & s);
+    auto i2 = tc.root.add_root(s & prev);
+    ManagedSetAccessor::verify_invariants(*u1);
+    ManagedSetAccessor::verify_invariants(*u2);
     {
       auto hold = tc.mgr.acquire_hold();
-      ASSERT_THAT(*u1, BeginEndDistanceIs(u1->size()));
-      ASSERT_THAT(*u2, BeginEndDistanceIs(u1->size()));
+      ASSERT_THAT(*i1, BeginEndDistanceIs(i1->size()));
+      ASSERT_THAT(*i2, BeginEndDistanceIs(i1->size()));
       for (const auto& el : *s) {
-        ASSERT_TRUE(u1->contains(*el));
-        ASSERT_TRUE(u2->contains(*el));
+        if (prev->contains(*el)) {
+          ASSERT_TRUE(i1->contains(*el));
+          ASSERT_TRUE(i2->contains(*el));
+        } else {
+          ASSERT_FALSE(i1->contains(*el));
+          ASSERT_FALSE(i2->contains(*el));
+        }
       }
       for (const auto& el : *prev) {
-        ASSERT_TRUE(u1->contains(*el));
-        ASSERT_TRUE(u2->contains(*el));
+        if (s->contains(*el)) {
+          ASSERT_TRUE(i1->contains(*el));
+          ASSERT_TRUE(i2->contains(*el));
+        } else {
+          ASSERT_FALSE(i1->contains(*el));
+          ASSERT_FALSE(i2->contains(*el));
+        }
       }
-      for (const auto& el : *u1) {
-        ASSERT_TRUE(s->contains(*el) || prev->contains(*el));
+      for (const auto& el : *i1) {
+        ASSERT_TRUE(s->contains(*el) && prev->contains(*el));
       }
-      for (const auto& el : *u2) {
-        ASSERT_TRUE(s->contains(*el) || prev->contains(*el));
+      for (const auto& el : *i2) {
+        ASSERT_TRUE(s->contains(*el) && prev->contains(*el));
       }
     }
     prev = s;
@@ -1221,6 +1288,70 @@ TEST(ManagedMapTest, UnionTest) {
                                   MP(4, 234), MP(5, 56), MP(6, 56)));
 }
 
+TEST(ManagedMapTest, IntersectionTest) {
+  TestContext tc;
+  managed_ptr<ManagedMap<ManagedInt, ManagedDouble>> empty;
+  managed_ptr<ManagedMap<ManagedInt, ManagedDouble>> all;
+  managed_ptr<ManagedMap<ManagedInt, ManagedDouble>> m234;
+  managed_ptr<ManagedMap<ManagedInt, ManagedDouble>> m56;
+  managed_ptr<ManagedMap<ManagedInt, ManagedDouble>> m135;
+
+  {
+    auto hold = tc.mgr.acquire_hold();
+    empty = managed_map<ManagedInt, ManagedDouble>();
+    all = emplace(*empty, 1, 123456).first;
+    all = emplace(*all, 2, 123456).first;
+    all = emplace(*all, 3, 123456).first;
+    all = emplace(*all, 4, 123456).first;
+    all = emplace(*all, 5, 123456).first;
+    all = emplace(*all, 6, 123456).first;
+    m234 = emplace(*empty, 2, 234).first;
+    m234 = emplace(*m234, 3, 234).first;
+    m234 = emplace(*m234, 4, 234).first;
+    m56 = emplace(*empty, 5, 56).first;
+    m56 = emplace(*m56, 6, 56).first;
+    m135 = emplace(*empty, 1, 135).first;
+    m135 = emplace(*m135, 3, 135).first;
+    m135 = emplace(*m135, 5, 135).first;
+    tc.root.add_root(empty);
+    tc.root.add_root(all);
+    tc.root.add_root(m234);
+    tc.root.add_root(m56);
+    tc.root.add_root(m135);
+  }
+  auto empty_and_empty = tc.root.add_root(empty & empty);
+  auto empty_and_m234 = tc.root.add_root(empty & m234);
+  auto m234_and_empty = tc.root.add_root(m234 & empty);
+
+  auto m234_and_m234 = tc.root.add_root(m234 & m234);
+  auto m234_and_m56 = tc.root.add_root(m234 & m56);
+  auto m56_and_m234 = tc.root.add_root(m56 & m234);
+  auto m234_and_m135 = tc.root.add_root(m234 & m135);
+  auto m135_and_m234 = tc.root.add_root(m135 & m234);
+  auto m234_and_all = tc.root.add_root(m234 & all);
+  auto all_and_m234 = tc.root.add_root(all & m234);
+
+  auto m56_and_m135 = tc.root.add_root(m56 & m135);
+  auto m135_and_m56 = tc.root.add_root(m135 & m56);
+
+  auto hold = tc.mgr.acquire_hold();
+  EXPECT_THAT(*empty_and_empty, ElementsAre());
+  EXPECT_THAT(*empty_and_m234, ElementsAre());
+  EXPECT_THAT(*m234_and_empty, ElementsAre());
+
+  EXPECT_THAT(*m234_and_m234, ElementsAre(MP(2, 234), MP(3, 234), MP(4, 234)));
+  EXPECT_THAT(*m234_and_m56, ElementsAre());
+  EXPECT_THAT(*m56_and_m234, ElementsAre());
+  EXPECT_THAT(*m234_and_m135, ElementsAre(MP(3, 135)));
+  EXPECT_THAT(*m135_and_m234, ElementsAre(MP(3, 234)));
+  EXPECT_THAT(*m234_and_all,
+              ElementsAre(MP(2, 123456), MP(3, 123456), MP(4, 123456)));
+  EXPECT_THAT(*all_and_m234, ElementsAre(MP(2, 234), MP(3, 234), MP(4, 234)));
+
+  EXPECT_THAT(*m56_and_m135, ElementsAre(MP(5, 135)));
+  EXPECT_THAT(*m135_and_m56, ElementsAre(MP(5, 56)));
+}
+
 TEST(ManagedMapTest, StressTest) {
   std::random_device rand_dev;
   std::mt19937 generator(rand_dev());
@@ -1291,6 +1422,10 @@ TEST(ManagedMapTest, StressTest) {
     auto u2 = tc.root.add_root(m | prev);
     ManagedMapAccessor::verify_invariants(*u1);
     ManagedMapAccessor::verify_invariants(*u2);
+    auto i1 = tc.root.add_root(prev & m);
+    auto i2 = tc.root.add_root(m & prev);
+    ManagedMapAccessor::verify_invariants(*u1);
+    ManagedMapAccessor::verify_invariants(*u2);
     {
       auto hold = tc.mgr.acquire_hold();
       ASSERT_THAT(*u1, BeginEndDistanceIs(u1->size()));
@@ -1316,6 +1451,32 @@ TEST(ManagedMapTest, StressTest) {
       }
       for (const auto& el : *u2) {
         ASSERT_TRUE(m->contains(*el.first) || prev->contains(*el.first));
+      }
+      ASSERT_THAT(*i1, BeginEndDistanceIs(i1->size()));
+      ASSERT_THAT(*i2, BeginEndDistanceIs(i2->size()));
+      for (const auto& el : *m) {
+        if (prev->contains(*el.first)) {
+          ASSERT_EQ(i1->get(*el.first), el.second);
+          ASSERT_EQ(i2->get(*el.first), prev->get(*el.first));
+        } else {
+          ASSERT_FALSE(i1->contains(*el.first));
+          ASSERT_FALSE(i2->contains(*el.first));
+        }
+      }
+      for (const auto& el : *prev) {
+        if (m->contains(*el.first)) {
+          ASSERT_EQ(i1->get(*el.first), m->get(*el.first));
+          ASSERT_EQ(i2->get(*el.first), el.second);
+        } else {
+          ASSERT_FALSE(i1->contains(*el.first));
+          ASSERT_FALSE(i2->contains(*el.first));
+        }
+      }
+      for (const auto& el : *i1) {
+        ASSERT_TRUE(m->contains(*el.first) && prev->contains(*el.first));
+      }
+      for (const auto& el : *i2) {
+        ASSERT_TRUE(m->contains(*el.first) && prev->contains(*el.first));
       }
       prev = m;
     }

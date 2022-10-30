@@ -322,12 +322,13 @@ class ManagedSet : public ManagedWithSelfPtr<ManagedSet<T, Comp>> {
     }
   }
 
+  /** Compute the union of l and r. */
   friend managed_ptr<ManagedSet> operator|(managed_ptr<ManagedSet> l,
                                            managed_ptr<ManagedSet> r) {
     if (l->empty()) return r;
     if (r->empty()) return l;
     auto hold = ctx().mgr->acquire_hold();
-    trees::union_result_t<T, void> u;
+    trees::set_set_result_t<T, void> u;
     if (l->size() < r->size()) {
       u = union_right(r->tree_, black_height(r->tree_), l->tree_,
                       black_height(l->tree_), *l->comp_);
@@ -336,7 +337,25 @@ class ManagedSet : public ManagedWithSelfPtr<ManagedSet<T, Comp>> {
                       black_height(r->tree_), *l->comp_);
     }
     return make_managed<ManagedSet>(token{}, *l->comp_, std::move(u.tree),
-                                    l->size() + r->size() - u.num_overlaps);
+                                    l->size() + r->size() - u.count);
+  }
+
+  /** Compute the intersection of l and r. */
+  friend managed_ptr<ManagedSet> operator&(managed_ptr<ManagedSet> l,
+                                           managed_ptr<ManagedSet> r) {
+    if (l->empty()) return l;
+    if (r->empty()) return r;
+    auto hold = ctx().mgr->acquire_hold();
+    trees::set_set_result_t<T, void> u;
+    if (l->size() < r->size()) {
+      u = intersection_right(r->tree_, black_height(r->tree_), l->tree_,
+                             black_height(l->tree_), *l->comp_);
+    } else {
+      u = intersection_right(l->tree_, black_height(l->tree_), r->tree_,
+                             black_height(r->tree_), *l->comp_);
+    }
+    return make_managed<ManagedSet>(token{}, *l->comp_, std::move(u.tree),
+                                    u.count);
   }
 
  private:
@@ -554,12 +573,17 @@ class ManagedMap : public ManagedWithSelfPtr<ManagedMap<K, V, Comp>> {
     }
   }
 
+  /**
+   * @brief Compute the union of l and r.
+   *
+   * For any `key` that is in `l` and `r`, the mapping from `r` will be used.
+   */
   friend managed_ptr<ManagedMap> operator|(managed_ptr<ManagedMap> l,
                                            managed_ptr<ManagedMap> r) {
     if (l->empty()) return r;
     if (r->empty()) return l;
     auto hold = ctx().mgr->acquire_hold();
-    trees::union_result_t<K, V> u;
+    trees::set_set_result_t<K, V> u;
     if (l->size() < r->size()) {
       u = union_left(r->tree_, black_height(r->tree_), l->tree_,
                      black_height(l->tree_), *l->comp_);
@@ -568,7 +592,25 @@ class ManagedMap : public ManagedWithSelfPtr<ManagedMap<K, V, Comp>> {
                       black_height(r->tree_), *l->comp_);
     }
     return make_managed<ManagedMap>(token{}, *l->comp_, std::move(u.tree),
-                                    l->size() + r->size() - u.num_overlaps);
+                                    l->size() + r->size() - u.count);
+  }
+
+  /** Compute the intersection of l and r using the values from r. */
+  friend managed_ptr<ManagedMap> operator&(managed_ptr<ManagedMap> l,
+                                           managed_ptr<ManagedMap> r) {
+    if (l->empty()) return l;
+    if (r->empty()) return r;
+    auto hold = ctx().mgr->acquire_hold();
+    trees::set_set_result_t<K, V> u;
+    if (l->size() < r->size()) {
+      u = intersection_left(r->tree_, black_height(r->tree_), l->tree_,
+                            black_height(l->tree_), *l->comp_);
+    } else {
+      u = intersection_right(l->tree_, black_height(l->tree_), r->tree_,
+                             black_height(r->tree_), *l->comp_);
+    }
+    return make_managed<ManagedMap>(token{}, *l->comp_, std::move(u.tree),
+                                    u.count);
   }
 
  private:
