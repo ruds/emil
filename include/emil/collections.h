@@ -237,15 +237,7 @@ class ManagedSet : public ManagedWithSelfPtr<ManagedSet<T, Comp>> {
       : comp_(&comp), tree_(std::move(tree)), size_(size) {}
 
   iterator begin() const { return cbegin(); }
-  const_iterator cbegin() const {
-    auto hold = ctx().mgr->acquire_hold();
-    if (!tree_) return {tree_, *comp_};
-    auto stack = cons(tree_, nullptr);
-    while (stack->car->left) {
-      stack = cons(stack->car->left, std::move(stack));
-    }
-    return {std::move(stack), *comp_};
-  }
+  const_iterator cbegin() const { return iterator::begin(tree_, *comp_); }
 
   iterator end() const { return cend(); }
   const_iterator cend() const { return {tree_, *comp_}; }
@@ -323,8 +315,8 @@ class ManagedSet : public ManagedWithSelfPtr<ManagedSet<T, Comp>> {
   }
 
   /** Compute the union of l and r. */
-  friend managed_ptr<ManagedSet> operator|(managed_ptr<ManagedSet> l,
-                                           managed_ptr<ManagedSet> r) {
+  friend managed_ptr<ManagedSet> operator|(const managed_ptr<ManagedSet>& l,
+                                           const managed_ptr<ManagedSet>& r) {
     if (l->empty()) return r;
     if (r->empty()) return l;
     auto hold = ctx().mgr->acquire_hold();
@@ -341,8 +333,8 @@ class ManagedSet : public ManagedWithSelfPtr<ManagedSet<T, Comp>> {
   }
 
   /** Compute the intersection of l and r. */
-  friend managed_ptr<ManagedSet> operator&(managed_ptr<ManagedSet> l,
-                                           managed_ptr<ManagedSet> r) {
+  friend managed_ptr<ManagedSet> operator&(const managed_ptr<ManagedSet>& l,
+                                           const managed_ptr<ManagedSet>& r) {
     if (l->empty()) return l;
     if (r->empty()) return r;
     auto hold = ctx().mgr->acquire_hold();
@@ -353,6 +345,23 @@ class ManagedSet : public ManagedWithSelfPtr<ManagedSet<T, Comp>> {
     } else {
       u = intersection_right(l->tree_, black_height(l->tree_), r->tree_,
                              black_height(r->tree_), *l->comp_);
+    }
+    return make_managed<ManagedSet>(token{}, *l->comp_, std::move(u.tree),
+                                    u.count);
+  }
+
+  /** Compute the set difference l - r. */
+  friend managed_ptr<ManagedSet> operator-(managed_ptr<ManagedSet> l,
+                                           managed_ptr<ManagedSet> r) {
+    if (l->empty() || r->empty()) return l;
+    auto hold = ctx().mgr->acquire_hold();
+    trees::set_set_result_t<T, void> u;
+    if (l->size() < r->size()) {
+      u = set_difference_right(r->tree_, black_height(r->tree_), l->tree_,
+                               black_height(l->tree_), *l->comp_);
+    } else {
+      u = set_difference_left(l->tree_, black_height(l->tree_), r->tree_,
+                              black_height(r->tree_), *l->comp_);
     }
     return make_managed<ManagedSet>(token{}, *l->comp_, std::move(u.tree),
                                     u.count);
@@ -451,15 +460,7 @@ class ManagedMap : public ManagedWithSelfPtr<ManagedMap<K, V, Comp>> {
              std::size_t size)
       : comp_(&comp), tree_(std::move(tree)), size_(size) {}
   iterator begin() const { return cbegin(); }
-  const_iterator cbegin() const {
-    auto hold = ctx().mgr->acquire_hold();
-    if (!tree_) return {tree_, *comp_};
-    auto stack = cons(tree_, nullptr);
-    while (stack->car->left) {
-      stack = cons(stack->car->left, std::move(stack));
-    }
-    return {std::move(stack), *comp_};
-  }
+  const_iterator cbegin() const { return iterator::begin(tree_, *comp_); }
 
   iterator end() const { return cend(); }
   const_iterator cend() const { return {tree_, *comp_}; }
@@ -608,6 +609,23 @@ class ManagedMap : public ManagedWithSelfPtr<ManagedMap<K, V, Comp>> {
     } else {
       u = intersection_right(l->tree_, black_height(l->tree_), r->tree_,
                              black_height(r->tree_), *l->comp_);
+    }
+    return make_managed<ManagedMap>(token{}, *l->comp_, std::move(u.tree),
+                                    u.count);
+  }
+
+  /** Compute the set difference l - r. */
+  friend managed_ptr<ManagedMap> operator-(managed_ptr<ManagedMap> l,
+                                           managed_ptr<ManagedMap> r) {
+    if (l->empty() || r->empty()) return l;
+    auto hold = ctx().mgr->acquire_hold();
+    trees::set_set_result_t<K, V> u;
+    if (l->size() < r->size()) {
+      u = set_difference_right(r->tree_, black_height(r->tree_), l->tree_,
+                               black_height(l->tree_), *l->comp_);
+    } else {
+      u = set_difference_left(l->tree_, black_height(l->tree_), r->tree_,
+                              black_height(r->tree_), *l->comp_);
     }
     return make_managed<ManagedMap>(token{}, *l->comp_, std::move(u.tree),
                                     u.count);

@@ -255,6 +255,16 @@ class tree_iterator {
   tree_iterator(TreePtr<K, V> tree, const Comp& comp)
       : tree_iterator(cons(nullptr, cons(std::move(tree), nullptr)), comp) {}
 
+  static tree_iterator begin(TreePtr<K, V> tree, const Comp& comp) {
+    auto hold = ctx().mgr->acquire_hold();
+    if (!tree) return {std::move(tree), comp};
+    auto stack = cons(std::move(tree), nullptr);
+    while (stack->car->left) {
+      stack = cons(stack->car->left, std::move(stack));
+    }
+    return {std::move(stack), comp};
+  }
+
   reference operator*() const { return stack_->car->payload; }
   pointer operator->() const { return &stack_->car->payload; }
 
@@ -975,6 +985,7 @@ struct set_set_result_t {
    * @brief A count that depends on the set-set operation.
    *
    * For union: The number of keys that were in both left and right.
+   * For intersection and difference: The number of keys in tree.
    */
   std::size_t count;
 };
@@ -982,6 +993,10 @@ struct set_set_result_t {
 /**
  * @brief Computes the union of two sets or maps, preferring values from the
  * right.
+ *
+ * Returns a tree with all the keys that are in either right or left;
+ * any key that is in both uses right's mapping (when V != void). Also returns
+ * the number of keys that were in both right and left.
  *
  * right should be smaller than left for peak efficiency.
  *
@@ -1008,6 +1023,10 @@ set_set_result_t<K, V> union_right(TreePtr<K, V> left, std::size_t left_height,
 
 /**
  * @brief Computes the union of two maps, preferring values from the left.
+ *
+ * Returns a tree with all the keys that are in either right or left;
+ * any key that is in both uses left's mapping. Also returns the
+ * number of keys that were in both right and left.
  *
  * right should be smaller than left for peak efficiency.
  *
@@ -1042,6 +1061,9 @@ set_set_result_t<K, V> union_left(TreePtr<K, V> left, std::size_t left_height,
 /**
  * @brief Computes the union of two maps or set, taking values from the right.
  *
+ * Returns a tree with all the keys that are in both left and right, with the
+ * mappings of right (when V != void), along with the size of this tree.
+ *
  * right should be smaller than left for peak efficiency.
  *
  * Must be called with a hold on the memory manager.
@@ -1074,6 +1096,9 @@ set_set_result_t<K, V> intersection_right(TreePtr<K, V> left,
 /**
  * @brief Computes the intersection of two maps, taking values from the left.
  *
+ * Returns a tree with all the keys that are in both left and right, with the
+ * mappings of left, along with the size of this tree.
+ *
  * right should be smaller than left for peak efficiency.
  *
  * Must be called with a hold on the memory manager.
@@ -1102,6 +1127,74 @@ set_set_result_t<K, V> intersection_left(TreePtr<K, V> left,
     j = join(std::move(l.tree), l.height, std::move(r.tree), r.height);
   }
   return {std::move(j.tree), j.height, l.count + r.count + found};
+}
+
+/**
+ * @brief Compute the set difference right - left.
+ *
+ * Returns a tree with all of the keys of right that are not also in left, along
+ * with the size of this tree.
+ *
+ * right should be smaller than left for peak efficiency.
+ *
+ * Must be called with a hold on the memory manager.
+ */
+template <ManagedType K, OptionalManagedType V, typename Comp>
+set_set_result_t<K, V> set_difference_right(TreePtr<K, V> left,
+                                            std::size_t left_height,
+                                            TreePtr<K, V> right,
+                                            std::size_t right_height,
+                                            const Comp& comp) {
+  using It = tree_iterator<K, V, Comp>;
+  if (!left || !right)
+    return {right, right_height,
+            static_cast<std::size_t>(
+                std::distance(It::begin(right, comp), It(right, comp)))};
+  auto s = split(std::move(left), left_height, *right->key(), comp);
+  const std::size_t right_subtree_height =
+      right_height - (right->color == Color::Black);
+  auto l = set_difference_right(std::move(s.left), s.left_height, right->left,
+                                right_subtree_height, comp);
+  auto r = set_difference_right(std::move(s.right), s.right_height,
+                                right->right, right_subtree_height, comp);
+  join_result_t<K, V> j;
+  const bool found = static_cast<bool>(s.found);
+  if (found) {
+    j = join(std::move(l.tree), l.height, std::move(r.tree), r.height);
+  } else {
+    j = join(std::move(l.tree), l.height, right->payload, std::move(r.tree),
+             r.height);
+  }
+  return {std::move(j.tree), j.height, l.count + r.count + !found};
+}
+
+template <ManagedType K, OptionalManagedType V, typename Comp>
+set_set_result_t<K, V> set_difference_left(TreePtr<K, V> left,
+                                           std::size_t left_height,
+                                           TreePtr<K, V> right,
+                                           std::size_t right_height,
+                                           const Comp& comp) {
+  using It = tree_iterator<K, V, Comp>;
+  if (!left || !right)
+    return {left, left_height,
+            static_cast<std::size_t>(
+                std::distance(It::begin(left, comp), It(left, comp)))};
+  auto s = split(std::move(right), right_height, *left->key(), comp);
+  const std::size_t left_subtree_height =
+      left_height - (left->color == Color::Black);
+  auto l = set_difference_left(left->left, left_subtree_height,
+                               std::move(s.left), s.left_height, comp);
+  auto r = set_difference_left(left->right, left_subtree_height,
+                               std::move(s.right), s.right_height, comp);
+  join_result_t<K, V> j;
+  const bool found = static_cast<bool>(s.found);
+  if (found) {
+    j = join(std::move(l.tree), l.height, std::move(r.tree), r.height);
+  } else {
+    j = join(std::move(l.tree), l.height, left->payload, std::move(r.tree),
+             r.height);
+  }
+  return {std::move(j.tree), j.height, l.count + r.count + !found};
 }
 
 }  // namespace emil::collections::trees
