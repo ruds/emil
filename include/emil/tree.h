@@ -985,7 +985,8 @@ struct set_set_result_t {
    * @brief A count that depends on the set-set operation.
    *
    * For union: The number of keys that were in both left and right.
-   * For intersection and difference: The number of keys in tree.
+   * For intersection and set_difference_right: The number of keys in tree.
+   * For set_difference_left: The number of keys removed from left.
    */
   std::size_t count;
 };
@@ -1132,8 +1133,9 @@ set_set_result_t<K, V> intersection_left(TreePtr<K, V> left,
 /**
  * @brief Compute the set difference right - left.
  *
- * Returns a tree with all of the keys of right that are not also in left, along
- * with the size of this tree.
+ * Returns a tree with all of the keys of right that are not also in
+ * left, along with the size of this tree. IMPORTANT: The meaning of
+ * `count` differs from set_difference_left.
  *
  * right should be smaller than left for peak efficiency.
  *
@@ -1168,33 +1170,34 @@ set_set_result_t<K, V> set_difference_right(TreePtr<K, V> left,
   return {std::move(j.tree), j.height, l.count + r.count + !found};
 }
 
+/**
+ * @brief Compute the set difference left - right.
+ *
+ * Returns a tree with all of the keys of left that are not also in right, along
+ * with the number of keys removed from left to obtain the result. IMPORTANT:
+ * the meaning of `count` differs from set_difference_right..
+ *
+ * right should be smaller than left for peak efficiency.
+ *
+ * Must be called with a hold on the memory manager.
+ */
 template <ManagedType K, OptionalManagedType V, typename Comp>
 set_set_result_t<K, V> set_difference_left(TreePtr<K, V> left,
                                            std::size_t left_height,
                                            TreePtr<K, V> right,
                                            std::size_t right_height,
                                            const Comp& comp) {
-  using It = tree_iterator<K, V, Comp>;
-  if (!left || !right)
-    return {left, left_height,
-            static_cast<std::size_t>(
-                std::distance(It::begin(left, comp), It(left, comp)))};
-  auto s = split(std::move(right), right_height, *left->key(), comp);
-  const std::size_t left_subtree_height =
-      left_height - (left->color == Color::Black);
-  auto l = set_difference_left(left->left, left_subtree_height,
-                               std::move(s.left), s.left_height, comp);
-  auto r = set_difference_left(left->right, left_subtree_height,
-                               std::move(s.right), s.right_height, comp);
-  join_result_t<K, V> j;
+  if (!left || !right) return {left, left_height, 0};
+  auto s = split(std::move(left), left_height, *right->key(), comp);
+  const std::size_t right_subtree_height =
+      right_height - (right->color == Color::Black);
+  auto l = set_difference_left(std::move(s.left), s.left_height, right->left,
+                               right_subtree_height, comp);
+  auto r = set_difference_left(std::move(s.right), s.right_height, right->right,
+                               right_subtree_height, comp);
   const bool found = static_cast<bool>(s.found);
-  if (found) {
-    j = join(std::move(l.tree), l.height, std::move(r.tree), r.height);
-  } else {
-    j = join(std::move(l.tree), l.height, left->payload, std::move(r.tree),
-             r.height);
-  }
-  return {std::move(j.tree), j.height, l.count + r.count + !found};
+  auto j = join(std::move(l.tree), l.height, std::move(r.tree), r.height);
+  return {std::move(j.tree), j.height, l.count + r.count + found};
 }
 
 }  // namespace emil::collections::trees

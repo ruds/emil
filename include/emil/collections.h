@@ -355,16 +355,17 @@ class ManagedSet : public ManagedWithSelfPtr<ManagedSet<T, Comp>> {
                                            managed_ptr<ManagedSet> r) {
     if (l->empty() || r->empty()) return l;
     auto hold = ctx().mgr->acquire_hold();
-    trees::set_set_result_t<T, void> u;
     if (l->size() < r->size()) {
-      u = set_difference_right(r->tree_, black_height(r->tree_), l->tree_,
-                               black_height(l->tree_), *l->comp_);
+      auto u = set_difference_right(r->tree_, black_height(r->tree_), l->tree_,
+                                    black_height(l->tree_), *l->comp_);
+      return make_managed<ManagedSet>(token{}, *l->comp_, std::move(u.tree),
+                                      u.count);
     } else {
-      u = set_difference_left(l->tree_, black_height(l->tree_), r->tree_,
-                              black_height(r->tree_), *l->comp_);
+      auto u = set_difference_left(l->tree_, black_height(l->tree_), r->tree_,
+                                   black_height(r->tree_), *l->comp_);
+      return make_managed<ManagedSet>(token{}, *l->comp_, std::move(u.tree),
+                                      l->size() - u.count);
     }
-    return make_managed<ManagedSet>(token{}, *l->comp_, std::move(u.tree),
-                                    u.count);
   }
 
  private:
@@ -619,16 +620,17 @@ class ManagedMap : public ManagedWithSelfPtr<ManagedMap<K, V, Comp>> {
                                            managed_ptr<ManagedMap> r) {
     if (l->empty() || r->empty()) return l;
     auto hold = ctx().mgr->acquire_hold();
-    trees::set_set_result_t<K, V> u;
     if (l->size() < r->size()) {
-      u = set_difference_right(r->tree_, black_height(r->tree_), l->tree_,
-                               black_height(l->tree_), *l->comp_);
+      auto u = set_difference_right(r->tree_, black_height(r->tree_), l->tree_,
+                                    black_height(l->tree_), *l->comp_);
+      return make_managed<ManagedMap>(token{}, *l->comp_, std::move(u.tree),
+                                      u.count);
     } else {
-      u = set_difference_left(l->tree_, black_height(l->tree_), r->tree_,
-                              black_height(r->tree_), *l->comp_);
+      auto u = set_difference_left(l->tree_, black_height(l->tree_), r->tree_,
+                                   black_height(r->tree_), *l->comp_);
+      return make_managed<ManagedMap>(token{}, *l->comp_, std::move(u.tree),
+                                      l->size() - u.count);
     }
-    return make_managed<ManagedMap>(token{}, *l->comp_, std::move(u.tree),
-                                    u.count);
   }
 
  private:
