@@ -38,7 +38,7 @@ namespace {
 using ExprPtr = std::unique_ptr<Expr>;
 using DeclPtr = std::unique_ptr<Decl>;
 using PatternPtr = std::unique_ptr<Pattern>;
-using TypePtr = std::unique_ptr<Type>;
+using TypeExprPtr = std::unique_ptr<TypeExpr>;
 
 template <typename... Ts>
 struct overload : Ts... {
@@ -223,12 +223,12 @@ PatternPtr Parser::match_pattern(Token& first) {
   return pattern;
 }
 
-TypePtr Parser::match_type(Token& first) {
+TypeExprPtr Parser::match_type(Token& first) {
   auto t = match_tuple_type(first);
   if (match(TokenType::TO_TYPE)) {
     auto ret = match_type(advance_safe("function type"));
-    return std::make_unique<FuncType>(first.location, std::move(t),
-                                      std::move(ret));
+    return std::make_unique<FuncTypeExpr>(first.location, std::move(t),
+                                          std::move(ret));
   }
   return t;
 }
@@ -714,8 +714,8 @@ std::unique_ptr<IdentifierPattern> Parser::maybe_match_parenthesized_op_pattern(
   return nullptr;
 }
 
-TypePtr Parser::match_tuple_type(Token& first) {
-  std::vector<TypePtr> types;
+TypeExprPtr Parser::match_tuple_type(Token& first) {
+  std::vector<TypeExprPtr> types;
   types.push_back(match_atomic_type(first));
   while (match(TokenType::ASTERISK)) {
     types.push_back(match_atomic_type(advance_safe("tuple type expression")));
@@ -724,37 +724,38 @@ TypePtr Parser::match_tuple_type(Token& first) {
     // cppcheck-suppress returnStdMoveLocal
     return std::move(types.front());
   }
-  return std::make_unique<TupleType>(first.location, std::move(types));
+  return std::make_unique<TupleTypeExpr>(first.location, std::move(types));
 }
 
 namespace {
 
-std::unique_ptr<TyconType> make_tycon_type(const Location& location, Token& t,
-                                           std::vector<TypePtr> types = {}) {
+std::unique_ptr<TyconTypeExpr> make_tycon_type(
+    const Location& location, Token& t, std::vector<TypeExprPtr> types = {}) {
   if (t.type == TokenType::QUAL_ID_WORD) {
     auto& qid = get<QualifiedIdentifier>(t.aux);
-    return std::make_unique<TyconType>(location, std::move(qid.qualifiers),
-                                       std::move(qid.id), std::move(types));
+    return std::make_unique<TyconTypeExpr>(location, std::move(qid.qualifiers),
+                                           std::move(qid.id), std::move(types));
   } else {
-    return std::make_unique<TyconType>(location, std::vector<std::u8string>{},
-                                       move_string(t), std::move(types));
+    return std::make_unique<TyconTypeExpr>(location,
+                                           std::vector<std::u8string>{},
+                                           move_string(t), std::move(types));
   }
 }
 
-std::unique_ptr<TyconType> make_tycon_type(const Location& location, Token& t,
-                                           TypePtr param) {
-  std::vector<TypePtr> types;
+std::unique_ptr<TyconTypeExpr> make_tycon_type(const Location& location,
+                                               Token& t, TypeExprPtr param) {
+  std::vector<TypeExprPtr> types;
   types.push_back(std::move(param));
   return make_tycon_type(location, t, std::move(types));
 }
 
 }  // namespace
 
-TypePtr Parser::match_atomic_type(Token& first) {
-  TypePtr type;
+TypeExprPtr Parser::match_atomic_type(Token& first) {
+  TypeExprPtr type;
   switch (first.type) {
     case TokenType::ID_TYPE:
-      type = std::make_unique<VarType>(first.location, move_string(first));
+      type = std::make_unique<VarTypeExpr>(first.location, move_string(first));
       break;
 
     case TokenType::LBRACE:
@@ -779,8 +780,8 @@ TypePtr Parser::match_atomic_type(Token& first) {
   return type;
 }
 
-TypePtr Parser::match_record_type(const Location& location) {
-  std::vector<std::pair<std::u8string, TypePtr>> rows;
+TypeExprPtr Parser::match_record_type(const Location& location) {
+  std::vector<std::pair<std::u8string, TypeExprPtr>> rows;
   std::set<std::u8string> labels;
   if (!match(TokenType::RBRACE)) {
     do {
@@ -797,11 +798,11 @@ TypePtr Parser::match_record_type(const Location& location) {
     } while (match(TokenType::COMMA));
     consume(TokenType::RBRACE, "record type expression");
   }
-  return std::make_unique<RecordType>(location, std::move(rows));
+  return std::make_unique<RecordTypeExpr>(location, std::move(rows));
 }
 
-TypePtr Parser::match_paren_type(const Location& location) {
-  std::vector<TypePtr> types;
+TypeExprPtr Parser::match_paren_type(const Location& location) {
+  std::vector<TypeExprPtr> types;
   do {
     types.push_back(match_type(advance_safe("parenthesized type expression")));
   } while (match(TokenType::COMMA));

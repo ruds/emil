@@ -67,14 +67,14 @@ struct Category {
 };
 
 const std::vector<Category> CATEGORIES{
-    {"Type",
-     "TYPE",
+    {"TypeExpr",
+     "TYPEEXPR",
      {
          {"Var", {"str id"}},
-         {"Record", {"[str->Type*] rows"}},
-         {"Tycon", {"[str] qualifiers", "str identifier", "[Type*] types"}},
-         {"Tuple", {"[Type*] types"}},
-         {"Func", {"Type* param", "Type* ret"}},
+         {"Record", {"[str->TypeExpr*] rows"}},
+         {"Tycon", {"[str] qualifiers", "str identifier", "[TypeExpr*] types"}},
+         {"Tuple", {"[TypeExpr*] types"}},
+         {"Func", {"TypeExpr* param", "TypeExpr* ret"}},
      }},
     {"Pattern",
      "PATTERN",
@@ -114,7 +114,7 @@ const std::vector<Category> CATEGORIES{
          {"Application", {"[Expr*] exprs"}},
          {"Case", {"Expr* expr", "[Pattern*->Expr*] cases"}},
          {"Fn", {"[Pattern*->Expr*] cases"}},
-         {"Typed", {"Expr* expr", "Type* type"}},
+         {"Typed", {"Expr* expr", "TypeExpr* type"}},
      }},
     {"Decl",
      "DECL",

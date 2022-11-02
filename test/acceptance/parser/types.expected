@@ -12,7 +12,7 @@
                  :is_prefix_op
                  false)
              :type
-             (VarType
+             (VarTypeExpr
                  :id
                  "2761")))
 0002 (ExprTopDecl
@@ -29,13 +29,13 @@
                  :is_prefix_op
                  false)
              :type
-             (TyconType
+             (TyconTypeExpr
                  :qualifiers
                  ()
                  :identifier
                  "6C697374"
                  :types
-                 ((VarType
+                 ((VarTypeExpr
                      :id
                      "2761")))))
 0003 (ExprTopDecl
@@ -52,19 +52,19 @@
                  :is_prefix_op
                  false)
              :type
-             (TyconType
+             (TyconTypeExpr
                  :qualifiers
                  ()
                  :identifier
                  "6C697374"
                  :types
-                 ((TyconType
+                 ((TyconTypeExpr
                      :qualifiers
                      ()
                      :identifier
                      "6C697374"
                      :types
-                     ((VarType
+                     ((VarTypeExpr
                          :id
                          "2761")))))))
 0004 (ExprTopDecl
@@ -81,7 +81,7 @@
                  :is_prefix_op
                  false)
              :type
-             (TyconType
+             (TyconTypeExpr
                  :qualifiers
                  ()
                  :identifier
@@ -102,27 +102,27 @@
                  :is_prefix_op
                  false)
              :type
-             (TyconType
+             (TyconTypeExpr
                  :qualifiers
                  ("44696374")
                  :identifier
                  "64696374"
                  :types
                  (
-                     (TyconType
+                     (TyconTypeExpr
                          :qualifiers
                          ()
                          :identifier
                          "737472696E67"
                          :types
                          ())
-                     (TyconType
+                     (TyconTypeExpr
                          :qualifiers
                          ()
                          :identifier
                          "6C697374"
                          :types
-                         ((VarType
+                         ((VarTypeExpr
                              :id
                              "2761")))
                  ))))
@@ -140,19 +140,19 @@
                  :is_prefix_op
                  false)
              :type
-             (TyconType
+             (TyconTypeExpr
                  :qualifiers
                  ()
                  :identifier
                  "6C697374"
                  :types
-                 ((TyconType
+                 ((TyconTypeExpr
                      :qualifiers
                      ()
                      :identifier
                      "6C697374"
                      :types
-                     ((VarType
+                     ((VarTypeExpr
                          :id
                          "2761")))))))
 0007 (ExprTopDecl
@@ -169,13 +169,13 @@
                  :is_prefix_op
                  false)
              :type
-             (TyconType
+             (TyconTypeExpr
                  :qualifiers
                  ()
                  :identifier
                  "6C697374"
                  :types
-                 ((VarType
+                 ((VarTypeExpr
                      :id
                      "2761")))))
 0008 (ExprTopDecl
@@ -192,27 +192,27 @@
                  :is_prefix_op
                  false)
              :type
-             (TyconType
+             (TyconTypeExpr
                  :qualifiers
                  ("44696374")
                  :identifier
                  "64696374"
                  :types
                  (
-                     (TyconType
+                     (TyconTypeExpr
                          :qualifiers
                          ()
                          :identifier
                          "737472696E67"
                          :types
                          ())
-                     (TyconType
+                     (TyconTypeExpr
                          :qualifiers
                          ()
                          :identifier
                          "6C697374"
                          :types
-                         ((VarType
+                         ((VarTypeExpr
                              :id
                              "2761")))
                  ))))
@@ -230,36 +230,36 @@
                  :is_prefix_op
                  false)
              :type
-             (RecordType
+             (RecordTypeExpr
                  :rows
                  (
                      ("626172"
-                       . (TyconType
+                       . (TyconTypeExpr
                              :qualifiers
                              ("44696374")
                              :identifier
                              "64696374"
                              :types
                              (
-                                 (TyconType
+                                 (TyconTypeExpr
                                      :qualifiers
                                      ()
                                      :identifier
                                      "737472696E67"
                                      :types
                                      ())
-                                 (TyconType
+                                 (TyconTypeExpr
                                      :qualifiers
                                      ()
                                      :identifier
                                      "6C697374"
                                      :types
-                                     ((VarType
+                                     ((VarTypeExpr
                                          :id
                                          "2761")))
                              )))
                      ("62617A"
-                       . (TyconType
+                       . (TyconTypeExpr
                              :qualifiers
                              ()
                              :identifier
@@ -267,13 +267,13 @@
                              :types
                              ()))
                      ("71757578"
-                       . (FuncType
+                       . (FuncTypeExpr
                              :param
-                             (VarType
+                             (VarTypeExpr
                                  :id
                                  "2761")
                              :ret
-                             (TyconType
+                             (TyconTypeExpr
                                  :qualifiers
                                  ()
                                  :identifier
@@ -295,17 +295,17 @@
                  :is_prefix_op
                  false)
              :type
-             (TupleType
+             (TupleTypeExpr
                  :types
                  (
-                     (TyconType
+                     (TyconTypeExpr
                          :qualifiers
                          ()
                          :identifier
                          "626967696E74"
                          :types
                          ())
-                     (TyconType
+                     (TyconTypeExpr
                          :qualifiers
                          ()
                          :identifier
@@ -327,9 +327,9 @@
                  :is_prefix_op
                  false)
              :type
-             (FuncType
+             (FuncTypeExpr
                  :param
-                 (TyconType
+                 (TyconTypeExpr
                      :qualifiers
                      ()
                      :identifier
@@ -337,7 +337,7 @@
                      :types
                      ())
                  :ret
-                 (TyconType
+                 (TyconTypeExpr
                      :qualifiers
                      ()
                      :identifier
@@ -358,36 +358,36 @@
                  :is_prefix_op
                  false)
              :type
-             (TupleType
+             (TupleTypeExpr
                  :types
                  (
-                     (TyconType
+                     (TyconTypeExpr
                          :qualifiers
                          ()
                          :identifier
                          "626967696E74"
                          :types
                          ())
-                     (TyconType
+                     (TyconTypeExpr
                          :qualifiers
                          ()
                          :identifier
                          "6C697374"
                          :types
-                         ((VarType
+                         ((VarTypeExpr
                              :id
                              "2761")))
-                     (TupleType
+                     (TupleTypeExpr
                          :types
                          (
-                             (TyconType
+                             (TyconTypeExpr
                                  :qualifiers
                                  ()
                                  :identifier
                                  "626967696E74"
                                  :types
                                  ())
-                             (TyconType
+                             (TyconTypeExpr
                                  :qualifiers
                                  ()
                                  :identifier
@@ -395,7 +395,7 @@
                                  :types
                                  ())
                          ))
-                     (TyconType
+                     (TyconTypeExpr
                          :qualifiers
                          ()
                          :identifier
@@ -417,44 +417,44 @@
                  :is_prefix_op
                  false)
              :type
-             (FuncType
+             (FuncTypeExpr
                  :param
-                 (TupleType
+                 (TupleTypeExpr
                      :types
                      (
-                         (VarType
+                         (VarTypeExpr
                              :id
                              "2761")
-                         (VarType
+                         (VarTypeExpr
                              :id
                              "2762")
                      ))
                  :ret
-                 (FuncType
+                 (FuncTypeExpr
                      :param
-                     (TupleType
+                     (TupleTypeExpr
                          :types
                          (
-                             (VarType
+                             (VarTypeExpr
                                  :id
                                  "2763")
-                             (TyconType
+                             (TyconTypeExpr
                                  :qualifiers
                                  ()
                                  :identifier
                                  "626967696E74"
                                  :types
                                  ())
-                             (TyconType
+                             (TyconTypeExpr
                                  :qualifiers
                                  ()
                                  :identifier
                                  "737472696E67"
                                  :types
                                  ())
-                             (FuncType
+                             (FuncTypeExpr
                                  :param
-                                 (TyconType
+                                 (TyconTypeExpr
                                      :qualifiers
                                      ()
                                      :identifier
@@ -462,7 +462,7 @@
                                      :types
                                      ())
                                  :ret
-                                 (TyconType
+                                 (TyconTypeExpr
                                      :qualifiers
                                      ()
                                      :identifier
@@ -471,7 +471,7 @@
                                      ()))
                          ))
                      :ret
-                     (TyconType
+                     (TyconTypeExpr
                          :qualifiers
                          ()
                          :identifier

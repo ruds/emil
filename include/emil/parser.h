@@ -43,7 +43,7 @@ class Pattern;
 class RecRowExpr;
 class RecordExpr;
 class TopDecl;
-class Type;
+class TypeExpr;
 class ValDecl;
 
 class ParsingError : public std::exception {
@@ -92,7 +92,7 @@ class Parser {
 
   std::unique_ptr<Pattern> match_pattern(Token& first);
 
-  std::unique_ptr<Type> match_type(Token& first);
+  std::unique_ptr<TypeExpr> match_type(Token& first);
 
   std::unique_ptr<Expr> match_left_expr(Token& first);
 
@@ -136,13 +136,13 @@ class Parser {
   std::unique_ptr<IdentifierPattern> maybe_match_parenthesized_op_pattern(
       const Token& first, AllowQualified allow_qualified);
 
-  std::unique_ptr<Type> match_tuple_type(Token& first);
+  std::unique_ptr<TypeExpr> match_tuple_type(Token& first);
 
-  std::unique_ptr<Type> match_atomic_type(Token& first);
+  std::unique_ptr<TypeExpr> match_atomic_type(Token& first);
 
-  std::unique_ptr<Type> match_record_type(const Location& location);
+  std::unique_ptr<TypeExpr> match_record_type(const Location& location);
 
-  std::unique_ptr<Type> match_paren_type(const Location& location);
+  std::unique_ptr<TypeExpr> match_paren_type(const Location& location);
 };
 
 }  // namespace emil
