@@ -50,7 +50,7 @@ target_include_directories(parser
   PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/include" ../include)
 target_include_directories(parser PRIVATE .)
 
-add_library(runtime STATIC gc.cc runtime.cc string.cc)
+add_library(runtime STATIC gc.cc runtime.cc string.cc types.cc)
 add_emil_options(runtime)
 target_include_directories(runtime
   PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/include" ../include)
