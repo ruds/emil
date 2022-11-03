@@ -32,13 +32,11 @@
  * Objects in the `TypeObj` hierarchy are managed by the runtime
  * since, in general, they will stick around for static type analysis
  * of further top-level declarations. This hierarchy closely follows
- * the static semantic objects described in Chapter 4 of the
+ * the static semantic objects described in Chapters 4 and 5 of the
  * Definition of Standard ML (Revised).
  */
 
-namespace emil {
-
-namespace typing {
+namespace emil::typing {
 
 class TypeObj;
 
@@ -317,12 +315,12 @@ class Env : public TypeObj {
 /** The type context of a program. */
 class Context : public TypeObj {
  public:
-  Context(collections::SetPtr<TypeName> type_names, StringSet type_variables,
-          managed_ptr<Env> env);
+  Context(collections::SetPtr<TypeName> type_names,
+          StringSet explicit_type_variables, managed_ptr<Env> env);
 
   const collections::SetPtr<TypeName>& type_names() const { return names_; }
-  const StringSet& type_variables() const { return vars_; }
-  managed_ptr<Env> env() const { return env_; }
+  const StringSet& explicit_type_variables() const { return vars_; }
+  const managed_ptr<Env>& env() const { return env_; }
 
  private:
   const collections::SetPtr<TypeName> names_;
@@ -333,6 +331,22 @@ class Context : public TypeObj {
   std::size_t managed_size() const noexcept override { return sizeof(Context); }
 };
 
-}  // namespace typing
+/** The type basis of a program. */
+class Basis : public TypeObj {
+ public:
+  Basis(collections::SetPtr<TypeName> type_names, managed_ptr<Env> env);
 
-}  // namespace emil
+  const collections::SetPtr<TypeName>& type_names() const { return names_; }
+  const managed_ptr<Env>& env() const { return env_; }
+
+  managed_ptr<Context> as_context() const;
+
+ private:
+  const collections::SetPtr<TypeName> names_;
+  const managed_ptr<Env> env_;
+
+  void visit_additional_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override { return sizeof(Basis); }
+};
+
+}  // namespace emil::typing

@@ -55,3 +55,8 @@ add_emil_options(runtime)
 target_include_directories(runtime
   PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/include" ../include)
 target_link_libraries(runtime PRIVATE fmt::fmt utf8cpp)
+
+add_library(typer STATIC typer.cc typed_ast.cc)
+add_emil_options(typer)
+target_include_directories(typer PUBLIC ../include)
+target_link_libraries(typer PRIVATE parser runtime)

@@ -20,11 +20,8 @@
 
 #include "emil/collections.h"
 #include "emil/string.h"
-#include "emil/tree.h"
 
-namespace emil {
-
-namespace typing {
+namespace emil::typing {
 
 namespace {
 
@@ -204,10 +201,10 @@ void Env::visit_additional_subobjects(const ManagedVisitor& visitor) {
 }
 
 Context::Context(collections::SetPtr<TypeName> type_names,
-                 StringSet type_variables, managed_ptr<Env> env)
-    : TypeObj(type_variables | env->free_variables()),
+                 StringSet explicit_type_variables, managed_ptr<Env> env)
+    : TypeObj(explicit_type_variables | env->free_variables()),
       names_(std::move(type_names)),
-      vars_(std::move(type_variables)) {}
+      vars_(std::move(explicit_type_variables)) {}
 
 void Context::visit_additional_subobjects(const ManagedVisitor& visitor) {
   names_.accept(visitor);
@@ -215,5 +212,18 @@ void Context::visit_additional_subobjects(const ManagedVisitor& visitor) {
   env_.accept(visitor);
 }
 
-}  // namespace typing
-}  // namespace emil
+Basis::Basis(collections::SetPtr<TypeName> type_names, managed_ptr<Env> env)
+    : TypeObj(env->free_variables()),
+      names_(std::move(type_names)),
+      env_(std::move(env)) {}
+
+managed_ptr<Context> Basis::as_context() const {
+  return make_managed<Context>(names_, string_set(), env_);
+}
+
+void Basis::visit_additional_subobjects(const ManagedVisitor& visitor) {
+  names_.accept(visitor);
+  env_.accept(visitor);
+}
+
+}  // namespace emil::typing
