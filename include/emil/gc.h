@@ -133,7 +133,7 @@ concept OptionalManagedType = ManagedType<T> || std::is_same_v<T, void>;
  */
 class managed_ptr_base {
  public:
-  virtual ~managed_ptr_base();
+  ~managed_ptr_base();
   Managed& operator*() { return *val_; }
   const Managed& operator*() const { return *val_; }
   Managed* operator->() { return val_; }
@@ -158,6 +158,8 @@ class managed_ptr_base {
 
   bool mark() const;
 };
+
+static_assert(sizeof(managed_ptr_base) == sizeof(void*));
 
 /**
  * A pointer to a managed object.
@@ -191,8 +193,6 @@ class managed_ptr : public managed_ptr_base {
     val_ = o.val_;
     return *this;
   }
-
-  ~managed_ptr() override = default;
 
   T& operator*() { return *val(); }
 
@@ -406,6 +406,8 @@ managed_ptr<T> make_managed_from_tuple(std::tuple<Args...>&& args) {
 
 template <ManagedType T, class... Args>
 managed_ptr<T> MemoryManager::create(Args&&... args) {
+  static_assert(sizeof(managed_ptr<T>) == sizeof(void*));
+
   const auto size = sizeof(T);
   if (stats_.num_holds == 0)
     enact_decision(gc_policy_->on_object_allocation_request(stats_, size));
