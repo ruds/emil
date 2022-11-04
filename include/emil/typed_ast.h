@@ -14,6 +14,9 @@
 
 #pragma once
 
+#include <memory>
+
+#include "emil/token.h"
 #include "emil/types.h"
 
 namespace emil {
@@ -21,7 +24,11 @@ namespace emil {
 /** A typed pattern. */
 class TPattern {
  public:
+  const Location location;
+
+  explicit TPattern(const Location& location);
   virtual ~TPattern();
+
   class Visitor {
    public:
     virtual ~Visitor();
@@ -33,7 +40,11 @@ class TPattern {
 /** A typed expression. */
 class TExpr {
  public:
+  const Location location;
+
+  explicit TExpr(const Location& location);
   virtual ~TExpr();
+
   class Visitor {
    public:
     virtual ~Visitor();
@@ -46,7 +57,11 @@ class TExpr {
 /** A typed declaration. */
 class TDecl {
  public:
+  const Location location;
+
+  explicit TDecl(const Location& location);
   virtual ~TDecl();
+
   class Visitor {
    public:
     virtual ~Visitor();
@@ -63,7 +78,11 @@ class TDeclTopDecl;
 /** A typed top-level declaration. */
 class TTopDecl {
  public:
+  const Location location;
+
+  explicit TTopDecl(const Location& location);
   virtual ~TTopDecl();
+
   class Visitor {
    public:
     virtual ~Visitor();
@@ -75,6 +94,38 @@ class TTopDecl {
   };
 
   virtual void accept(Visitor& visitor) const = 0;
+};
+
+class TEmptyTopDecl : public TTopDecl {
+ public:
+  explicit TEmptyTopDecl(const Location& location);
+
+  void accept(Visitor& visitor) const override;
+};
+
+class TEndOfFileTopDecl : public TTopDecl {
+ public:
+  explicit TEndOfFileTopDecl(const Location& location);
+
+  void accept(Visitor& visitor) const override;
+};
+
+class TExprTopDecl : public TTopDecl {
+ public:
+  std::unique_ptr<TExpr> expr;
+
+  TExprTopDecl(const Location& location, std::unique_ptr<TExpr> expr);
+
+  void accept(Visitor& visitor) const override;
+};
+
+class TDeclTopDecl : public TTopDecl {
+ public:
+  std::unique_ptr<TDecl> decl;
+
+  TDeclTopDecl(const Location& location, std::unique_ptr<TDecl> decl);
+
+  void accept(Visitor& visitor) const override;
 };
 
 }  // namespace emil

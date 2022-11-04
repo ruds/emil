@@ -324,6 +324,8 @@ class TypeEnv : public TypeObj {
   std::optional<managed_ptr<TypeStructure>> get(
       const std::u8string_view& key) const;
 
+  const StringMap<TypeStructure>& env() const { return env_; }
+
  private:
   StringMap<TypeStructure> env_;
 
@@ -356,6 +358,8 @@ class ValEnv : public TypeObj {
 
   std::optional<managed_ptr<ValueBinding>> get(
       const std::u8string_view& key) const;
+
+  const StringMap<ValueBinding>& env() const { return env_; }
 
  private:
   StringMap<ValueBinding> env_;
@@ -412,5 +416,15 @@ class Basis : public TypeObj {
   void visit_additional_subobjects(const ManagedVisitor& visitor) override;
   std::size_t managed_size() const noexcept override { return sizeof(Basis); }
 };
+
+managed_ptr<TypeEnv> operator+(const managed_ptr<TypeEnv>& l,
+                               const managed_ptr<TypeEnv>& r);
+managed_ptr<ValEnv> operator+(const managed_ptr<ValEnv>& l,
+                              const managed_ptr<ValEnv>& r);
+managed_ptr<Env> operator+(const managed_ptr<Env>& l,
+                           const managed_ptr<Env>& r);
+
+managed_ptr<Basis> operator+(const managed_ptr<Basis>& B,
+                             const managed_ptr<Env>& E);
 
 }  // namespace emil::typing

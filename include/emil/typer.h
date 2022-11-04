@@ -17,21 +17,40 @@
 #include <memory>
 #include <utility>
 
+#include "emil/ast.h"
 #include "emil/gc.h"
+#include "emil/typed_ast.h"
+#include "emil/types.h"  // IWYU pragma: keep
 
 namespace emil {
-
-class TopDecl;
-class TTopDecl;
-
-namespace typing {
-class Basis;
-}
 
 class Typer {
  public:
   /** Do typing analysis of a top-level declaration. */
-  std::pair<std::unique_ptr<TTopDecl>, managed_ptr<typing::Basis>> elaborate(
+  std::pair<managed_ptr<typing::Basis>, std::unique_ptr<TTopDecl>> elaborate(
       managed_ptr<typing::Basis> B, const TopDecl& topdec);
+
+  /** Do typing analysis of a declaration. */
+  std::pair<managed_ptr<typing::Env>, std::unique_ptr<TDecl>> elaborate(
+      managed_ptr<typing::Context> C, const Decl& dec);
+
+  /** Do typing analysis of an expression. */
+  std::unique_ptr<TExpr> elaborate(managed_ptr<typing::Context> C,
+                                   const Expr& exp);
+
+ private:
+  class TopDeclElaborator : public TopDecl::Visitor {
+   public:
+    managed_ptr<typing::Basis> B;
+    std::unique_ptr<TTopDecl> typed;
+
+    TopDeclElaborator(Typer& typer, managed_ptr<typing::Basis> B);
+
+    DECLARE_TOPDECL_V_FUNCS;
+
+   private:
+    Typer& typer_;
+  };
 };
+
 }  // namespace emil
