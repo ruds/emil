@@ -171,7 +171,7 @@ ConstructedType::ConstructedType(managed_ptr<TypeName> name,
            merge_type_names(types) | name->type_names()),
       name_(std::move(name)),
       types_(std::move(types)) {
-  assert(types->size() == name->arity());
+  assert(types_->size() == name_->arity());
 }
 
 void ConstructedType::visit_additional_subobjects(
@@ -281,6 +281,26 @@ managed_ptr<Context> Basis::as_context() const {
 
 void Basis::visit_additional_subobjects(const ManagedVisitor& visitor) {
   env_.accept(visitor);
+}
+
+managed_ptr<TypeEnv> operator+(const managed_ptr<TypeEnv>& l,
+                               const managed_ptr<TypeEnv>& r) {
+  return make_managed<TypeEnv>(l->env() | r->env());
+}
+managed_ptr<ValEnv> operator+(const managed_ptr<ValEnv>& l,
+                              const managed_ptr<ValEnv>& r) {
+  return make_managed<ValEnv>(l->env() | r->env());
+}
+
+managed_ptr<Env> operator+(const managed_ptr<Env>& l,
+                           const managed_ptr<Env>& r) {
+  return make_managed<Env>(l->type_env() + r->type_env(),
+                           l->val_env() + r->val_env());
+}
+
+managed_ptr<Basis> operator+(const managed_ptr<Basis>& B,
+                             const managed_ptr<Env>& E) {
+  return make_managed<Basis>(B->type_names() | E->type_names(), B->env() + E);
 }
 
 }  // namespace emil::typing
