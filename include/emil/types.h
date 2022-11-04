@@ -15,6 +15,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string_view>
 #include <type_traits>
@@ -49,6 +50,49 @@ template <TypeObjType T>
 using StringMap = collections::MapPtr<ManagedString, T>;
 
 /**
+ * @brief A "timestamp" for type names and undetermined types.
+ *
+ * All types are given a unique typename, which e.g. prevents errors
+ * when a type constructor is bound to a new type. During type unification, it
+ * is important that unknown types are not unified with types that are defined
+ * later. For example, the following snippet must not typecheck:
+ *
+ * @code
+ * let
+ *     val r = ref NONE
+ *     datatype t = C
+ * in
+ *     r := SOME C
+ * end
+ * @endcode
+ *
+ * `Stamp` facilitates this by allowing the typer to assign a
+ * monotonically increasing id to each type name and undetermined
+ * type. This stamp is propagated to subterms during unification, and
+ * unification of a type name with an "older" undetermined type is
+ * forbidden.
+ *
+ * This idea is described by Andreas Rossberg in "HaMLet S: To Become Or Not To
+ * Become Successor ML :-)".
+ */
+class Stamp : public Managed {
+ public:
+  std::uint64_t id() const { return id_; }
+
+ private:
+  friend class StampGenerator;
+  const std::uint64_t id_;
+
+  explicit Stamp(std::uint64_t id);
+};
+
+bool operator<(const Stamp& l, const Stamp& r);
+bool operator<(std::uint64_t l, const Stamp& r);
+bool operator<(const Stamp& l, std::uint64_t r);
+
+using StampSet = collections::SetPtr<Stamp>;
+
+/**
  * @brief Objects that describe types and collections of types.
  *
  * These are the same as the "semantic objects" described in the Definition.
@@ -56,13 +100,15 @@ using StringMap = collections::MapPtr<ManagedString, T>;
 class TypeObj : public Managed {
  public:
   const StringSet& free_variables() const { return free_variables_; }
+  const StampSet& type_names() const { return type_names_; }
 
  protected:
-  TypeObj(StringSet free_variables);
+  TypeObj(StringSet free_variables, StampSet type_names);
   ~TypeObj() override;
 
  private:
   const StringSet free_variables_;
+  const StampSet type_names_;
 
   virtual void visit_additional_subobjects(const ManagedVisitor& visitor) = 0;
 
@@ -75,7 +121,7 @@ class Type : public TypeObj {
 };
 using TypePtr = managed_ptr<Type>;
 
-/** A type variable. */
+/** A type variable explicitly present in the code. */
 class TypeVar : public Type {
  public:
   explicit TypeVar(std::u8string_view name);
@@ -91,19 +137,41 @@ class TypeVar : public Type {
   StringPtr name_;
 };
 
-/** A globally unique name assigned to a constructed type. */
-class TypeName : public Type {
+/** An as-yet undetermined type, produced during type inference. */
+class UndeterminedType : public Type {
  public:
-  // TODO: add unique id
-  TypeName(std::u8string_view name, std::size_t arity);
-  TypeName(StringPtr name, std::size_t arity);
+  UndeterminedType(std::u8string_view name, managed_ptr<Stamp> stamp);
+  UndeterminedType(StringPtr name, managed_ptr<Stamp> stamp);
 
   std::u8string_view name() const { return *name_; }
   StringPtr name_ptr() const { return name_; }
+  const managed_ptr<Stamp>& stamp() const { return stamp_; }
+
+  void visit_additional_subobjects(const ManagedVisitor&) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(UndeterminedType);
+  }
+
+ private:
+  StringPtr name_;
+  managed_ptr<Stamp> stamp_;
+};
+
+/** A globally unique name assigned to a constructed type. */
+class TypeName : public Type {
+ public:
+  TypeName(std::u8string_view name, managed_ptr<Stamp> stamp,
+           std::size_t arity);
+  TypeName(StringPtr name, managed_ptr<Stamp> stamp, std::size_t arity);
+
+  std::u8string_view name() const { return *name_; }
+  StringPtr name_ptr() const { return name_; }
+  const managed_ptr<Stamp>& stamp() const { return stamp_; }
   std::size_t arity() const { return arity_; }
 
  private:
   StringPtr name_;
+  managed_ptr<Stamp> stamp_;
   const std::size_t arity_;
 
   void visit_additional_subobjects(const ManagedVisitor&) override;
@@ -315,15 +383,13 @@ class Env : public TypeObj {
 /** The type context of a program. */
 class Context : public TypeObj {
  public:
-  Context(collections::SetPtr<TypeName> type_names,
-          StringSet explicit_type_variables, managed_ptr<Env> env);
+  Context(StampSet type_names, StringSet explicit_type_variables,
+          managed_ptr<Env> env);
 
-  const collections::SetPtr<TypeName>& type_names() const { return names_; }
   const StringSet& explicit_type_variables() const { return vars_; }
   const managed_ptr<Env>& env() const { return env_; }
 
  private:
-  const collections::SetPtr<TypeName> names_;
   const StringSet vars_;
   const managed_ptr<Env> env_;
 
@@ -334,15 +400,13 @@ class Context : public TypeObj {
 /** The type basis of a program. */
 class Basis : public TypeObj {
  public:
-  Basis(collections::SetPtr<TypeName> type_names, managed_ptr<Env> env);
+  Basis(StampSet type_names, managed_ptr<Env> env);
 
-  const collections::SetPtr<TypeName>& type_names() const { return names_; }
   const managed_ptr<Env>& env() const { return env_; }
 
   managed_ptr<Context> as_context() const;
 
  private:
-  const collections::SetPtr<TypeName> names_;
   const managed_ptr<Env> env_;
 
   void visit_additional_subobjects(const ManagedVisitor& visitor) override;
