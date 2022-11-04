@@ -166,7 +166,7 @@ TEST(ManagedConsTest, Cons) {
   l = tc.root.replace_root(l, cons_in_place(l, 3));
   EXPECT_EQ(len(l), 3);
   l = tc.root.replace_root(l, cons(nullptr, l));
-  auto force_gc = mi(4);
+  [[maybe_unused]] auto force_gc = mi(4);
   EXPECT_EQ(len(l), 4);
   ASSERT_FALSE(l->car);
   ASSERT_EQ(l->cdr->car, 3);
