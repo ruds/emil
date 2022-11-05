@@ -15,6 +15,7 @@
 #pragma once
 
 #include <bit>
+#include <compare>
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
@@ -98,28 +99,15 @@ using StringPtr = managed_ptr<ManagedString>;
 
 StringPtr make_string(std::u8string_view s = u8"");
 
-bool operator==(const ManagedString& l, const ManagedString& r);
-bool operator==(const std::u8string_view& l, const ManagedString& r);
-bool operator==(const ManagedString& l, const std::u8string_view& r);
+bool operator==(const ManagedString& l, const ManagedString& r) noexcept;
+bool operator==(const std::u8string_view& l, const ManagedString& r) noexcept;
+bool operator==(const ManagedString& l, const std::u8string_view& r) noexcept;
 
-bool operator!=(const ManagedString& l, const ManagedString& r);
-bool operator!=(const std::u8string_view& l, const ManagedString& r);
-bool operator!=(const ManagedString& l, const std::u8string_view& r);
-
-bool operator<(const ManagedString& l, const ManagedString& r);
-bool operator<(const std::u8string_view& l, const ManagedString& r);
-bool operator<(const ManagedString& l, const std::u8string_view& r);
-
-bool operator<=(const ManagedString& l, const ManagedString& r);
-bool operator<=(const std::u8string_view& l, const ManagedString& r);
-bool operator<=(const ManagedString& l, const std::u8string_view& r);
-
-bool operator>(const ManagedString& l, const ManagedString& r);
-bool operator>(const std::u8string_view& l, const ManagedString& r);
-bool operator>(const ManagedString& l, const std::u8string_view& r);
-
-bool operator>=(const ManagedString& l, const ManagedString& r);
-bool operator>=(const std::u8string_view& l, const ManagedString& r);
-bool operator>=(const ManagedString& l, const std::u8string_view& r);
+std::strong_ordering operator<=>(const ManagedString& l,
+                                 const ManagedString& r) noexcept;
+std::strong_ordering operator<=>(const std::u8string_view& l,
+                                 const ManagedString& r) noexcept;
+std::strong_ordering operator<=>(const ManagedString& l,
+                                 const std::u8string_view& r) noexcept;
 
 }  // namespace emil

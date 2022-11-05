@@ -1,6 +1,7 @@
 [
     { include: ["@<__algorithm/.*>", "private", "<algorithm>", "public"] },
     { include: ["@<__charconv/.*>", "private", "<charconv>", "public"] },
+    { include: ["@<__compare/.*>", "private", "<compare>", "public"] },
     { include: ["@<__filesystem/.*>", "private", "<filesystem>", "public"] },
     { include: ["@<__functional/.*>", "private", "<functional>", "public"] },
     { include: ["@<__memory/.*>", "private", "<memory>", "public"] },

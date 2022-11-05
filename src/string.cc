@@ -22,6 +22,7 @@
 #include <cstring>
 #include <iterator>
 #include <string>
+#include <string_view>
 
 #include "emil/runtime.h"
 
@@ -91,82 +92,53 @@ StringPtr make_string(std::u8string_view s) {
   return make_managed<ManagedString>(s);
 }
 
-bool operator==(const ManagedString& l, const ManagedString& r) {
+bool operator==(const ManagedString& l, const ManagedString& r) noexcept {
   return static_cast<std::u8string_view>(l) ==
          static_cast<std::u8string_view>(r);
 }
 
-bool operator==(const std::u8string_view& l, const ManagedString& r) {
+bool operator==(const std::u8string_view& l, const ManagedString& r) noexcept {
   return l == static_cast<std::u8string_view>(r);
 }
 
-bool operator==(const ManagedString& l, const std::u8string_view& r) {
+bool operator==(const ManagedString& l, const std::u8string_view& r) noexcept {
   return static_cast<std::u8string_view>(l) == r;
 }
 
-bool operator!=(const ManagedString& l, const ManagedString& r) {
-  return static_cast<std::u8string_view>(l) !=
-         static_cast<std::u8string_view>(r);
+std::strong_ordering operator<=>(const ManagedString& l,
+                                 const ManagedString& r) noexcept {
+  // Can you believe that operator<=> isn't yet defined for basic_string_view?
+  // :cry:
+  const int c = static_cast<std::u8string_view>(l).compare(
+      static_cast<std::u8string_view>(r));
+  if (c < 0)
+    return std::strong_ordering::less;
+  else if (c == 0)
+    return std::strong_ordering::equal;
+  else
+    return std::strong_ordering::greater;
 }
 
-bool operator!=(const std::u8string_view& l, const ManagedString& r) {
-  return l != static_cast<std::u8string_view>(r);
+std::strong_ordering operator<=>(const std::u8string_view& l,
+                                 const ManagedString& r) noexcept {
+  const int c = l.compare(static_cast<std::u8string_view>(r));
+  if (c < 0)
+    return std::strong_ordering::less;
+  else if (c == 0)
+    return std::strong_ordering::equal;
+  else
+    return std::strong_ordering::greater;
 }
 
-bool operator!=(const ManagedString& l, const std::u8string_view& r) {
-  return static_cast<std::u8string_view>(l) != r;
-}
-
-bool operator<(const ManagedString& l, const ManagedString& r) {
-  return static_cast<std::u8string_view>(l) <
-         static_cast<std::u8string_view>(r);
-}
-
-bool operator<(const std::u8string_view& l, const ManagedString& r) {
-  return l < static_cast<std::u8string_view>(r);
-}
-
-bool operator<(const ManagedString& l, const std::u8string_view& r) {
-  return static_cast<std::u8string_view>(l) < r;
-}
-
-bool operator<=(const ManagedString& l, const ManagedString& r) {
-  return static_cast<std::u8string_view>(l) <=
-         static_cast<std::u8string_view>(r);
-}
-
-bool operator<=(const std::u8string_view& l, const ManagedString& r) {
-  return l <= static_cast<std::u8string_view>(r);
-}
-
-bool operator<=(const ManagedString& l, const std::u8string_view& r) {
-  return static_cast<std::u8string_view>(l) <= r;
-}
-
-bool operator>(const ManagedString& l, const ManagedString& r) {
-  return static_cast<std::u8string_view>(l) >
-         static_cast<std::u8string_view>(r);
-}
-
-bool operator>(const std::u8string_view& l, const ManagedString& r) {
-  return l > static_cast<std::u8string_view>(r);
-}
-
-bool operator>(const ManagedString& l, const std::u8string_view& r) {
-  return static_cast<std::u8string_view>(l) > r;
-}
-
-bool operator>=(const ManagedString& l, const ManagedString& r) {
-  return static_cast<std::u8string_view>(l) >=
-         static_cast<std::u8string_view>(r);
-}
-
-bool operator>=(const std::u8string_view& l, const ManagedString& r) {
-  return l >= static_cast<std::u8string_view>(r);
-}
-
-bool operator>=(const ManagedString& l, const std::u8string_view& r) {
-  return static_cast<std::u8string_view>(l) >= r;
+std::strong_ordering operator<=>(const ManagedString& l,
+                                 const std::u8string_view& r) noexcept {
+  const int c = static_cast<std::u8string_view>(l).compare(r);
+  if (c < 0)
+    return std::strong_ordering::less;
+  else if (c == 0)
+    return std::strong_ordering::equal;
+  else
+    return std::strong_ordering::greater;
 }
 
 }  // namespace emil
