@@ -18,6 +18,10 @@ find_package(GMPXX REQUIRED)
 
 add_subdirectory("${PROJECT_SOURCE_DIR}/extern/utfcpp" "extern/utfcpp")
 
+add_library(bigint STATIC bigint.cc)
+add_emil_options(bigint)
+target_include_directories(bigint PUBLIC ../include)
+
 add_library(util STATIC strconvert.cc)
 add_emil_options(util)
 target_include_directories(util PUBLIC ../include)
