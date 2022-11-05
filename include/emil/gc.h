@@ -235,6 +235,9 @@ class PrivateBuffer {
   PrivateBuffer();
   ~PrivateBuffer();
 
+  PrivateBuffer(PrivateBuffer&& o) noexcept;
+  PrivateBuffer& operator=(PrivateBuffer&& o) noexcept;
+
   void* buf() const noexcept { return buf_; }
   std::size_t size() const noexcept { return size_; }
 
@@ -258,9 +261,6 @@ class PrivateBuffer {
 
   PrivateBuffer(const PrivateBuffer&) = delete;
   PrivateBuffer& operator=(const PrivateBuffer&) = delete;
-
-  PrivateBuffer(PrivateBuffer&& o) noexcept;
-  PrivateBuffer& operator=(PrivateBuffer&& o) noexcept;
 };
 
 struct MemoryManagerStats {
