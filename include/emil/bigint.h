@@ -73,6 +73,10 @@ class bigint : public Managed {
   friend managed_ptr<bigint> operator-(const bigint& l, std::int64_t r);
   friend managed_ptr<bigint> operator-(std::int64_t l, const bigint& r);
 
+  friend managed_ptr<bigint> operator*(const bigint& l, const bigint& r);
+  friend managed_ptr<bigint> operator*(const bigint& l, std::int64_t r);
+  friend managed_ptr<bigint> operator*(std::int64_t l, const bigint& r);
+
  private:
   friend class testing::BigintTestAccessor;
 

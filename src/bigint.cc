@@ -30,6 +30,15 @@
 
 namespace emil {
 
+namespace {
+
+constexpr const std::uint64_t BI_WORD_MAX =
+    std::numeric_limits<std::uint64_t>::max();
+constexpr const std::uint32_t BI_SIZE_MAX =
+    std::numeric_limits<std::int32_t>::max();
+
+}  // namespace
+
 bigint::bigint() noexcept : s_{.value = 0}, size_(0), capacity_(0) {}
 
 bigint::~bigint() { free_buffer(); }
@@ -132,9 +141,9 @@ std::string bigint::to_string() const {
   }
   auto len = uabs(size_);
   os << s_.data[len - 1];
-  os << std::setw(16) << std::setfill('0');
+  os << std::setfill('0');
   for (std::uint_fast32_t i = len - 1; i > 0; --i) {
-    os << s_.data[i - 1];
+    os << std::setw(16) << s_.data[i - 1];
   }
   return os.str();
 }
@@ -157,18 +166,23 @@ std::pair<PrivateBuffer, std::uint32_t> add_bufs(const std::uint64_t* l,
   const auto* lend = l + ln;
   const auto* rend = r + rn;
   std::size_t capacity;
+  // The only way l + r is larger than l or r is if (a) the sum of
+  // the highest words of l and r overflow a word or (b) they fill
+  // the highest word and there is a carry from the lower words.
+  // We're OK with an extra word of allocation in case (b)'s first
+  // condition is true but we don't end up with a carry.
   if (ln < rn) {
     capacity = rn;
-    if (r[rn - 1] == std::numeric_limits<std::uint64_t>::max()) [[unlikely]]
+    if (r[rn - 1] == BI_WORD_MAX) [[unlikely]]
       ++capacity;
   } else if (rn < ln) {
     capacity = ln;
-    if (l[ln - 1] == std::numeric_limits<std::uint64_t>::max()) [[unlikely]]
+    if (l[ln - 1] == BI_WORD_MAX) [[unlikely]]
       ++capacity;
   } else {
     capacity = ln;
     unsigned __int128 s = r[rn - 1] + l[ln - 1];
-    if (s >= std::numeric_limits<std::uint64_t>::max()) ++capacity;
+    if (s >= BI_WORD_MAX) ++capacity;
   }
   auto buf = ctx().mgr->allocate_private_buffer(capacity * 8);
   std::uint64_t* out = reinterpret_cast<std::uint64_t*>(buf.buf());
@@ -257,7 +271,7 @@ managed_ptr<bigint> bigint::add_magnitudes(const bigint& l, const bigint& r,
   if (l.capacity_ || r.capacity_) {
     auto hold = ctx().mgr->acquire_hold();
     auto result = add_bufs(l.ptr(), uabs(l.size_), r.ptr(), uabs(r.size_));
-    if (result.second > std::numeric_limits<std::int32_t>::max()) {
+    if (result.second > BI_SIZE_MAX) {
       throw std::overflow_error("Overflow when adding or subtracting bigints");
     }
     return make_managed<bigint>(token{}, std::move(result.first),
@@ -285,7 +299,7 @@ managed_ptr<bigint> bigint::subtract_magnitudes(const bigint& l,
   if (l.capacity_ || r.capacity_) {
     auto hold = ctx().mgr->acquire_hold();
     auto result = sub_bufs(l.ptr(), uabs(l.size_), r.ptr(), uabs(r.size_));
-    if (result.second > std::numeric_limits<std::int32_t>::max()) {
+    if (result.second > BI_SIZE_MAX) {
       throw std::overflow_error("Overflow when adding or subtracting bigints");
     }
     if (result.second == 1) {
@@ -344,6 +358,69 @@ managed_ptr<bigint> operator-(const bigint& l, std::int64_t r) {
 
 managed_ptr<bigint> operator-(std::int64_t l, const bigint& r) {
   return bigint(l) - r;
+}
+
+managed_ptr<bigint> operator*(const bigint& l, const bigint& r) {
+  const auto m = uabs(l.size_);
+  const auto n = uabs(r.size_);
+  const std::int32_t sign = (l.size_ >= 0) == (r.size_ >= 0) ? 1 : -1;
+  if (m == 0 || n == 0) return make_managed<bigint>();
+  if (m <= 1 && n <= 1) {
+    unsigned __int128 p = l.s_.value;
+    p *= r.s_.value;
+    if (p > BI_WORD_MAX) {
+      auto hold = ctx().mgr->acquire_hold();
+      auto pbuf = ctx().mgr->allocate_private_buffer(16);
+      auto* d = reinterpret_cast<std::uint64_t*>(pbuf.buf());
+      d[0] = p & BI_WORD_MAX;
+      d[1] = p >> 64;
+      return make_managed<bigint>(bigint::new_token(), std::move(pbuf),
+                                  sign * 2);
+    }
+    return make_managed<bigint>(static_cast<std::uint64_t>(p), sign > 0);
+  }
+  auto hold = ctx().mgr->acquire_hold();
+  const auto plen = m + n;
+  assert(plen > 2);
+  // the length may still be legal when plen == BI_SIZE_MAX since the
+  // top word may be zero, so we do the multiplication before
+  // reporting overflow.
+  if (plen > BI_SIZE_MAX + 1) {
+    throw std::overflow_error("Overflow when multiplying bigints");
+  }
+  auto pbuf = ctx().mgr->allocate_private_buffer(plen * 8);
+  auto* w = reinterpret_cast<std::uint64_t*>(pbuf.buf());
+  const std::uint64_t* const u = l.ptr();
+  const std::uint64_t* const v = r.ptr();
+  // This is based on Knuth's Algorithm M from section 4.3.1 of Volume
+  // 2 of the Art of Computer Programming.
+  std::memset(w, 0, m * 8);
+  for (std::uint_fast32_t j = 0; j < n; ++j) {
+    std::uint64_t carry = 0;
+    for (std::uint_fast32_t i = 0; i < m; ++i) {
+      unsigned __int128 t = u[i];
+      t *= v[j];
+      t += w[i + j];
+      t += carry;
+      w[i + j] = t & BI_WORD_MAX;
+      carry = t >> 64;
+    }
+    w[j + m] = carry;
+  }
+  const std::uint32_t len = w[plen - 1] ? plen : plen - 1;
+  if (len > BI_SIZE_MAX) {
+    throw std::overflow_error("Overflow when multiplying bigints");
+  }
+  return make_managed<bigint>(bigint::new_token(), std::move(pbuf),
+                              static_cast<std::int32_t>(len) * sign);
+}
+
+managed_ptr<bigint> operator*(const bigint& l, std::int64_t r) {
+  return l * bigint(r);
+}
+
+managed_ptr<bigint> operator*(std::int64_t l, const bigint& r) {
+  return r * bigint(l);
 }
 
 void bigint::free_buffer() {

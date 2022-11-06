@@ -736,4 +736,216 @@ TEST(BigintTest, Subtraction) {
   EXPECT_EQ(BigintTestAccessor::capacity(*sum), 2);
 }
 
+TEST(BigintTest, Multiplication) {
+  TestContext tc;
+  auto zero = tc.root.add_root(make_managed<bigint>());
+  auto smallpos = tc.root.add_root(make_managed<bigint>(1ull << 61, true));
+  auto smallneg = tc.root.add_root(make_managed<bigint>(1ull << 61, false));
+  auto bigpos = tc.root.add_root(*smallpos * 64);
+  auto bigneg = tc.root.add_root(*smallneg * 64);
+
+  EXPECT_EQ(zero->to_string(), "0");
+  EXPECT_EQ(smallpos->to_string(), "2000000000000000");
+  EXPECT_EQ(smallneg->to_string(), "-2000000000000000");
+  EXPECT_EQ(bigpos->to_string(), "80000000000000000");
+  EXPECT_EQ(bigneg->to_string(), "-80000000000000000");
+
+  // multiplying by zero
+  auto prod = tc.root.add_root(*zero + *zero);
+  EXPECT_EQ(*prod, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 0);
+
+  prod = tc.root.replace_root(prod, *zero * *smallpos);
+  EXPECT_EQ(*prod, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 0);
+
+  prod = tc.root.replace_root(prod, *smallpos * *zero);
+  EXPECT_EQ(*prod, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 0);
+
+  prod = tc.root.replace_root(prod, *zero * *smallneg);
+  EXPECT_EQ(*prod, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 0);
+
+  prod = tc.root.replace_root(prod, *smallneg * *zero);
+  EXPECT_EQ(*prod, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 0);
+
+  prod = tc.root.replace_root(prod, *zero * *bigpos);
+  EXPECT_EQ(*prod, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 0);
+
+  prod = tc.root.replace_root(prod, *bigpos * *zero);
+  EXPECT_EQ(*prod, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 0);
+
+  prod = tc.root.replace_root(prod, *zero * *bigneg);
+  EXPECT_EQ(*prod, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 0);
+
+  prod = tc.root.replace_root(prod, *bigneg * *zero);
+  EXPECT_EQ(*prod, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 0);
+
+  // multiplying by a small positive number
+  prod = tc.root.replace_root(prod, *smallpos * *smallpos);
+  EXPECT_EQ(prod->to_string(), "4000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 2);
+
+  prod = tc.root.replace_root(prod, 4 * *smallpos);
+  EXPECT_EQ(prod->to_string(), "8000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 0);
+
+  prod = tc.root.replace_root(prod, *smallpos * 4);
+  EXPECT_EQ(prod->to_string(), "8000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 0);
+
+  prod = tc.root.replace_root(prod, *smallpos * *smallneg);
+  EXPECT_EQ(prod->to_string(), "-4000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), -2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 2);
+
+  prod = tc.root.replace_root(prod, *smallneg * *smallpos);
+  EXPECT_EQ(prod->to_string(), "-4000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), -2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 2);
+
+  prod = tc.root.replace_root(prod, 4 * *smallneg);
+  EXPECT_EQ(prod->to_string(), "-8000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 0);
+
+  prod = tc.root.replace_root(prod, *smallneg * 4);
+  EXPECT_EQ(prod->to_string(), "-8000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 0);
+
+  prod = tc.root.replace_root(prod, *smallpos * *bigpos);
+  EXPECT_EQ(prod->to_string(), "100000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 3);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 3);
+
+  prod = tc.root.replace_root(prod, *bigpos * *smallpos);
+  EXPECT_EQ(prod->to_string(), "100000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 3);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 3);
+
+  prod = tc.root.replace_root(prod, 4 * *bigpos);
+  EXPECT_EQ(prod->to_string(), "200000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 2);
+
+  prod = tc.root.replace_root(prod, *bigpos * 4);
+  EXPECT_EQ(prod->to_string(), "200000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 2);
+
+  prod = tc.root.replace_root(prod, *smallpos * *bigneg);
+  EXPECT_EQ(prod->to_string(), "-100000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), -3);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 3);
+
+  prod = tc.root.replace_root(prod, *bigneg * *smallpos);
+  EXPECT_EQ(prod->to_string(), "-100000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), -3);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 3);
+
+  prod = tc.root.replace_root(prod, 4 * *bigneg);
+  EXPECT_EQ(prod->to_string(), "-200000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), -2);
+
+  prod = tc.root.replace_root(prod, *bigneg * 4);
+  EXPECT_EQ(prod->to_string(), "-200000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), -2);
+
+  // multiplying by a small negative number
+  prod = tc.root.replace_root(prod, *smallneg * *smallneg);
+  EXPECT_EQ(prod->to_string(), "4000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 2);
+
+  prod = tc.root.replace_root(prod, *smallneg * -4);
+  EXPECT_EQ(prod->to_string(), "8000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 0);
+
+  prod = tc.root.replace_root(prod, -4 * *smallneg);
+  EXPECT_EQ(prod->to_string(), "8000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 0);
+
+  prod = tc.root.replace_root(prod, -4 * *smallpos);
+  EXPECT_EQ(prod->to_string(), "-8000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 0);
+
+  prod = tc.root.replace_root(prod, *smallpos * -4);
+  EXPECT_EQ(prod->to_string(), "-8000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 0);
+
+  prod = tc.root.replace_root(prod, *smallneg * *bigpos);
+  EXPECT_EQ(prod->to_string(), "-100000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), -3);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 3);
+
+  prod = tc.root.replace_root(prod, *bigpos * *smallneg);
+  EXPECT_EQ(prod->to_string(), "-100000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), -3);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 3);
+
+  prod = tc.root.replace_root(prod, -4 * *bigpos);
+  EXPECT_EQ(prod->to_string(), "-200000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), -2);
+
+  prod = tc.root.replace_root(prod, *bigpos * -4);
+  EXPECT_EQ(prod->to_string(), "-200000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), -2);
+
+  prod = tc.root.replace_root(prod, *smallneg * *bigneg);
+  EXPECT_EQ(prod->to_string(), "100000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 3);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 3);
+
+  prod = tc.root.replace_root(prod, *bigneg * *smallneg);
+  EXPECT_EQ(prod->to_string(), "100000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 3);
+  EXPECT_EQ(BigintTestAccessor::capacity(*prod), 3);
+
+  prod = tc.root.replace_root(prod, -4 * *bigneg);
+  EXPECT_EQ(prod->to_string(), "200000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 2);
+
+  prod = tc.root.replace_root(prod, *bigneg * -4);
+  EXPECT_EQ(prod->to_string(), "200000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 2);
+
+  // multiplying by a large number
+  prod = tc.root.replace_root(prod, *bigpos * *bigpos);
+  EXPECT_EQ(prod->to_string(), "4000000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 3);
+
+  prod = tc.root.replace_root(prod, *bigpos * *bigneg);
+  EXPECT_EQ(prod->to_string(), "-4000000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), -3);
+
+  prod = tc.root.replace_root(prod, *bigneg * *bigpos);
+  EXPECT_EQ(prod->to_string(), "-4000000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), -3);
+
+  prod = tc.root.replace_root(prod, *bigneg * *bigneg);
+  EXPECT_EQ(prod->to_string(), "4000000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*prod), 3);
+}
+
 }  // namespace emil::testing
