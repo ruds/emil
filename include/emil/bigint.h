@@ -48,7 +48,11 @@ class bigint : public Managed {
   ~bigint();
   // Never allocates; safe to use in a non-managed context.
   explicit bigint(std::int64_t value) noexcept;
+  // Never allocates; safe to use in a non-managed context.
   bigint(std::uint64_t value, bool is_positive) noexcept;
+
+  bigint(std::uint64_t hi, std::uint64_t lo, bool is_positive);
+  bigint(const bigint& o);
   /** Intended for private access only, but MemoryManager::create requires
    * access. Thus we pass a `token`. See https://abseil.io/tips/134. */
   bigint(token, PrivateBuffer buf, std::int32_t size) noexcept;
@@ -73,9 +77,14 @@ class bigint : public Managed {
   friend managed_ptr<bigint> operator-(const bigint& l, std::int64_t r);
   friend managed_ptr<bigint> operator-(std::int64_t l, const bigint& r);
 
+  friend managed_ptr<bigint> operator-(const bigint& b);
+
   friend managed_ptr<bigint> operator*(const bigint& l, const bigint& r);
   friend managed_ptr<bigint> operator*(const bigint& l, std::int64_t r);
   friend managed_ptr<bigint> operator*(std::int64_t l, const bigint& r);
+
+  friend managed_ptr<bigint> operator<<(const bigint& l, std::uint64_t r);
+  friend managed_ptr<bigint> operator>>(const bigint& l, std::uint64_t r);
 
  private:
   friend class testing::BigintTestAccessor;
@@ -87,7 +96,6 @@ class bigint : public Managed {
   std::int32_t size_;
   std::uint32_t capacity_;
 
-  bigint(const bigint& o) = delete;
   bigint& operator=(const bigint& o) = delete;
 
   bigint(bigint&& o) = delete;
@@ -129,7 +137,7 @@ void add_with_carry(std::uint64_t l, std::uint64_t r, std::uint64_t& carry,
  * `borrow` is set to one. Otherwise, `l - r` is stored in `result`
  * and `borrow` is set to zero.
  */
-void sub_with_borrow(std::uint64_t, std::uint64_t r, std::uint64_t& borrow,
+void sub_with_borrow(std::uint64_t l, std::uint64_t r, std::uint64_t& borrow,
                      std::uint64_t& result);
 
 }  // namespace emil

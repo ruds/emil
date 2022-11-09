@@ -22,6 +22,7 @@
 #include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -36,14 +37,6 @@ constexpr const std::uint64_t BI_WORD_MAX =
     std::numeric_limits<std::uint64_t>::max();
 constexpr const std::uint32_t BI_SIZE_MAX =
     std::numeric_limits<std::int32_t>::max();
-
-}  // namespace
-
-bigint::bigint() noexcept : s_{.value = 0}, size_(0), capacity_(0) {}
-
-bigint::~bigint() { free_buffer(); }
-
-namespace {
 
 std::uint64_t uabs(std::int64_t v) {
   return v < 0 ? -static_cast<std::uint64_t>(v) : v;
@@ -60,6 +53,21 @@ std::int32_t bigint_size(std::int64_t v) {
 
 }  // namespace
 
+bigint::bigint() noexcept : s_{.value = 0}, size_(0), capacity_(0) {}
+
+bigint::~bigint() { free_buffer(); }
+
+bigint::bigint(const bigint& o)
+    : size_(o.size_), capacity_(o.capacity_ ? uabs(o.size_) : 0) {
+  if (capacity_) {
+    auto pbuf = ctx().mgr->allocate_private_buffer(capacity_ * 8);
+    std::memcpy(pbuf.buf(), o.s_.data, capacity_ * 8);
+    s_.data = reinterpret_cast<std::uint64_t*>(pbuf.release());
+  } else {
+    s_.value = o.s_.value;
+  }
+}
+
 bigint::bigint(std::int64_t value) noexcept
     : s_{.value = uabs(value)}, size_(bigint_size(value)), capacity_(0) {}
 
@@ -67,6 +75,13 @@ bigint::bigint(std::uint64_t value, bool is_positive) noexcept
     : s_{.value = value},
       size_(value ? is_positive ? 1 : -1 : 0),
       capacity_(0) {}
+
+bigint::bigint(std::uint64_t hi, std::uint64_t lo, bool is_positive)
+    : bigint(token(), ctx().mgr->allocate_private_buffer(16),
+             is_positive ? 2 : -2) {
+  s_.data[0] = lo;
+  s_.data[1] = hi;
+}
 
 bigint::bigint(token, PrivateBuffer buf, std::int32_t size) noexcept
     : size_(size), capacity_(buf.size() / 8) {
@@ -281,13 +296,7 @@ managed_ptr<bigint> bigint::add_magnitudes(const bigint& l, const bigint& r,
   std::uint64_t carry = 0;
   add_with_carry(l.s_.value, r.s_.value, carry, sum);
   if (carry) {
-    auto hold = ctx().mgr->acquire_hold();
-    auto buf = ctx().mgr->allocate_private_buffer(16);
-    auto* data = reinterpret_cast<std::uint64_t*>(buf.buf());
-    data[0] = sum;
-    data[1] = 1;
-    return make_managed<bigint>(bigint::new_token(), std::move(buf),
-                                is_positive ? 2 : -2);
+    return make_managed<bigint>(1, sum, is_positive);
   } else {
     return make_managed<bigint>(sum, is_positive);
   }
@@ -360,6 +369,12 @@ managed_ptr<bigint> operator-(std::int64_t l, const bigint& r) {
   return bigint(l) - r;
 }
 
+managed_ptr<bigint> operator-(const bigint& b) {
+  auto neg = make_managed<bigint>(b);
+  neg->size_ = -neg->size_;
+  return neg;
+}
+
 managed_ptr<bigint> operator*(const bigint& l, const bigint& r) {
   const auto m = uabs(l.size_);
   const auto n = uabs(r.size_);
@@ -369,13 +384,7 @@ managed_ptr<bigint> operator*(const bigint& l, const bigint& r) {
     unsigned __int128 p = l.s_.value;
     p *= r.s_.value;
     if (p > BI_WORD_MAX) {
-      auto hold = ctx().mgr->acquire_hold();
-      auto pbuf = ctx().mgr->allocate_private_buffer(16);
-      auto* d = reinterpret_cast<std::uint64_t*>(pbuf.buf());
-      d[0] = p & BI_WORD_MAX;
-      d[1] = p >> 64;
-      return make_managed<bigint>(bigint::new_token(), std::move(pbuf),
-                                  sign * 2);
+      return make_managed<bigint>(p >> 64, p & BI_WORD_MAX, sign > 0);
     }
     return make_managed<bigint>(static_cast<std::uint64_t>(p), sign > 0);
   }
@@ -421,6 +430,74 @@ managed_ptr<bigint> operator*(const bigint& l, std::int64_t r) {
 
 managed_ptr<bigint> operator*(std::int64_t l, const bigint& r) {
   return r * bigint(l);
+}
+
+managed_ptr<bigint> operator<<(const bigint& l, std::uint64_t r) {
+  if (!l.size_) return make_managed<bigint>();
+  const std::uint64_t word_shift = r / 64;
+  const std::uint64_t lbit_shift = r % 64;
+  const std::uint64_t rbit_shift = 64 - r;
+  const auto lsize = uabs(l.size_);
+  const std::uint64_t topword =
+      lbit_shift ? (l.ptr()[lsize - 1] >> rbit_shift) : 0ull;
+  const std::uint64_t size = word_shift + lsize + (topword != 0);
+  if (size > BI_SIZE_MAX) {
+    throw std::overflow_error("Overflow when left-shifting bigint.");
+  }
+  if (size == 1) {
+    return make_managed<bigint>(l.s_.value << lbit_shift, l.size_ > 0);
+  }
+  auto hold = ctx().mgr->acquire_hold();
+  auto pbuf = ctx().mgr->allocate_private_buffer(size * 8);
+  auto* out = reinterpret_cast<std::uint64_t*>(pbuf.buf());
+  std::memset(out, 0, word_shift * 8);
+  if (lbit_shift) {
+    out[word_shift] = l.ptr()[0] << lbit_shift;
+    for (std::uint_fast32_t i = 1; i < lsize; ++i) {
+      out[word_shift + i] =
+          (l.ptr()[i - 1] >> rbit_shift) + (l.ptr()[i] << lbit_shift);
+    }
+    if (topword) out[size - 1] = topword;
+  } else {
+    std::memcpy(out + word_shift, l.ptr(), lsize * 8);
+  }
+  return make_managed<bigint>(bigint::new_token(), std::move(pbuf),
+                              l.size_ > 0 ? size : -size);
+}
+
+managed_ptr<bigint> operator>>(const bigint& l, std::uint64_t r) {
+  if (!l.size_) return make_managed<bigint>();
+  const std::uint64_t word_shift = r / 64;
+  const auto lsize = uabs(l.size_);
+  if (word_shift >= lsize) return make_managed<bigint>();
+
+  const std::uint64_t rbit_shift = r % 64;
+  const std::uint64_t lbit_shift = 64 - r;
+  const std::uint64_t topword = l.ptr()[lsize - 1] >> rbit_shift;
+
+  const std::uint64_t size = lsize - word_shift - (topword == 0);
+  if (size == 0) return make_managed<bigint>();
+  if (size == 1)
+    return topword
+               ? make_managed<bigint>(topword, l.size_ > 0)
+               : make_managed<bigint>((l.ptr()[lsize - 1] << lbit_shift) +
+                                          (l.ptr()[lsize - 2] >> rbit_shift),
+                                      l.size_ > 0);
+
+  auto hold = ctx().mgr->acquire_hold();
+  auto pbuf = ctx().mgr->allocate_private_buffer(size * 8);
+  auto* out = reinterpret_cast<std::uint64_t*>(pbuf.buf());
+  if (rbit_shift) {
+    for (std::uint_fast32_t i = 0; word_shift + i + 1 < lsize; ++i) {
+      out[i] = (l.ptr()[word_shift + i] >> rbit_shift) +
+               (l.ptr()[word_shift + i + 1] << lbit_shift);
+    }
+    if (topword) out[size - 1] = topword;
+  } else {
+    std::memcpy(out, l.ptr() + word_shift, size * 8);
+  }
+  return make_managed<bigint>(bigint::new_token(), std::move(pbuf),
+                              l.size_ > 0 ? size : -size);
 }
 
 void bigint::free_buffer() {

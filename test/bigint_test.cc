@@ -948,4 +948,353 @@ TEST(BigintTest, Multiplication) {
   EXPECT_EQ(BigintTestAccessor::size(*prod), 3);
 }
 
+TEST(BigintTest, LeftShift) {
+  TestContext tc;
+  const auto zero = tc.root.add_root(make_managed<bigint>());
+  const auto tinypos = tc.root.add_root(make_managed<bigint>(105));
+  const auto tinyneg = tc.root.add_root(make_managed<bigint>(-105));
+  const auto b = tc.root.add_root(make_managed<bigint>(1, 0, true));
+  const auto bneg = tc.root.add_root(-*b);
+  const auto a5 = tc.root.add_root(
+      make_managed<bigint>(0xa5a5a5a5a5a5a5a5ull, 0x5a5a5a5a5a5a5a5aull, true));
+
+  auto r = tc.root.add_root(*zero << 0);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *zero << 20);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *zero << (1u << 28));
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *b << 0);
+  EXPECT_EQ(*r, *b);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 2);
+
+  r = tc.root.replace_root(r, *tinypos << 12);
+  EXPECT_EQ(*r, 430080);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *tinypos << 57);
+  EXPECT_EQ(*r, bigint(15132094747964866560ull, true));
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *tinypos << 58);
+  EXPECT_EQ(r->to_string(), "1a400000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 2);
+
+  r = tc.root.replace_root(r, *tinyneg << 12);
+  EXPECT_EQ(*r, -430080);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *tinyneg << 57);
+  EXPECT_EQ(*r, bigint(15132094747964866560ull, false));
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *tinyneg << 58);
+  EXPECT_EQ(r->to_string(), "-1a400000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*r), -2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 2);
+
+  r = tc.root.replace_root(r, *b << 63);
+  EXPECT_EQ(r->to_string(), "80000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 2);
+
+  r = tc.root.replace_root(r, *b << 64);
+  EXPECT_EQ(r->to_string(), "100000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 3);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 3);
+
+  r = tc.root.replace_root(r, *b << 65);
+  EXPECT_EQ(r->to_string(), "200000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 3);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 3);
+
+  r = tc.root.replace_root(r, *bneg << 0);
+  EXPECT_EQ(*r, *bneg);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 2);
+
+  r = tc.root.replace_root(r, *bneg << 63);
+  EXPECT_EQ(r->to_string(), "-80000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*r), -2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 2);
+
+  r = tc.root.replace_root(r, *bneg << 64);
+  EXPECT_EQ(r->to_string(), "-100000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*r), -3);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 3);
+
+  r = tc.root.replace_root(r, *bneg << 65);
+  EXPECT_EQ(r->to_string(), "-200000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*r), -3);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 3);
+
+  r = tc.root.replace_root(r, *a5 << 0);
+  EXPECT_EQ(r->to_string(), "a5a5a5a5a5a5a5a55a5a5a5a5a5a5a5a");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 2);
+
+  r = tc.root.replace_root(r, *a5 << 1);
+  EXPECT_EQ(r->to_string(), "14b4b4b4b4b4b4b4ab4b4b4b4b4b4b4b4");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 3);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 3);
+
+  r = tc.root.replace_root(r, *a5 << 2);
+  EXPECT_EQ(r->to_string(), "296969696969696956969696969696968");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 3);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 3);
+
+  r = tc.root.replace_root(r, *a5 << 3);
+  EXPECT_EQ(r->to_string(), "52d2d2d2d2d2d2d2ad2d2d2d2d2d2d2d0");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 3);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 3);
+
+  r = tc.root.replace_root(r, *a5 << 60);
+  EXPECT_EQ(r->to_string(), "a5a5a5a5a5a5a5a55a5a5a5a5a5a5a5a000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 3);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 3);
+
+  r = tc.root.replace_root(r, *a5 << 61);
+  EXPECT_EQ(r->to_string(), "14b4b4b4b4b4b4b4ab4b4b4b4b4b4b4b4000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 3);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 3);
+
+  r = tc.root.replace_root(r, *a5 << 62);
+  EXPECT_EQ(r->to_string(), "296969696969696956969696969696968000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 3);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 3);
+
+  r = tc.root.replace_root(r, *a5 << 63);
+  EXPECT_EQ(r->to_string(), "52d2d2d2d2d2d2d2ad2d2d2d2d2d2d2d0000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 3);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 3);
+
+  r = tc.root.replace_root(r, *a5 << 64);
+  EXPECT_EQ(r->to_string(), "a5a5a5a5a5a5a5a55a5a5a5a5a5a5a5a0000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 3);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 3);
+
+  r = tc.root.replace_root(r, *a5 << 65);
+  EXPECT_EQ(r->to_string(),
+            "14b4b4b4b4b4b4b4ab4b4b4b4b4b4b4b40000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 4);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 4);
+
+  r = tc.root.replace_root(r, *a5 << 66);
+  EXPECT_EQ(r->to_string(),
+            "2969696969696969569696969696969680000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 4);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 4);
+
+  r = tc.root.replace_root(r, *a5 << 67);
+  EXPECT_EQ(r->to_string(),
+            "52d2d2d2d2d2d2d2ad2d2d2d2d2d2d2d00000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 4);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 4);
+}
+
+TEST(BigintTest, RightShift) {
+  TestContext tc;
+  const auto zero = tc.root.add_root(make_managed<bigint>());
+  const auto tinypos = tc.root.add_root(make_managed<bigint>(105));
+  const auto tinyneg = tc.root.add_root(make_managed<bigint>(-105));
+  const auto b = tc.root.add_root(make_managed<bigint>(1, 0, true));
+  const auto bneg = tc.root.add_root(-*b);
+  const auto a5 = tc.root.add_root(
+      make_managed<bigint>(0xa5a5a5a5a5a5a5a5ull, 0x5a5a5a5a5a5a5a5aull, true));
+  const auto a5_258 = tc.root.add_root(*a5 << 258);
+
+  auto r = tc.root.add_root(*zero >> 0);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *zero >> 20);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *zero >> (1u << 28));
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *b >> 0);
+  EXPECT_EQ(*r, *b);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 2);
+
+  r = tc.root.replace_root(r, *b >> 1);
+  EXPECT_EQ(r->to_string(), "8000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *b >> 60);
+  EXPECT_EQ(*r, 16);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *b >> 64);
+  EXPECT_EQ(*r, 1);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *b >> 65);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *bneg >> 0);
+  EXPECT_EQ(*r, *bneg);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 2);
+
+  r = tc.root.replace_root(r, *bneg >> 1);
+  EXPECT_EQ(r->to_string(), "-8000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *bneg >> 60);
+  EXPECT_EQ(*r, -16);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *bneg >> 64);
+  EXPECT_EQ(*r, -1);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *bneg >> 65);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *tinypos >> 5);
+  EXPECT_EQ(*r, 3);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *tinypos >> 6);
+  EXPECT_EQ(*r, 1);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *tinypos >> 7);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *tinyneg >> 5);
+  EXPECT_EQ(*r, -3);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *tinyneg >> 6);
+  EXPECT_EQ(*r, -1);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *tinyneg >> 7);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *a5 >> 0);
+  EXPECT_EQ(r->to_string(), "a5a5a5a5a5a5a5a55a5a5a5a5a5a5a5a");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 2);
+
+  r = tc.root.replace_root(r, *a5 >> 1);
+  EXPECT_EQ(r->to_string(), "52d2d2d2d2d2d2d2ad2d2d2d2d2d2d2d");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 2);
+
+  r = tc.root.replace_root(r, *a5 >> 2);
+  EXPECT_EQ(r->to_string(), "29696969696969695696969696969696");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 2);
+
+  r = tc.root.replace_root(r, *a5 >> 3);
+  EXPECT_EQ(r->to_string(), "14b4b4b4b4b4b4b4ab4b4b4b4b4b4b4b");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 2);
+
+  r = tc.root.replace_root(r, *a5 >> 60);
+  EXPECT_EQ(r->to_string(), "a5a5a5a5a5a5a5a55");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 2);
+
+  r = tc.root.replace_root(r, *a5 >> 61);
+  EXPECT_EQ(r->to_string(), "52d2d2d2d2d2d2d2a");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 2);
+
+  r = tc.root.replace_root(r, *a5 >> 62);
+  EXPECT_EQ(r->to_string(), "29696969696969695");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 2);
+
+  r = tc.root.replace_root(r, *a5 >> 63);
+  EXPECT_EQ(r->to_string(), "14b4b4b4b4b4b4b4a");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 2);
+
+  r = tc.root.replace_root(r, *a5 >> 64);
+  EXPECT_EQ(r->to_string(), "a5a5a5a5a5a5a5a5");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *a5 >> 124);
+  EXPECT_EQ(r->to_string(), "a");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *a5 >> 125);
+  EXPECT_EQ(r->to_string(), "5");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *a5 >> 126);
+  EXPECT_EQ(r->to_string(), "2");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *a5 >> 127);
+  EXPECT_EQ(r->to_string(), "1");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *a5 >> 128);
+  EXPECT_EQ(r->to_string(), "0");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  r = tc.root.replace_root(r, *a5_258 >> 128);
+  EXPECT_EQ(
+      r->to_string(),
+      "29696969696969695696969696969696800000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 5);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 5);
+
+  r = tc.root.replace_root(r, *a5_258 >> 130);
+  EXPECT_EQ(r->to_string(),
+            "a5a5a5a5a5a5a5a55a5a5a5a5a5a5a5a00000000000000000000000000000000");
+  EXPECT_EQ(BigintTestAccessor::size(*r), 4);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 4);
+}
+
 }  // namespace emil::testing
