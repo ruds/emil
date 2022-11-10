@@ -55,8 +55,6 @@ std::int32_t bigint_size(std::int64_t v) {
 
 bigint::bigint() noexcept : s_{.value = 0}, size_(0), capacity_(0) {}
 
-bigint::~bigint() { free_buffer(); }
-
 bigint::bigint(const bigint& o)
     : size_(o.size_), capacity_(o.capacity_ ? uabs(o.size_) : 0) {
   if (capacity_) {
@@ -87,6 +85,26 @@ bigint::bigint(token, PrivateBuffer buf, std::int32_t size) noexcept
     : size_(size), capacity_(buf.size() / 8) {
   assert(buf.size() % 8 == 0);
   s_.data = reinterpret_cast<std::uint64_t*>(buf.release());
+}
+
+bigint::~bigint() { free_buffer(); }
+
+std::string bigint::to_string() const {
+  if (!size_) return "0";
+  std::ostringstream os;
+  if (size_ < 0) os << "-";
+  os << std::hex << std::uppercase;
+  if (!capacity_) {
+    os << s_.value;
+    return os.str();
+  }
+  auto len = uabs(size_);
+  os << s_.data[len - 1];
+  os << std::setfill('0');
+  for (std::uint_fast32_t i = len - 1; i > 0; --i) {
+    os << std::setw(16) << s_.data[i - 1];
+  }
+  return os.str();
 }
 
 bool operator==(const bigint& l, const bigint& r) noexcept {
@@ -143,24 +161,6 @@ std::strong_ordering operator<=>(std::int64_t l, const bigint& r) noexcept {
 
 std::strong_ordering operator<=>(const bigint& l, std::int64_t r) noexcept {
   return l <=> bigint(r);
-}
-
-std::string bigint::to_string() const {
-  if (!size_) return "0";
-  std::ostringstream os;
-  if (size_ < 0) os << "-";
-  os << std::hex;
-  if (!capacity_) {
-    os << s_.value;
-    return os.str();
-  }
-  auto len = uabs(size_);
-  os << s_.data[len - 1];
-  os << std::setfill('0');
-  for (std::uint_fast32_t i = len - 1; i > 0; --i) {
-    os << std::setw(16) << s_.data[i - 1];
-  }
-  return os.str();
 }
 
 std::ostream& operator<<(std::ostream& os, const bigint& b) {
