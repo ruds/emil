@@ -16,6 +16,8 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 #include "testing/test_util.h"
 
 namespace emil::testing {
@@ -1295,6 +1297,27 @@ TEST(BigintTest, RightShift) {
             "A5A5A5A5A5A5A5A55A5A5A5A5A5A5A5A00000000000000000000000000000000");
   EXPECT_EQ(BigintTestAccessor::size(*r), 4);
   EXPECT_EQ(BigintTestAccessor::capacity(*r), 4);
+}
+
+// This test takes a long time to run.
+TEST(BigintTest, DISABLED_Overflow) {
+  TestContext tc;
+  const auto max_bit = tc.root.add_root(bigint(1) << 0x1FFFFFFFBFull);
+  const auto rest = tc.root.add_root(*max_bit - 1);
+  const auto max_bigint = tc.root.add_root(*max_bit + *rest);
+
+  auto sum = tc.root.add_root(*max_bigint - *max_bigint);
+  EXPECT_EQ(*sum, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*sum), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*sum), 0);
+
+  sum = tc.root.replace_root(sum, *max_bigint - 1);
+  EXPECT_EQ(BigintTestAccessor::size(*sum),
+            std::numeric_limits<std::int32_t>::max());
+
+  EXPECT_THROW(auto t = *max_bigint + 1, std::overflow_error);
+  EXPECT_THROW(auto t = *max_bit << 1, std::overflow_error);
+  EXPECT_THROW(auto t = *max_bit * 2, std::overflow_error);
 }
 
 }  // namespace emil::testing
