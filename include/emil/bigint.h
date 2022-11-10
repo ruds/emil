@@ -33,7 +33,9 @@ class BigintTestAccessor;
  *
  * The size is limited to (2^31-1) 64-bit words. Numbers greater than
  * -2^64 and less than 2^64 are always stored without further
- * allocation.
+ * allocation (this is similar to the small string optimization).
+ *
+ * All operations on this class are non-modifying.
  */
 class bigint : public Managed {
   struct token {
@@ -43,20 +45,38 @@ class bigint : public Managed {
   };
 
  public:
-  // Never allocates; safe to use in a non-managed context.
+  /** Never allocates; safe to use in a non-managed context. */
   bigint() noexcept;
-  ~bigint();
-  // Never allocates; safe to use in a non-managed context.
+  /** Never allocates; safe to use in a non-managed context. */
   explicit bigint(std::int64_t value) noexcept;
-  // Never allocates; safe to use in a non-managed context.
+  /** Never allocates; safe to use in a non-managed context. */
   bigint(std::uint64_t value, bool is_positive) noexcept;
 
+  /**
+   * @brief Produces a bigint with absolute value (hi << 64) + lo.
+   *
+   * Always allocates; not safe to use in a non-managed context.
+   */
   bigint(std::uint64_t hi, std::uint64_t lo, bool is_positive);
+  /**
+   * @brief Produces a bigint with the same value as o.
+   *
+   * Allocates whenever abs(o) >= 2^64; not safe to use in a
+   * non-managed context. Generally you should prefer to copy the
+   * managed_ptr to o instead.
+   */
   bigint(const bigint& o);
-  /** Intended for private access only, but MemoryManager::create requires
-   * access. Thus we pass a `token`. See https://abseil.io/tips/134. */
+  /**
+   * @brief Takes ownership of buf.
+   *
+   * Intended for private access only, but MemoryManager::create requires
+   * access. Thus we pass a `token`. See https://abseil.io/tips/134.
+   */
   bigint(token, PrivateBuffer buf, std::int32_t size) noexcept;
 
+  ~bigint();
+
+  /** Produces the value of this bigint in hex. */
   std::string to_string() const;
 
   friend bool operator==(const bigint& l, const bigint& r) noexcept;
@@ -69,55 +89,95 @@ class bigint : public Managed {
   friend std::strong_ordering operator<=>(const bigint& l,
                                           std::int64_t r) noexcept;
 
+  /** May throw std::overflow_error. */
   friend managed_ptr<bigint> operator+(const bigint& l, const bigint& r);
+  /** @overload */
   friend managed_ptr<bigint> operator+(const bigint& l, std::int64_t r);
+  /** @overload */
   friend managed_ptr<bigint> operator+(std::int64_t l, const bigint& r);
 
+  /** May throw std::overflow_error. */
   friend managed_ptr<bigint> operator-(const bigint& l, const bigint& r);
+  /** @overload */
   friend managed_ptr<bigint> operator-(const bigint& l, std::int64_t r);
+  /** @overload */
   friend managed_ptr<bigint> operator-(std::int64_t l, const bigint& r);
 
   friend managed_ptr<bigint> operator-(const bigint& b);
 
+  /** May throw std::overflow_error. */
   friend managed_ptr<bigint> operator*(const bigint& l, const bigint& r);
+  /** @overload */
   friend managed_ptr<bigint> operator*(const bigint& l, std::int64_t r);
+  /** @overload */
   friend managed_ptr<bigint> operator*(std::int64_t l, const bigint& r);
 
+  /** May throw std::overflow_error. */
   friend managed_ptr<bigint> operator<<(const bigint& l, std::uint64_t r);
   friend managed_ptr<bigint> operator>>(const bigint& l, std::uint64_t r);
 
  private:
   friend class testing::BigintTestAccessor;
 
+  // If capacity is 0, we use value; otherwise we use data. In either
+  // case, we store the absolute value of the number we represent.
+  //
+  // data[0] is the least significant word of the value;
+  // data[abs(size) - 1] is the most significant word.
   union {
     std::uint64_t value;
     std::uint64_t* data;
   } s_;
+  // The absolute value of size_ is the number of words in the value.
+  // The sign of size_ is the sign of the value.
   std::int32_t size_;
+  // The number of words allocated in the data buffer. This is never 1
+  // (1-word numbers are guaranteed to be stored in s_.value, not a
+  // separate buffer).
   std::uint32_t capacity_;
 
+  // yagni
   bigint& operator=(const bigint& o) = delete;
 
   bigint(bigint&& o) = delete;
   bigint& operator=(bigint&& o) = delete;
 
+  // Used by friend functions to access the "private" constructor.
   static token new_token() { return token{}; }
+
+  /** Compares the absolute value of l to r. */
   static std::strong_ordering compare_magnitudes(const bigint& l,
                                                  const bigint& r) noexcept;
+  /**
+   * Adds the absolute values of l and r, and applies the sign indicated.
+   */
   static managed_ptr<bigint> add_magnitudes(const bigint& l, const bigint& r,
                                             bool is_positive);
+  /**
+   * @brief Subtracts abs(r) from abs(l), applying the sign indicated.
+   *
+   * Requires abs(l) >= abs(r).
+   */
   static managed_ptr<bigint> subtract_magnitudes(const bigint& l,
                                                  const bigint& r,
                                                  bool is_positive);
 
+  /**
+   * @brief A pointer to the least significant word of the value.
+   *
+   * Valid even if capacity_ == 0.
+   */
   const std::uint64_t* ptr() const;
+  /** Frees s_.data, if it is an allocation. */
   void free_buffer();
 
   void visit_subobjects(const ManagedVisitor&) override {}
   std::size_t managed_size() const noexcept override { return sizeof(bigint); }
 };
 
+/** Writes b as a hex value. */
 std::ostream& operator<<(std::ostream& os, const bigint& b);
+/** Writes *b as a hex value. */
 std::ostream& operator<<(std::ostream& os, const managed_ptr<bigint>& b);
 
 /**

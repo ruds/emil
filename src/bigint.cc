@@ -38,6 +38,7 @@ constexpr const std::uint64_t BI_WORD_MAX =
 constexpr const std::uint32_t BI_SIZE_MAX =
     std::numeric_limits<std::int32_t>::max();
 
+/** Takes the absolute value of v. Safe to use on LONG_MIN. */
 std::uint64_t uabs(std::int64_t v) {
   return v < 0 ? -static_cast<std::uint64_t>(v) : v;
 }
@@ -173,11 +174,18 @@ std::ostream& operator<<(std::ostream& os, const managed_ptr<bigint>& b) {
 
 namespace {
 
-// Add two bigints together
+/**
+ * @brief Add the absolute values of two bigints.
+ *
+ * Requires that ln or rn is greater than 1 to prevent allocation in
+ * case the size of the sum fits in one word. Aways allocates, so
+ * requires a hold on the memory manager.
+ */
 std::pair<PrivateBuffer, std::uint32_t> add_bufs(const std::uint64_t* l,
                                                  std::uint32_t ln,
                                                  const std::uint64_t* r,
                                                  std::uint32_t rn) {
+  assert(ln > 1 || rn > 1);
   const auto* lend = l + ln;
   const auto* rend = r + rn;
   std::size_t capacity;
@@ -204,6 +212,12 @@ std::pair<PrivateBuffer, std::uint32_t> add_bufs(const std::uint64_t* l,
   std::uint64_t* out = reinterpret_cast<std::uint64_t*>(buf.buf());
   std::uint64_t carry = 0;
   std::uint32_t len = 0;
+  // The basic idea: while there's words left in both addends, add a
+  // word from the left to a word from the right with carry, starting
+  // at the least significant word. When one runs out and there's
+  // still carry, add words from the longer one with a carry. Once
+  // there's no more carry, we can just copy the words from the longer
+  // addend to the sum.
   while (l < lend && r < rend) {
     add_with_carry(*l, *r, carry, *out);
     ++l;
@@ -234,6 +248,8 @@ std::pair<PrivateBuffer, std::uint32_t> add_bufs(const std::uint64_t* l,
     out += n;
     len += n;
   }
+  // If we've run out of words in the addends and there's still carry,
+  // add a 1 to the sum as an additional word.
   if (carry) {
     *out = 1;
     ++len;
@@ -242,18 +258,29 @@ std::pair<PrivateBuffer, std::uint32_t> add_bufs(const std::uint64_t* l,
   return std::make_pair(std::move(buf), len);
 }
 
-// Subtract r from l, where r < l.
+/**
+ * @brief Subtract the absolute value of r from the absolute value of l.
+ *
+ * Requires ln is greater than one. Always allocates, so requires a
+ * hold on the memory manager.
+ */
 std::pair<PrivateBuffer, std::uint32_t> sub_bufs(const std::uint64_t* l,
                                                  std::uint32_t ln,
                                                  const std::uint64_t* r,
                                                  std::uint32_t rn) {
   assert(rn <= ln);
+  assert(ln > 1);
   const auto* lend = l + ln;
   const auto* rend = r + rn;
   auto buf = ctx().mgr->allocate_private_buffer(ln * 8ull);
   std::uint64_t* out = reinterpret_cast<std::uint64_t*>(buf.buf());
   std::uint64_t borrow = 0;
   std::uint32_t len = 0;
+  // The basic idea: Starting from the least significant word,
+  // subtract a word of r from the corresponding word of l with
+  // borrow, until we run out of words of r. Then, as long as there's
+  // still borrow, subtract 1 from words of l. Then copy the remaining
+  // words of l into the difference.
   while (r < rend) {
     sub_with_borrow(*l, *r, borrow, *out);
     ++l;
@@ -293,6 +320,7 @@ managed_ptr<bigint> bigint::add_magnitudes(const bigint& l, const bigint& r,
     return make_managed<bigint>(token{}, std::move(result.first),
                                 is_positive ? result.second : -result.second);
   }
+  // Both addends fit into a single word.
   std::uint64_t sum;
   std::uint64_t carry = 0;
   add_with_carry(l.s_.value, r.s_.value, carry, sum);
@@ -306,7 +334,7 @@ managed_ptr<bigint> bigint::add_magnitudes(const bigint& l, const bigint& r,
 managed_ptr<bigint> bigint::subtract_magnitudes(const bigint& l,
                                                 const bigint& r,
                                                 bool is_positive) {
-  if (l.capacity_ || r.capacity_) {
+  if (l.capacity_) {
     auto hold = ctx().mgr->acquire_hold();
     auto result = sub_bufs(l.ptr(), uabs(l.size_), r.ptr(), uabs(r.size_));
     if (result.second > BI_SIZE_MAX) {
@@ -319,10 +347,15 @@ managed_ptr<bigint> bigint::subtract_magnitudes(const bigint& l,
     return make_managed<bigint>(token{}, std::move(result.first),
                                 is_positive ? result.second : -result.second);
   }
+  // The minuend and subtrahend both fit into a single word.
   return make_managed<bigint>(l.s_.value - r.s_.value, is_positive);
 }
 
 managed_ptr<bigint> operator+(const bigint& l, const bigint& r) {
+  // The basic idea: if both are positive or both are negative, add
+  // together the magnitudes and apply the correct sign. On the other
+  // hand, if the signs differ, subtract the smaller magnitude from
+  // the greater magnitude and apply the correct sign.
   if ((l.size_ >= 0 && r.size_ >= 0) || (l.size_ <= 0 && r.size_ <= 0)) {
     return bigint::add_magnitudes(l, r, l.size_ > 0 || r.size_ > 0);
   } else {
@@ -346,6 +379,10 @@ managed_ptr<bigint> operator+(std::int64_t l, const bigint& r) {
 }
 
 managed_ptr<bigint> operator-(const bigint& l, const bigint& r) {
+  // The basic idea: If the both are positive or both are negative,
+  // subtract the smaller magnitude from the greater magnitude and
+  // apply the correct sign. Otherwise, add the magnitudes together
+  // and apply the correct sign.
   if ((l.size_ > 0 && r.size_ > 0) || (l.size_ < 0 && r.size_ < 0)) {
     auto c = bigint::compare_magnitudes(l, r);
     if (c == 0) {
@@ -377,6 +414,9 @@ managed_ptr<bigint> operator-(const bigint& b) {
 }
 
 managed_ptr<bigint> operator*(const bigint& l, const bigint& r) {
+  // When both l and r fit in a single word, we can do the
+  // multiplication using 128-bit integers. When they don't, we
+  // multiply l by each word of r and add the results.
   const auto m = uabs(l.size_);
   const auto n = uabs(r.size_);
   const std::int32_t sign = (l.size_ >= 0) == (r.size_ >= 0) ? 1 : -1;
@@ -434,11 +474,17 @@ managed_ptr<bigint> operator*(std::int64_t l, const bigint& r) {
 }
 
 managed_ptr<bigint> operator<<(const bigint& l, std::uint64_t r) {
+  // The low 6 bits of r tell us how many bits each word is shifted
+  // by, and the high 58 bits tell us how many words of zeros are
+  // added as new least-significant words to the number. These new
+  // words can be filled in with memset.
   if (!l.size_) return make_managed<bigint>();
   const std::uint64_t word_shift = r / 64;
   const std::uint64_t lbit_shift = r % 64;
   const std::uint64_t rbit_shift = 64 - r;
   const auto lsize = uabs(l.size_);
+  // Do we shift any ones out of the current most-significant word
+  // into a new word?
   const std::uint64_t topword =
       lbit_shift ? (l.ptr()[lsize - 1] >> rbit_shift) : 0ull;
   const std::uint64_t size = word_shift + lsize + (topword != 0);
@@ -467,6 +513,9 @@ managed_ptr<bigint> operator<<(const bigint& l, std::uint64_t r) {
 }
 
 managed_ptr<bigint> operator>>(const bigint& l, std::uint64_t r) {
+  // The low 6 bits of r tell us how many bits each word is shifted
+  // by, and the high 58 bits tell us how many of the least
+  // significant words of l are completely dropped.
   if (!l.size_) return make_managed<bigint>();
   const std::uint64_t word_shift = r / 64;
   const auto lsize = uabs(l.size_);
@@ -474,6 +523,7 @@ managed_ptr<bigint> operator>>(const bigint& l, std::uint64_t r) {
 
   const std::uint64_t rbit_shift = r % 64;
   const std::uint64_t lbit_shift = 64 - r;
+  // Is the most significant word losing all its ones?
   const std::uint64_t topword = l.ptr()[lsize - 1] >> rbit_shift;
 
   const std::uint64_t size = lsize - word_shift - (topword == 0);
