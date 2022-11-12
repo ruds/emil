@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <iosfwd>
 #include <string>
+#include <utility>
 
 #include "emil/gc.h"
 
@@ -115,6 +116,18 @@ class bigint : public Managed {
   /** May throw std::overflow_error. */
   friend managed_ptr<bigint> operator<<(const bigint& l, std::uint64_t r);
   friend managed_ptr<bigint> operator>>(const bigint& l, std::uint64_t r);
+
+  /**
+   * @brief Returns the quotient and remainder when dividing this by divisor.
+   *
+   * Returns q and r such that (this = (divisor * q) + r), r is
+   * between 0 (inclusive) and divisor (exclusive), and q is (this /
+   * divisor) rounded toward 0.
+   *
+   * Throws domain_error if divisor is zero.
+   */
+  std::pair<managed_ptr<bigint>, managed_ptr<bigint>> divmod(
+      const bigint& divisor) const;
 
  private:
   friend class testing::BigintTestAccessor;

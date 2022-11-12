@@ -17,6 +17,8 @@
 #include <gtest/gtest.h>
 
 #include <limits>
+#include <stdexcept>
+#include <tuple>
 
 #include "testing/test_util.h"
 
@@ -1374,6 +1376,1909 @@ TEST(BigintTest, DISABLED_Overflow) {
   EXPECT_THROW(auto t = *max_bigint + 1, std::overflow_error);
   EXPECT_THROW(auto t = *max_bit << 1, std::overflow_error);
   EXPECT_THROW(auto t = *max_bit * 2, std::overflow_error);
+}
+
+TEST(BigintTest, DivisionWithZeros) {
+  TestContext tc;
+  auto zero = tc.root.add_root(make_managed<bigint>());
+  auto smallpos = tc.root.add_root(make_managed<bigint>(1ull << 61, true));
+  auto smallneg = tc.root.add_root(make_managed<bigint>(1ull << 61, false));
+  auto bigpos = tc.root.add_root(*smallpos * 64);
+  auto bigneg = tc.root.add_root(*smallneg * 64);
+
+  EXPECT_THROW(zero->divmod(*zero), std::domain_error);
+  EXPECT_THROW(smallpos->divmod(*zero), std::domain_error);
+  EXPECT_THROW(bigpos->divmod(*zero), std::domain_error);
+  EXPECT_THROW(smallneg->divmod(*zero), std::domain_error);
+  EXPECT_THROW(bigneg->divmod(*zero), std::domain_error);
+
+  auto [q, r] = zero->divmod(*smallpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = zero->divmod(*smallneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = zero->divmod(*bigpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = zero->divmod(*bigneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+}
+
+TEST(BigintTest, DivisionWithSmallDividends) {
+  TestContext tc;
+  auto tinypos1 = tc.root.add_root(make_managed<bigint>(105));
+  auto tinypos2 = tc.root.add_root(make_managed<bigint>(106));
+  auto tinyneg1 = tc.root.add_root(make_managed<bigint>(-105));
+  auto tinyneg2 = tc.root.add_root(make_managed<bigint>(-106));
+  auto bigpos = tc.root.add_root(*tinypos1 * (1ll << 62));
+  auto bigneg = tc.root.add_root(*tinyneg1 * (1ll << 62));
+
+  // small positive dividend
+  auto [q, r] = tinypos1->divmod(*tinypos1);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, 1);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = tinypos1->divmod(*tinypos2);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, 105);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = tinypos2->divmod(*tinypos1);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, 1);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, 1);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = tinypos1->divmod(*bigpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, 105);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = tinypos1->divmod(*tinyneg1);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, -1);
+  EXPECT_EQ(BigintTestAccessor::size(*q), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = tinypos1->divmod(*tinyneg2);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, 105);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = tinypos2->divmod(*tinyneg1);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, -1);
+  EXPECT_EQ(BigintTestAccessor::size(*q), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, 1);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = tinypos1->divmod(*bigneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, 105);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  // small negative dividend
+  std::tie(q, r) = tinyneg1->divmod(*tinypos1);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, -1);
+  EXPECT_EQ(BigintTestAccessor::size(*q), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = tinyneg1->divmod(*tinypos2);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, -105);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = tinyneg2->divmod(*tinypos1);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, -1);
+  EXPECT_EQ(BigintTestAccessor::size(*q), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, -1);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = tinyneg1->divmod(*bigpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, -105);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = tinyneg1->divmod(*tinyneg1);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, 1);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = tinyneg1->divmod(*tinyneg2);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, -105);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = tinyneg2->divmod(*tinyneg1);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, 1);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, -1);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = tinyneg1->divmod(*bigneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, -105);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+}
+
+// test case: 2-word dividend, 1-word divisor, 1-word quotient
+TEST(BigintTest, Division_2Dividend_1Divisor_1Quotient) {
+  TestContext tc;
+  auto smallpos = tc.root.add_root(make_managed<bigint>(1ull << 63, true));
+  auto smallneg = tc.root.add_root(make_managed<bigint>(1ull << 63, false));
+  auto bigpos = tc.root.add_root(*smallpos * 42);
+  auto bigpos2 = tc.root.add_root(*bigpos + 825);
+  auto bigneg = tc.root.add_root(*smallneg * 42);
+  auto bigneg2 = tc.root.add_root(*bigneg - 825);
+
+  EXPECT_EQ(BigintTestAccessor::size(*smallpos), 1);
+  EXPECT_EQ(BigintTestAccessor::size(*smallneg), -1);
+  EXPECT_EQ(BigintTestAccessor::size(*bigpos), 2);
+  EXPECT_EQ(BigintTestAccessor::size(*bigneg), -2);
+  EXPECT_EQ(BigintTestAccessor::size(*bigpos2), 2);
+  EXPECT_EQ(BigintTestAccessor::size(*bigneg2), -2);
+
+  auto [q, r] = bigpos->divmod(*smallpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, 42);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = bigpos->divmod(*smallneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, -42);
+  EXPECT_EQ(BigintTestAccessor::size(*q), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = bigpos2->divmod(*smallpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, 42);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, 825);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = bigpos2->divmod(*smallneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, -42);
+  EXPECT_EQ(BigintTestAccessor::size(*q), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, 825);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = bigneg->divmod(*smallpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, -42);
+  EXPECT_EQ(BigintTestAccessor::size(*q), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = bigneg->divmod(*smallneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, 42);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = bigneg2->divmod(*smallpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, -42);
+  EXPECT_EQ(BigintTestAccessor::size(*q), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, -825);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = bigneg2->divmod(*smallneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, 42);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, -825);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+}
+
+// test case: 2-word dividend, 1-word divisor, 2-word quotient
+TEST(BigintTest, Division_2Dividend_1Divisor_2Quotient) {
+  TestContext tc;
+  auto tinypos = tc.root.add_root(make_managed<bigint>(105));
+  auto tinyneg = tc.root.add_root(make_managed<bigint>(-105));
+  auto bigpos = tc.root.add_root(bigint(1ull << 63, true) * 425);
+  auto bigpos2 = tc.root.add_root(*bigpos - 40);
+  auto bigneg = tc.root.add_root(-*bigpos);
+  auto bigneg2 = tc.root.add_root(*bigneg + 40);
+
+  EXPECT_EQ(BigintTestAccessor::size(*tinypos), 1);
+  EXPECT_EQ(BigintTestAccessor::size(*tinyneg), -1);
+  EXPECT_EQ(BigintTestAccessor::size(*bigpos), 2);
+  EXPECT_EQ(BigintTestAccessor::size(*bigpos2), 2);
+  EXPECT_EQ(BigintTestAccessor::size(*bigneg), -2);
+  EXPECT_EQ(BigintTestAccessor::size(*bigneg2), -2);
+
+  auto [q, r] = bigpos->divmod(*tinypos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(q->to_string(), "20618618618618618");
+  EXPECT_EQ(BigintTestAccessor::size(*q), 2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 2);
+  EXPECT_EQ(*r, 40);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = bigpos->divmod(*tinyneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(q->to_string(), "-20618618618618618");
+  EXPECT_EQ(BigintTestAccessor::size(*q), -2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 2);
+  EXPECT_EQ(*r, 40);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = bigpos2->divmod(*tinypos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(q->to_string(), "20618618618618618");
+  EXPECT_EQ(BigintTestAccessor::size(*q), 2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 2);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = bigpos2->divmod(*tinyneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(q->to_string(), "-20618618618618618");
+  EXPECT_EQ(BigintTestAccessor::size(*q), -2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 2);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = bigneg->divmod(*tinypos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(q->to_string(), "-20618618618618618");
+  EXPECT_EQ(BigintTestAccessor::size(*q), -2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 2);
+  EXPECT_EQ(*r, -40);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = bigneg->divmod(*tinyneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(q->to_string(), "20618618618618618");
+  EXPECT_EQ(BigintTestAccessor::size(*q), 2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 2);
+  EXPECT_EQ(*r, -40);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = bigneg2->divmod(*tinypos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(q->to_string(), "-20618618618618618");
+  EXPECT_EQ(BigintTestAccessor::size(*q), -2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 2);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = bigneg2->divmod(*tinyneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(q->to_string(), "20618618618618618");
+  EXPECT_EQ(BigintTestAccessor::size(*q), 2);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 2);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+}
+
+// test case: long dividend, 1-word divisor
+TEST(BigintTest, Division_LongDividend_1Divisor) {
+  TestContext tc;
+  auto f1 = tc.root.add_root(
+      make_managed<bigint>(0x00ffddddeeeeffffull, 0xfefedcdcbaba9898ull, true));
+  auto quotpos = tc.root.add_root(*f1 * *f1);
+
+  auto vpos1 = tc.root.add_root(make_managed<bigint>(0x1badd00dll));
+  auto upos1 = tc.root.add_root(*quotpos * *vpos1);
+  auto upos1r = tc.root.add_root(*upos1 + 100);
+
+  auto vpos2 = tc.root.add_root(make_managed<bigint>(420));
+  auto upos2 = tc.root.add_root(*quotpos * *vpos2);
+  auto upos2r = tc.root.add_root(*upos2 + 100);
+
+  EXPECT_EQ(BigintTestAccessor::size(*quotpos), 4);
+
+  EXPECT_EQ(BigintTestAccessor::size(*vpos1), 1);
+  EXPECT_EQ(BigintTestAccessor::size(*upos1), 5);
+  EXPECT_EQ(BigintTestAccessor::size(*upos1r), 5);
+
+  EXPECT_EQ(BigintTestAccessor::size(*vpos2), 1);
+  EXPECT_EQ(BigintTestAccessor::size(*upos2), 4);
+  EXPECT_EQ(BigintTestAccessor::size(*upos2r), 4);
+
+  auto quotneg = tc.root.add_root(-*quotpos);
+  auto vneg1 = tc.root.add_root(-*vpos1);
+  auto uneg1 = tc.root.add_root(-*upos1);
+  auto uneg1r = tc.root.add_root(-*upos1r);
+  auto vneg2 = tc.root.add_root(-*vpos2);
+  auto uneg2 = tc.root.add_root(-*upos2);
+  auto uneg2r = tc.root.add_root(-*upos2r);
+
+  auto [q, r] = upos1->divmod(*vpos1);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *quotpos);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 4);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = upos1r->divmod(*vpos1);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *quotpos);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 4);
+  EXPECT_EQ(*r, 100);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = upos1->divmod(*vneg1);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *quotneg);
+  EXPECT_EQ(BigintTestAccessor::size(*q), -4);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = upos1r->divmod(*vneg1);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *quotneg);
+  EXPECT_EQ(BigintTestAccessor::size(*q), -4);
+  EXPECT_EQ(*r, 100);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = uneg1->divmod(*vneg1);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *quotpos);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 4);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = uneg1r->divmod(*vneg1);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *quotpos);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 4);
+  EXPECT_EQ(*r, -100);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = uneg1->divmod(*vpos1);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *quotneg);
+  EXPECT_EQ(BigintTestAccessor::size(*q), -4);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = uneg1r->divmod(*vpos1);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *quotneg);
+  EXPECT_EQ(BigintTestAccessor::size(*q), -4);
+  EXPECT_EQ(*r, -100);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = upos2->divmod(*vpos2);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *quotpos);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 4);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = upos2r->divmod(*vpos2);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *quotpos);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 4);
+  EXPECT_EQ(*r, 100);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = upos2->divmod(*vneg2);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *quotneg);
+  EXPECT_EQ(BigintTestAccessor::size(*q), -4);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = upos2r->divmod(*vneg2);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *quotneg);
+  EXPECT_EQ(BigintTestAccessor::size(*q), -4);
+  EXPECT_EQ(*r, 100);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = uneg2->divmod(*vneg2);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *quotpos);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 4);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = uneg2r->divmod(*vneg2);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *quotpos);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 4);
+  EXPECT_EQ(*r, -100);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = uneg2->divmod(*vpos2);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *quotneg);
+  EXPECT_EQ(BigintTestAccessor::size(*q), -4);
+  EXPECT_EQ(*r, 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = uneg2r->divmod(*vpos2);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *quotneg);
+  EXPECT_EQ(BigintTestAccessor::size(*q), -4);
+  EXPECT_EQ(*r, -100);
+  EXPECT_EQ(BigintTestAccessor::size(*r), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+}
+
+// test case: divisor and dividend both at least two words, divisor
+// large enough that no shifting is necessary (i.e. highest word is at
+// least 2^63)
+TEST(BigintTest, LongDivision_NoShift) {
+  TestContext tc;
+  const auto vpos = tc.root.add_root(
+      make_managed<bigint>(0xd00db3c001a5a5a5ull, 0xc4f300fff4c4deffull, true));
+  const auto vneg = tc.root.add_root(-*vpos);
+  const auto zero = tc.root.add_root(make_managed<bigint>());
+  const auto rspos = tc.root.add_root(make_managed<bigint>(4500000000ll));
+  const auto rsneg = tc.root.add_root(-*rspos);
+  const auto rlpos = tc.root.add_root(make_managed<bigint>(250, 1047, true));
+  const auto rlneg = tc.root.add_root(-*rlpos);
+  const auto q0pos = tc.root.add_root(make_managed<bigint>(1));
+  const auto q0neg = tc.root.add_root(-*q0pos);
+  const auto q1pos = tc.root.add_root(make_managed<bigint>(92576));
+  const auto q1neg = tc.root.add_root(-*q1pos);
+  const auto q2pos =
+      tc.root.add_root(make_managed<bigint>(0xffffffffffffffffull, true));
+  const auto q2neg = tc.root.add_root(-*q2pos);
+  const auto q3pos = tc.root.add_root(make_managed<bigint>(1, 888888, true));
+  const auto q3neg = tc.root.add_root(-*q3pos);
+  const auto q4pos = tc.root.add_root(*q0pos << 127);
+  const auto q4neg = tc.root.add_root(-*q4pos);
+  const auto q5pos = tc.root.add_root(*q3pos << 128);
+  const auto q5neg = tc.root.add_root(-*q5pos);
+  const auto u0pos = tc.root.add_root(*q0pos * *vpos);
+  const auto u0neg = tc.root.add_root(-*u0pos);
+  const auto u0rspos = tc.root.add_root(*u0pos + *rspos);
+  const auto u0rsneg = tc.root.add_root(-*u0rspos);
+  const auto u0rlpos = tc.root.add_root(*u0pos + *rlpos);
+  const auto u0rlneg = tc.root.add_root(-*u0rlpos);
+  const auto u1pos = tc.root.add_root(*q1pos * *vpos);
+  const auto u1neg = tc.root.add_root(-*u1pos);
+  const auto u1rspos = tc.root.add_root(*u1pos + *rspos);
+  const auto u1rsneg = tc.root.add_root(-*u1rspos);
+  const auto u1rlpos = tc.root.add_root(*u1pos + *rlpos);
+  const auto u1rlneg = tc.root.add_root(-*u1rlpos);
+  const auto u2pos = tc.root.add_root(*q2pos * *vpos);
+  const auto u2neg = tc.root.add_root(-*u2pos);
+  const auto u2rspos = tc.root.add_root(*u2pos + *rspos);
+  const auto u2rsneg = tc.root.add_root(-*u2rspos);
+  const auto u2rlpos = tc.root.add_root(*u2pos + *rlpos);
+  const auto u2rlneg = tc.root.add_root(-*u2rlpos);
+  const auto u3pos = tc.root.add_root(*q3pos * *vpos);
+  const auto u3neg = tc.root.add_root(-*u3pos);
+  const auto u3rspos = tc.root.add_root(*u3pos + *rspos);
+  const auto u3rsneg = tc.root.add_root(-*u3rspos);
+  const auto u3rlpos = tc.root.add_root(*u3pos + *rlpos);
+  const auto u3rlneg = tc.root.add_root(-*u3rlpos);
+  const auto u4pos = tc.root.add_root(*q4pos * *vpos);
+  const auto u4neg = tc.root.add_root(-*u4pos);
+  const auto u4rspos = tc.root.add_root(*u4pos + *rspos);
+  const auto u4rsneg = tc.root.add_root(-*u4rspos);
+  const auto u4rlpos = tc.root.add_root(*u4pos + *rlpos);
+  const auto u4rlneg = tc.root.add_root(-*u4rlpos);
+  const auto u5pos = tc.root.add_root(*q5pos * *vpos);
+  const auto u5neg = tc.root.add_root(-*u5pos);
+  const auto u5rspos = tc.root.add_root(*u5pos + *rspos);
+  const auto u5rsneg = tc.root.add_root(-*u5rspos);
+  const auto u5rlpos = tc.root.add_root(*u5pos + *rlpos);
+  const auto u5rlneg = tc.root.add_root(-*u5rlpos);
+
+  auto [q, r] = rlpos->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*q), 0);
+  EXPECT_EQ(*r, *rlpos);
+
+  // m = 0
+  EXPECT_EQ(
+      BigintTestAccessor::size(*u0rlpos) - BigintTestAccessor::size(*vpos), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*u0pos) - BigintTestAccessor::size(*vpos),
+            0);
+  std::tie(q, r) = u0pos->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q0pos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u0pos->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q0neg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u0neg->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q0neg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u0neg->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q0pos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u0rspos->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q0pos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rspos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u0rspos->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q0neg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rspos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u0rsneg->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q0neg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rsneg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u0rsneg->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q0pos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rsneg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u0rlpos->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q0pos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rlpos);
+
+  std::tie(q, r) = u0rlpos->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q0neg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rlpos);
+
+  std::tie(q, r) = u0rlneg->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q0neg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rlneg);
+
+  std::tie(q, r) = u0rlneg->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q0pos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rlneg);
+
+  // m = 1, 1-word quotient (case 1)
+  EXPECT_EQ(BigintTestAccessor::size(*u1pos) - BigintTestAccessor::size(*vpos),
+            1);
+  EXPECT_EQ(
+      BigintTestAccessor::size(*u1rlpos) - BigintTestAccessor::size(*vpos), 1);
+  std::tie(q, r) = u1pos->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q1pos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u1pos->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q1neg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u1neg->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q1neg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u1neg->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q1pos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u1rspos->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q1pos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rspos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u1rspos->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q1neg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rspos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u1rsneg->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q1neg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rsneg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u1rsneg->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q1pos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rsneg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u1rlpos->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q1pos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rlpos);
+
+  std::tie(q, r) = u1rlpos->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q1neg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rlpos);
+
+  std::tie(q, r) = u1rlneg->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q1neg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rlneg);
+
+  std::tie(q, r) = u1rlneg->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q1pos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rlneg);
+
+  // m = 1, 1-word quotient (case 2)
+  EXPECT_EQ(BigintTestAccessor::size(*u2pos) - BigintTestAccessor::size(*vpos),
+            1);
+  EXPECT_EQ(
+      BigintTestAccessor::size(*u2rlpos) - BigintTestAccessor::size(*vpos), 1);
+  std::tie(q, r) = u2pos->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q2pos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u2pos->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q2neg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u2neg->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q2neg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u2neg->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q2pos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u2rspos->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q2pos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rspos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u2rspos->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q2neg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rspos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u2rsneg->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q2neg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rsneg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u2rsneg->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q2pos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rsneg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u2rlpos->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q2pos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rlpos);
+
+  std::tie(q, r) = u2rlpos->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q2neg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rlpos);
+
+  std::tie(q, r) = u2rlneg->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q2neg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rlneg);
+
+  std::tie(q, r) = u2rlneg->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q2pos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *rlneg);
+
+  // m = 1, 2-word quotient
+  EXPECT_EQ(BigintTestAccessor::size(*u3pos) - BigintTestAccessor::size(*vpos),
+            1);
+  EXPECT_EQ(
+      BigintTestAccessor::size(*u3rlpos) - BigintTestAccessor::size(*vpos), 1);
+  std::tie(q, r) = u3pos->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q3pos);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u3pos->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q3neg);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u3neg->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q3neg);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u3neg->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q3pos);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u3rspos->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q3pos);
+  EXPECT_EQ(*r, *rspos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u3rspos->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q3neg);
+  EXPECT_EQ(*r, *rspos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u3rsneg->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q3neg);
+  EXPECT_EQ(*r, *rsneg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u3rsneg->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q3pos);
+  EXPECT_EQ(*r, *rsneg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u3rlpos->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q3pos);
+  EXPECT_EQ(*r, *rlpos);
+
+  std::tie(q, r) = u3rlpos->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q3neg);
+  EXPECT_EQ(*r, *rlpos);
+
+  std::tie(q, r) = u3rlneg->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q3neg);
+  EXPECT_EQ(*r, *rlneg);
+
+  std::tie(q, r) = u3rlneg->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q3pos);
+  EXPECT_EQ(*r, *rlneg);
+
+  // m > 1, m-word quotient
+  EXPECT_GT(BigintTestAccessor::size(*u4pos) - BigintTestAccessor::size(*vpos),
+            1);
+  EXPECT_EQ(BigintTestAccessor::size(*u4pos) - BigintTestAccessor::size(*vpos),
+            BigintTestAccessor::size(*q4pos));
+  EXPECT_EQ(
+      BigintTestAccessor::size(*u4rlpos) - BigintTestAccessor::size(*vpos),
+      BigintTestAccessor::size(*q4pos));
+  std::tie(q, r) = u4pos->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q4pos);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u4pos->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q4neg);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u4neg->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q4neg);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u4neg->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q4pos);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u4rspos->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q4pos);
+  EXPECT_EQ(*r, *rspos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u4rspos->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q4neg);
+  EXPECT_EQ(*r, *rspos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u4rsneg->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q4neg);
+  EXPECT_EQ(*r, *rsneg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u4rsneg->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q4pos);
+  EXPECT_EQ(*r, *rsneg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u4rlpos->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q4pos);
+  EXPECT_EQ(*r, *rlpos);
+
+  std::tie(q, r) = u4rlpos->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q4neg);
+  EXPECT_EQ(*r, *rlpos);
+
+  std::tie(q, r) = u4rlneg->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q4neg);
+  EXPECT_EQ(*r, *rlneg);
+
+  std::tie(q, r) = u4rlneg->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q4pos);
+  EXPECT_EQ(*r, *rlneg);
+
+  // m > 1, m+1-word quotient
+  EXPECT_GT(BigintTestAccessor::size(*u5pos) - BigintTestAccessor::size(*vpos),
+            2);
+  EXPECT_EQ(BigintTestAccessor::size(*u5pos) - BigintTestAccessor::size(*vpos),
+            BigintTestAccessor::size(*q5pos) - 1);
+  EXPECT_EQ(
+      BigintTestAccessor::size(*u5rlpos) - BigintTestAccessor::size(*vpos),
+      BigintTestAccessor::size(*q5pos) - 1);
+  std::tie(q, r) = u5pos->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q5pos);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u5pos->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q5neg);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u5neg->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q5neg);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u5neg->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q5pos);
+  EXPECT_EQ(*r, *zero);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+  std::tie(q, r) = u5rspos->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q5pos);
+  EXPECT_EQ(*r, *rspos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u5rspos->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q5neg);
+  EXPECT_EQ(*r, *rspos);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u5rsneg->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q5neg);
+  EXPECT_EQ(*r, *rsneg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u5rsneg->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q5pos);
+  EXPECT_EQ(*r, *rsneg);
+  EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+  std::tie(q, r) = u5rlpos->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q5pos);
+  EXPECT_EQ(*r, *rlpos);
+
+  std::tie(q, r) = u5rlpos->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q5neg);
+  EXPECT_EQ(*r, *rlpos);
+
+  std::tie(q, r) = u5rlneg->divmod(*vpos);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q5neg);
+  EXPECT_EQ(*r, *rlneg);
+
+  std::tie(q, r) = u5rlneg->divmod(*vneg);
+  tc.root.add_root(q);
+  tc.root.add_root(r);
+  EXPECT_EQ(*q, *q5pos);
+  EXPECT_EQ(*r, *rlneg);
+}
+
+// test case: divisor and dividend both at least two words, divisor
+// large enough that no shifting is necessary (i.e. highest word is at
+// least 2^63)
+TEST(BigintTest, LongDivision_Shift) {
+  TestContext tc;
+  const auto vbase = tc.root.add_root(
+      make_managed<bigint>(0xd00db3c001a5a5a5ull, 0xc4f300fff4c4deffull, true));
+  const auto zero = tc.root.add_root(make_managed<bigint>());
+  const auto rspos = tc.root.add_root(make_managed<bigint>(4500000000ll));
+  const auto rsneg = tc.root.add_root(-*rspos);
+  const auto rlpos = tc.root.add_root(make_managed<bigint>(1, 1047, true));
+  const auto rlneg = tc.root.add_root(-*rlpos);
+  const auto q0pos = tc.root.add_root(make_managed<bigint>(1));
+  const auto q0neg = tc.root.add_root(-*q0pos);
+  const auto q1pos = tc.root.add_root(make_managed<bigint>(92576));
+  const auto q1neg = tc.root.add_root(-*q1pos);
+  const auto q2pos =
+      tc.root.add_root(make_managed<bigint>(0xffffffffffffffffull, true));
+  const auto q2neg = tc.root.add_root(-*q2pos);
+  const auto q3pos = tc.root.add_root(make_managed<bigint>(1, 888888, true));
+  const auto q3neg = tc.root.add_root(-*q3pos);
+  auto q4pos = tc.root.add_root(*q0pos << 192);
+  q4pos = tc.root.replace_root(q4pos, *q4pos - 1);
+  const auto q4neg = tc.root.add_root(-*q4pos);
+  const auto q5pos = tc.root.add_root(*q3pos << 128);
+  const auto q5neg = tc.root.add_root(-*q5pos);
+
+  for (int i = 1; i < 64; ++i) {
+    const auto vpos = tc.root.add_root(*vbase >> i);
+    const auto vneg = tc.root.add_root(-*vpos);
+    const auto u0pos = tc.root.add_root(*q0pos * *vpos);
+    const auto u0neg = tc.root.add_root(-*u0pos);
+    const auto u0rspos = tc.root.add_root(*u0pos + *rspos);
+    const auto u0rsneg = tc.root.add_root(-*u0rspos);
+    const auto u0rlpos = tc.root.add_root(*u0pos + *rlpos);
+    const auto u0rlneg = tc.root.add_root(-*u0rlpos);
+    const auto u1pos = tc.root.add_root(*q1pos * *vpos);
+    const auto u1neg = tc.root.add_root(-*u1pos);
+    const auto u1rspos = tc.root.add_root(*u1pos + *rspos);
+    const auto u1rsneg = tc.root.add_root(-*u1rspos);
+    const auto u1rlpos = tc.root.add_root(*u1pos + *rlpos);
+    const auto u1rlneg = tc.root.add_root(-*u1rlpos);
+    const auto u2pos = tc.root.add_root(*q2pos * *vpos);
+    const auto u2neg = tc.root.add_root(-*u2pos);
+    const auto u2rspos = tc.root.add_root(*u2pos + *rspos);
+    const auto u2rsneg = tc.root.add_root(-*u2rspos);
+    const auto u2rlpos = tc.root.add_root(*u2pos + *rlpos);
+    const auto u2rlneg = tc.root.add_root(-*u2rlpos);
+    const auto u3pos = tc.root.add_root(*q3pos * *vpos);
+    const auto u3neg = tc.root.add_root(-*u3pos);
+    const auto u3rspos = tc.root.add_root(*u3pos + *rspos);
+    const auto u3rsneg = tc.root.add_root(-*u3rspos);
+    const auto u3rlpos = tc.root.add_root(*u3pos + *rlpos);
+    const auto u3rlneg = tc.root.add_root(-*u3rlpos);
+    const auto u4pos = tc.root.add_root(*q4pos * *vpos);
+    const auto u4neg = tc.root.add_root(-*u4pos);
+    const auto u4rspos = tc.root.add_root(*u4pos + *rspos);
+    const auto u4rsneg = tc.root.add_root(-*u4rspos);
+    const auto u4rlpos = tc.root.add_root(*u4pos + *rlpos);
+    const auto u4rlneg = tc.root.add_root(-*u4rlpos);
+    const auto u5pos = tc.root.add_root(*q5pos * *vpos);
+    const auto u5neg = tc.root.add_root(-*u5pos);
+    const auto u5rspos = tc.root.add_root(*u5pos + *rspos);
+    const auto u5rsneg = tc.root.add_root(-*u5rspos);
+    const auto u5rlpos = tc.root.add_root(*u5pos + *rlpos);
+    const auto u5rlneg = tc.root.add_root(-*u5rlpos);
+
+    auto [q, r] = rlpos->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*q), 0);
+    EXPECT_EQ(*r, *rlpos);
+
+    // m = 0
+    EXPECT_EQ(
+        BigintTestAccessor::size(*u0rlpos) - BigintTestAccessor::size(*vpos),
+        0);
+    EXPECT_EQ(
+        BigintTestAccessor::size(*u0pos) - BigintTestAccessor::size(*vpos), 0);
+    std::tie(q, r) = u0pos->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q0pos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u0pos->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q0neg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u0neg->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q0neg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u0neg->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q0pos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u0rspos->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q0pos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rspos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u0rspos->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q0neg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rspos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u0rsneg->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q0neg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rsneg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u0rsneg->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q0pos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rsneg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u0rlpos->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q0pos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rlpos);
+
+    std::tie(q, r) = u0rlpos->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q0neg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rlpos);
+
+    std::tie(q, r) = u0rlneg->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q0neg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rlneg);
+
+    std::tie(q, r) = u0rlneg->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q0pos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rlneg);
+
+    // m = 0 (case 2) or m = 1, 1-word quotient (case 1)
+    std::tie(q, r) = u1pos->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q1pos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u1pos->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q1neg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u1neg->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q1neg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u1neg->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q1pos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u1rspos->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q1pos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rspos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u1rspos->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q1neg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rspos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u1rsneg->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q1neg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rsneg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u1rsneg->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q1pos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rsneg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u1rlpos->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q1pos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rlpos);
+
+    std::tie(q, r) = u1rlpos->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q1neg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rlpos);
+
+    std::tie(q, r) = u1rlneg->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q1neg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rlneg);
+
+    std::tie(q, r) = u1rlneg->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q1pos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rlneg);
+
+    // m = 1, 1-word quotient (case 2)
+    EXPECT_EQ(
+        BigintTestAccessor::size(*u2pos) - BigintTestAccessor::size(*vpos), 1);
+    EXPECT_EQ(
+        BigintTestAccessor::size(*u2rlpos) - BigintTestAccessor::size(*vpos),
+        1);
+    std::tie(q, r) = u2pos->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q2pos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u2pos->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q2neg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u2neg->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q2neg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u2neg->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q2pos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u2rspos->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q2pos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rspos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u2rspos->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q2neg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rspos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u2rsneg->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q2neg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rsneg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u2rsneg->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q2pos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rsneg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u2rlpos->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q2pos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rlpos);
+
+    std::tie(q, r) = u2rlpos->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q2neg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rlpos);
+
+    std::tie(q, r) = u2rlneg->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q2neg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rlneg);
+
+    std::tie(q, r) = u2rlneg->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q2pos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+    EXPECT_EQ(*r, *rlneg);
+
+    // m = 1, 2-word quotient
+    EXPECT_EQ(
+        BigintTestAccessor::size(*u3pos) - BigintTestAccessor::size(*vpos), 1);
+    EXPECT_EQ(
+        BigintTestAccessor::size(*u3rlpos) - BigintTestAccessor::size(*vpos),
+        1);
+    std::tie(q, r) = u3pos->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q3pos);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u3pos->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q3neg);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u3neg->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q3neg);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u3neg->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q3pos);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u3rspos->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q3pos);
+    EXPECT_EQ(*r, *rspos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u3rspos->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q3neg);
+    EXPECT_EQ(*r, *rspos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u3rsneg->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q3neg);
+    EXPECT_EQ(*r, *rsneg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u3rsneg->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q3pos);
+    EXPECT_EQ(*r, *rsneg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u3rlpos->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q3pos);
+    EXPECT_EQ(*r, *rlpos);
+
+    std::tie(q, r) = u3rlpos->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q3neg);
+    EXPECT_EQ(*r, *rlpos);
+
+    std::tie(q, r) = u3rlneg->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q3neg);
+    EXPECT_EQ(*r, *rlneg);
+
+    std::tie(q, r) = u3rlneg->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q3pos);
+    EXPECT_EQ(*r, *rlneg);
+
+    // m > 1, m-word quotient
+    EXPECT_GT(
+        BigintTestAccessor::size(*u4pos) - BigintTestAccessor::size(*vpos), 1);
+    EXPECT_EQ(
+        BigintTestAccessor::size(*u4pos) - BigintTestAccessor::size(*vpos),
+        BigintTestAccessor::size(*q4pos));
+    EXPECT_EQ(
+        BigintTestAccessor::size(*u4rlpos) - BigintTestAccessor::size(*vpos),
+        BigintTestAccessor::size(*q4pos));
+    std::tie(q, r) = u4pos->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q4pos);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u4pos->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q4neg);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u4neg->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q4neg);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u4neg->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q4pos);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u4rspos->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q4pos);
+    EXPECT_EQ(*r, *rspos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u4rspos->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q4neg);
+    EXPECT_EQ(*r, *rspos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u4rsneg->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q4neg);
+    EXPECT_EQ(*r, *rsneg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u4rsneg->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q4pos);
+    EXPECT_EQ(*r, *rsneg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u4rlpos->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q4pos);
+    EXPECT_EQ(*r, *rlpos);
+
+    std::tie(q, r) = u4rlpos->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q4neg);
+    EXPECT_EQ(*r, *rlpos);
+
+    std::tie(q, r) = u4rlneg->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q4neg);
+    EXPECT_EQ(*r, *rlneg);
+
+    std::tie(q, r) = u4rlneg->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q4pos);
+    EXPECT_EQ(*r, *rlneg);
+
+    // m > 1, m+1-word quotient
+    EXPECT_GT(
+        BigintTestAccessor::size(*u5pos) - BigintTestAccessor::size(*vpos), 2);
+    EXPECT_EQ(
+        BigintTestAccessor::size(*u5pos) - BigintTestAccessor::size(*vpos),
+        BigintTestAccessor::size(*q5pos) - 1);
+    EXPECT_EQ(
+        BigintTestAccessor::size(*u5rlpos) - BigintTestAccessor::size(*vpos),
+        BigintTestAccessor::size(*q5pos) - 1);
+    std::tie(q, r) = u5pos->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q5pos);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u5pos->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q5neg);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u5neg->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q5neg);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u5neg->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q5pos);
+    EXPECT_EQ(*r, *zero);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+    EXPECT_EQ(BigintTestAccessor::size(*r), 0);
+
+    std::tie(q, r) = u5rspos->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q5pos);
+    EXPECT_EQ(*r, *rspos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u5rspos->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q5neg);
+    EXPECT_EQ(*r, *rspos);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u5rsneg->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q5neg);
+    EXPECT_EQ(*r, *rsneg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u5rsneg->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q5pos);
+    EXPECT_EQ(*r, *rsneg);
+    EXPECT_EQ(BigintTestAccessor::capacity(*r), 0);
+
+    std::tie(q, r) = u5rlpos->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q5pos);
+    EXPECT_EQ(*r, *rlpos);
+
+    std::tie(q, r) = u5rlpos->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q5neg);
+    EXPECT_EQ(*r, *rlpos);
+
+    std::tie(q, r) = u5rlneg->divmod(*vpos);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q5neg);
+    EXPECT_EQ(*r, *rlneg);
+
+    std::tie(q, r) = u5rlneg->divmod(*vneg);
+    tc.root.add_root(q);
+    tc.root.add_root(r);
+    EXPECT_EQ(*q, *q5pos);
+    EXPECT_EQ(*r, *rlneg);
+  }
 }
 
 }  // namespace emil::testing
