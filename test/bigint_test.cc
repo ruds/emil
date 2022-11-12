@@ -20,6 +20,7 @@
 #include <stdexcept>
 #include <tuple>
 
+#include "emil/runtime.h"
 #include "testing/test_util.h"
 
 namespace emil::testing {
@@ -3279,6 +3280,177 @@ TEST(BigintTest, LongDivision_Shift) {
     EXPECT_EQ(*q, *q5pos);
     EXPECT_EQ(*r, *rlneg);
   }
+}
+
+// test case: Triggers the D6 condition when the divisor requires no
+// shift; that is, when qhat is an overestimate of a word of the
+// quotient and the most significant word of the divisor is between
+// 2^63 and 2^64.
+TEST(BigintTest, Division_D6_NoShift) {
+  TestContext tc;
+  managed_ptr<bigint> v;
+
+  // m == 0 can't trigger because the divisor would have to be greater
+  // than the dividend, which triggers a different condition.
+  //
+  // m == 1, len(q) == 2 can't trigger because the dividend maxes out
+  // at 2^(64 * (m + n)) - 1 and the divisor is at least 2^(64*(n-1)),
+  // so the quotient is less than 2^(64*m). For the same reason, m ==
+  // 2, len(q) == 3 can't trigger.
+
+  // m == 1, len(q) == 1
+  managed_ptr<bigint> u11;
+  managed_ptr<bigint> q11;
+  managed_ptr<bigint> r11;
+  // m == 2, len(q) == 2
+  managed_ptr<bigint> u22;
+  managed_ptr<bigint> q22;
+  managed_ptr<bigint> r22;
+  {
+    auto hold = ctx().mgr->acquire_hold();
+    v = *(bigint(1) << 191) + *(bigint(1, 0, true) - 1);
+    EXPECT_EQ(BigintTestAccessor::size(*v), 3);
+    tc.root.add_root(v);
+
+    u11 = bigint(1) << 253;
+    EXPECT_EQ(BigintTestAccessor::size(*u11), 4);
+    q11 = make_managed<bigint>(0x3FFFFFFFFFFFFFFFull, true);
+    r11 = *(bigint(0x7FFFFFFFFFFFFFFFull, true) << 128) +
+          bigint(0xC000000000000001ull, 0x3FFFFFFFFFFFFFFFull, true);
+    EXPECT_EQ(*u11, *(*(*q11 * *v) + *r11));
+    tc.root.add_root(u11);
+    tc.root.add_root(q11);
+    tc.root.add_root(r11);
+
+    u22 = *u11 << 64;
+    q22 = make_managed<bigint>(0x3FFFFFFFFFFFFFFFull, 0xFFFFFFFFFFFFFFFFull,
+                               true);
+    r22 = *(bigint(1ull << 62, true) << 128) +
+          bigint(1ull << 62, 0xFFFFFFFFFFFFFFFFull, true);
+    EXPECT_EQ(*u22, *(*(*q22 * *v) + *r22));
+    tc.root.add_root(u22);
+    tc.root.add_root(q22);
+    tc.root.add_root(r22);
+  }
+
+  auto [q, r] = u11->divmod(*v);
+  EXPECT_EQ(*q, *q11) << "u: " << u11 << ", v: " << v;
+  EXPECT_EQ(BigintTestAccessor::size(*q), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *r11) << "u: " << u11 << ", v: " << v;
+
+  std::tie(q, r) = u22->divmod(*v);
+  EXPECT_EQ(*q, *q22) << "u: " << u22 << ", v: " << v;
+  EXPECT_EQ(*r, *r22) << "u: " << u22 << ", v: " << v;
+}
+
+// test case: Triggers the D6 condition when the divisor requires a
+// shift; that is, when qhat is an overestimate of a word of the
+// quotient and the most significant word of the divisor is less than
+// 2^63.
+TEST(BigintTest, Division_D6_Shift) {
+  TestContext tc;
+  managed_ptr<bigint> v;
+  // m == 0
+  managed_ptr<bigint> u0;
+  managed_ptr<bigint> q0;
+  managed_ptr<bigint> r0;
+  // m == 1, len(q) == 1
+  managed_ptr<bigint> u11;
+  managed_ptr<bigint> q11;
+  managed_ptr<bigint> r11;
+  // m == 1, len(q) == 2
+  managed_ptr<bigint> u12;
+  managed_ptr<bigint> q12;
+  managed_ptr<bigint> r12;
+  // m == 2, len(q) == 2
+  managed_ptr<bigint> u22;
+  managed_ptr<bigint> q22;
+  managed_ptr<bigint> r22;
+  // m == 2, len(q) == 3
+  managed_ptr<bigint> u23;
+  managed_ptr<bigint> q23;
+  managed_ptr<bigint> r23;
+  {
+    auto hold = ctx().mgr->acquire_hold();
+    v = *(bigint(1) << 183) + 0xFFFFFFFFFFFFFFll;
+    EXPECT_EQ(BigintTestAccessor::size(*v), 3);
+    tc.root.add_root(v);
+
+    u0 = bigint(1) << 189;
+    EXPECT_EQ(BigintTestAccessor::size(*u0), 3);
+    q0 = make_managed<bigint>(0x3Fll);
+    r0 = *(bigint(0x7FFFFFFFFFFFFFll) << 128) +
+         bigint(0xFFFFFFFFFFFFFFFFull, 0xC10000000000003Full, true);
+    EXPECT_EQ(*u0, *(*(*q0 * *v) + *r0));
+    tc.root.add_root(u0);
+    tc.root.add_root(q0);
+    tc.root.add_root(r0);
+
+    u11 = bigint(1) << 221;
+    EXPECT_EQ(BigintTestAccessor::size(*u11), 4);
+    q11 = make_managed<bigint>(0x3FFFFFFFFFull, true);
+    r11 = *(bigint(0x7FFFFFFFFFFFFFll) << 128) +
+          bigint(0xFFFFFFFFC0000000ull, 0x0100003FFFFFFFFFull, true);
+    EXPECT_EQ(*u11, *(*(*q11 * *v) + *r11));
+    tc.root.add_root(u11);
+    tc.root.add_root(q11);
+    tc.root.add_root(r11);
+
+    u12 = bigint(1) << 253;
+    EXPECT_EQ(BigintTestAccessor::size(*u12), 4);
+    q12 = make_managed<bigint>(0x3Full, 0xFFFFFFFFFFFFFFFFull, true);
+    r12 = *(bigint(0x7FFFFFFFFFFFFFll) << 128) +
+          bigint(0xC000000000000040ull, 0xFFFFFFFFFFFFFFull, true);
+    EXPECT_EQ(*u12, *(*(*q12 * *v) + *r12));
+    tc.root.add_root(u12);
+    tc.root.add_root(q12);
+    tc.root.add_root(r12);
+
+    u22 = *u11 << 64;
+    EXPECT_EQ(BigintTestAccessor::size(*u22), 5);
+    q22 = make_managed<bigint>(0x3FFFFFFFFFull, 0xFFFFFFFFFFFFFFFFull, true);
+    r22 = *(bigint(0x7FFFFFC0000000ll) << 128) +
+          bigint(0x4000000000ull, 0xFFFFFFFFFFFFFFull, true);
+    EXPECT_EQ(*u22, *(*(*q22 * *v) + *r22));
+    tc.root.add_root(u22);
+    tc.root.add_root(q22);
+    tc.root.add_root(r22);
+
+    u23 = bigint(15) << 316;
+    EXPECT_EQ(BigintTestAccessor::size(*u23), 5);
+    q23 = *(bigint(0x1DFll) << 128) +
+          bigint(0xFFFFFFFFFFFFFFFFull, 0xFFFFFFFFFFFFFC40ull, true);
+    r23 = *(bigint(0x1E0) << 128) + bigint(3ull, 0xBFFFFFFFFFFFFC40ull, true);
+    EXPECT_EQ(*u23, *(*(*q23 * *v) + *r23));
+    tc.root.add_root(u23);
+    tc.root.add_root(q23);
+    tc.root.add_root(r23);
+  }
+
+  auto [q, r] = u0->divmod(*v);
+  EXPECT_EQ(*q, *q0) << "u: " << u0 << ", v: " << v;
+  EXPECT_EQ(BigintTestAccessor::size(*q), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *r0) << "u: " << u0 << ", v: " << v;
+
+  std::tie(q, r) = u11->divmod(*v);
+  EXPECT_EQ(*q, *q11) << "u: " << u11 << ", v: " << v;
+  EXPECT_EQ(BigintTestAccessor::size(*q), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*q), 0);
+  EXPECT_EQ(*r, *r11) << "u: " << u11 << ", v: " << v;
+
+  std::tie(q, r) = u12->divmod(*v);
+  EXPECT_EQ(*q, *q12) << "u: " << u12 << ", v: " << v;
+  EXPECT_EQ(*r, *r12) << "u: " << u12 << ", v: " << v;
+
+  std::tie(q, r) = u22->divmod(*v);
+  EXPECT_EQ(*q, *q22) << "u: " << u22 << ", v: " << v;
+  EXPECT_EQ(*r, *r22) << "u: " << u22 << ", v: " << v;
+
+  std::tie(q, r) = u23->divmod(*v);
+  EXPECT_EQ(*q, *q23) << "u: " << u23 << ", v: " << v;
+  EXPECT_EQ(*r, *r23) << "u: " << u23 << ", v: " << v;
 }
 
 }  // namespace emil::testing

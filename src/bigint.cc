@@ -19,13 +19,11 @@
 #include <compare>
 #include <cstdint>
 #include <cstring>
-#include <functional>
 #include <iomanip>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <type_traits>
 #include <utility>
 
 #include "emil/gc.h"
