@@ -143,7 +143,7 @@ std::strong_ordering bigint::compare_magnitudes(const bigint& l,
     for (std::uint_fast32_t i = ls; i > 0; --i) {
       const auto ld = l.s_.data[i - 1];
       const auto rd = r.s_.data[i - 1];
-      if (ld != rd) return l.size_ > 0 ? ld <=> rd : rd <=> ld;
+      if (ld != rd) return ld <=> rd;
     }
     return std::strong_ordering::equal;
   }
@@ -153,7 +153,8 @@ std::strong_ordering bigint::compare_magnitudes(const bigint& l,
 
 std::strong_ordering operator<=>(const bigint& l, const bigint& r) noexcept {
   if (l.size_ != r.size_) return l.size_ <=> r.size_;
-  return bigint::compare_magnitudes(l, r);
+  auto order = bigint::compare_magnitudes(l, r);
+  return l.size_ >= 0 ? order : (0 <=> order);
 }
 
 std::strong_ordering operator<=>(std::int64_t l, const bigint& r) noexcept {

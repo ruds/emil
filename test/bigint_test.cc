@@ -117,12 +117,16 @@ TEST(BigintTest, Zeros) {
 TEST(BigintTest, Comparisons) {
   TestContext tc;
   auto zero = tc.root.add_root(make_managed<bigint>());
+  auto tinypos = tc.root.add_root(make_managed<bigint>(105));
+  auto tinyneg = tc.root.add_root(make_managed<bigint>(-105));
   auto smallpos = tc.root.add_root(make_managed<bigint>(1ull << 63, true));
   auto smallneg = tc.root.add_root(make_managed<bigint>(1ull << 63, false));
   auto bigpos = tc.root.add_root(*smallpos + *smallpos);
   auto bigneg = tc.root.add_root(*smallneg + *smallneg);
 
   EXPECT_EQ(*zero, *zero);
+  EXPECT_NE(*zero, *tinypos);
+  EXPECT_NE(*zero, *tinyneg);
   EXPECT_NE(*zero, *smallpos);
   EXPECT_NE(*zero, *smallneg);
   EXPECT_NE(*zero, *bigpos);
@@ -134,7 +138,41 @@ TEST(BigintTest, Comparisons) {
   EXPECT_LT(*zero, *bigpos);
   EXPECT_GT(*zero, *bigneg);
 
+  EXPECT_NE(*tinypos, *zero);
+  EXPECT_EQ(*tinypos, *tinypos);
+  EXPECT_NE(*tinypos, *tinyneg);
+  EXPECT_NE(*tinypos, *smallpos);
+  EXPECT_NE(*tinypos, *smallneg);
+  EXPECT_NE(*tinypos, *bigpos);
+  EXPECT_NE(*tinypos, *bigneg);
+  EXPECT_FALSE(*tinypos < *tinypos);
+  EXPECT_FALSE(*tinypos > *tinypos);
+  EXPECT_GT(*tinypos, *zero);
+  EXPECT_GT(*tinypos, *tinyneg);
+  EXPECT_LT(*tinypos, *smallpos);
+  EXPECT_GT(*tinypos, *smallneg);
+  EXPECT_LT(*tinypos, *bigpos);
+  EXPECT_GT(*tinypos, *bigneg);
+
+  EXPECT_NE(*tinyneg, *zero);
+  EXPECT_NE(*tinyneg, *tinypos);
+  EXPECT_EQ(*tinyneg, *tinyneg);
+  EXPECT_NE(*tinyneg, *smallpos);
+  EXPECT_NE(*tinyneg, *smallneg);
+  EXPECT_NE(*tinyneg, *bigpos);
+  EXPECT_NE(*tinyneg, *bigneg);
+  EXPECT_FALSE(*tinyneg < *tinyneg);
+  EXPECT_FALSE(*tinyneg > *tinyneg);
+  EXPECT_LT(*tinyneg, *zero);
+  EXPECT_LT(*tinyneg, *tinypos);
+  EXPECT_LT(*tinyneg, *smallpos);
+  EXPECT_GT(*tinyneg, *smallneg);
+  EXPECT_LT(*tinyneg, *bigpos);
+  EXPECT_GT(*tinyneg, *bigneg);
+
   EXPECT_NE(*smallpos, *zero);
+  EXPECT_NE(*smallpos, *tinypos);
+  EXPECT_NE(*smallpos, *tinyneg);
   EXPECT_EQ(*smallpos, *smallpos);
   EXPECT_NE(*smallpos, *smallneg);
   EXPECT_NE(*smallpos, *bigpos);
@@ -142,11 +180,15 @@ TEST(BigintTest, Comparisons) {
   EXPECT_FALSE(*smallpos < *smallpos);
   EXPECT_FALSE(*smallpos > *smallpos);
   EXPECT_GT(*smallpos, *zero);
+  EXPECT_GT(*smallpos, *tinypos);
+  EXPECT_GT(*smallpos, *tinyneg);
   EXPECT_GT(*smallpos, *smallneg);
   EXPECT_LT(*smallpos, *bigpos);
   EXPECT_GT(*smallpos, *bigneg);
 
   EXPECT_NE(*bigpos, *zero);
+  EXPECT_NE(*bigpos, *tinypos);
+  EXPECT_NE(*bigpos, *tinyneg);
   EXPECT_NE(*bigpos, *smallpos);
   EXPECT_NE(*bigpos, *smallneg);
   EXPECT_EQ(*bigpos, *bigpos);
@@ -154,11 +196,15 @@ TEST(BigintTest, Comparisons) {
   EXPECT_FALSE(*bigpos < *bigpos);
   EXPECT_FALSE(*bigpos > *bigpos);
   EXPECT_GT(*bigpos, *zero);
+  EXPECT_GT(*bigpos, *tinypos);
+  EXPECT_GT(*bigpos, *tinyneg);
   EXPECT_GT(*bigpos, *smallneg);
   EXPECT_GT(*bigpos, *smallpos);
   EXPECT_GT(*bigpos, *bigneg);
 
   EXPECT_NE(*smallneg, *zero);
+  EXPECT_NE(*smallneg, *tinypos);
+  EXPECT_NE(*smallneg, *tinyneg);
   EXPECT_NE(*smallneg, *smallpos);
   EXPECT_EQ(*smallneg, *smallneg);
   EXPECT_NE(*smallneg, *bigpos);
@@ -166,11 +212,15 @@ TEST(BigintTest, Comparisons) {
   EXPECT_FALSE(*smallneg < *smallneg);
   EXPECT_FALSE(*smallneg > *smallneg);
   EXPECT_LT(*smallneg, *zero);
+  EXPECT_LT(*smallneg, *tinypos);
+  EXPECT_LT(*smallneg, *tinyneg);
   EXPECT_LT(*smallneg, *smallpos);
   EXPECT_LT(*smallneg, *bigpos);
   EXPECT_GT(*smallneg, *bigneg);
 
   EXPECT_NE(*bigneg, *zero);
+  EXPECT_NE(*bigneg, *tinypos);
+  EXPECT_NE(*bigneg, *tinyneg);
   EXPECT_NE(*bigneg, *smallpos);
   EXPECT_NE(*bigneg, *smallneg);
   EXPECT_NE(*bigneg, *bigpos);
@@ -178,12 +228,18 @@ TEST(BigintTest, Comparisons) {
   EXPECT_FALSE(*bigneg < *bigneg);
   EXPECT_FALSE(*bigneg > *bigneg);
   EXPECT_LT(*bigneg, *zero);
+  EXPECT_LT(*bigneg, *tinypos);
+  EXPECT_LT(*bigneg, *tinyneg);
   EXPECT_LT(*bigneg, *smallneg);
   EXPECT_LT(*bigneg, *smallpos);
   EXPECT_LT(*bigneg, *bigpos);
 
   EXPECT_EQ(BigintTestAccessor::size(*zero), 0);
   EXPECT_EQ(BigintTestAccessor::capacity(*zero), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*tinypos), 1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*tinypos), 0);
+  EXPECT_EQ(BigintTestAccessor::size(*tinyneg), -1);
+  EXPECT_EQ(BigintTestAccessor::capacity(*tinyneg), 0);
   EXPECT_EQ(BigintTestAccessor::size(*smallpos), 1);
   EXPECT_EQ(BigintTestAccessor::capacity(*smallpos), 0);
   EXPECT_EQ(BigintTestAccessor::size(*bigpos), 2);
