@@ -414,6 +414,37 @@ managed_ptr<bigint> operator-(const bigint& b) {
   return neg;
 }
 
+namespace {
+
+/**
+ * Computes w = u * v + w.
+ *
+ * u is m words long, v is n words long, and w is m words long but has
+ * an allocation of at least m + n words. The length of the result is
+ * returned.
+ */
+std::uint32_t multiply_and_add(const std::uint64_t* u, std::uint64_t m,
+                               const std::uint64_t* v, std::uint64_t n,
+                               std::uint64_t* w) {
+  // This is based on Knuth's Algorithm M from section 4.3.1 of Volume
+  // 2 of the Art of Computer Programming.
+  for (std::uint_fast32_t j = 0; j < n; ++j) {
+    std::uint64_t carry = 0;
+    for (std::uint_fast32_t i = 0; i < m; ++i) {
+      unsigned __int128 t = u[i];
+      t *= v[j];
+      t += w[i + j];
+      t += carry;
+      w[i + j] = t & BI_WORD_MAX;
+      carry = t >> 64;
+    }
+    w[j + m] = carry;
+  }
+  return w[m + n - 1] ? m + n : m + n - 1;
+}
+
+}  // namespace
+
 managed_ptr<bigint> operator*(const bigint& l, const bigint& r) {
   // When both l and r fit in a single word, we can do the
   // multiplication using 128-bit integers. When they don't, we
@@ -443,22 +474,8 @@ managed_ptr<bigint> operator*(const bigint& l, const bigint& r) {
   auto* w = reinterpret_cast<std::uint64_t*>(pbuf.buf());
   const std::uint64_t* const u = l.ptr();
   const std::uint64_t* const v = r.ptr();
-  // This is based on Knuth's Algorithm M from section 4.3.1 of Volume
-  // 2 of the Art of Computer Programming.
   std::memset(w, 0, m * 8ull);
-  for (std::uint_fast32_t j = 0; j < n; ++j) {
-    std::uint64_t carry = 0;
-    for (std::uint_fast32_t i = 0; i < m; ++i) {
-      unsigned __int128 t = u[i];
-      t *= v[j];
-      t += w[i + j];
-      t += carry;
-      w[i + j] = t & BI_WORD_MAX;
-      carry = t >> 64;
-    }
-    w[j + m] = carry;
-  }
-  const std::uint32_t len = w[plen - 1] ? plen : plen - 1;
+  const auto len = multiply_and_add(u, m, v, n, w);
   if (len > BI_SIZE_MAX) {
     throw std::overflow_error("Overflow when multiplying bigints");
   }
