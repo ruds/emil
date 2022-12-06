@@ -30,7 +30,7 @@ target_link_libraries(util PRIVATE fmt::fmt utf8cpp)
 add_library(lexer STATIC lexer.cc source.cc)
 add_emil_options(lexer)
 target_include_directories(lexer PUBLIC ../include "${GMPXX_INCLUDE_DIRS}")
-target_include_directories(lexer PRIVATE ./private)
+target_include_directories(lexer PRIVATE ./private-includes)
 target_link_libraries(lexer PUBLIC
   fmt::fmt utf8cpp ICU::uc ICU::data "${GMPXX_LIBRARIES}"
   PRIVATE util)
@@ -51,8 +51,8 @@ add_library(parser STATIC
 add_emil_options(parser)
 target_link_libraries(parser PUBLIC lexer)
 target_include_directories(parser
-  PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/include" ../include)
-target_include_directories(parser PRIVATE .)
+  PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/include" ../include
+  PRIVATE ./private-includes)
 
 add_library(runtime STATIC gc.cc runtime.cc string.cc types.cc)
 add_emil_options(runtime)
