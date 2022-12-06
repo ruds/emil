@@ -1218,32 +1218,32 @@ managed_ptr<bigint> parse_bigint_decimal(std::string_view num) {
   std::uint32_t cap = 1;
   std::uint32_t num_entries = num_words;
   std::uint32_t last_size = 1;
-  while (num_entries > 1 && pow < sizeof(BI_DECIMAL_POWERS)) {
+  while (num_entries > 1 && pow < BI_DECIMAL_POWERS_LENGTH) {
     const auto& p = BI_DECIMAL_POWERS[pow];
+    last_size = std::min(last_size, p.size);
     smoosh_number_parts(pow, cap, num_entries, out, p.num, p.size, last_size);
   }
 
-  if (num_entries == 1) {
-    std::int32_t outlen = last_size;
-    while (!out[outlen - 1]) --outlen;
-    return make_managed<bigint>(bigint::new_token(), std::move(pbuf),
-                                is_positive ? outlen : -outlen);
+  if (num_entries != 1) {
+    // We've run out of precomputed powers.
+    const auto& last_pow = BI_DECIMAL_POWERS[pow - 1];
+    auto pbuf2 = ctx().mgr->allocate_private_buffer(last_pow.size * 8ull);
+    std::memcpy(pbuf2.buf(), last_pow.num, last_pow.size * 8ull);
+    auto decimal_power = make_managed<bigint>(bigint::new_token(),
+                                              std::move(pbuf2), last_pow.size);
+    while (num_entries > 1) {
+      decimal_power = *decimal_power * *decimal_power;
+      last_size =
+          std::min(last_size, static_cast<std::uint32_t>(decimal_power->size_));
+      smoosh_number_parts(pow, cap, num_entries, out, decimal_power->ptr(),
+                          decimal_power->size_, last_size);
+    }
   }
 
-  // We've run out of precomputed powers.
-  const auto& last_pow = BI_DECIMAL_POWERS[pow - 1];
-  auto pbuf2 = ctx().mgr->allocate_private_buffer(last_pow.size * 8ull);
-  std::memcpy(pbuf2.buf(), last_pow.num, last_pow.size * 8ull);
-  auto decimal_power = make_managed<bigint>(bigint::new_token(),
-                                            std::move(pbuf2), last_pow.size);
-  while (num_entries > 1) {
-    decimal_power = *decimal_power * *decimal_power;
-    smoosh_number_parts(pow, cap, num_entries, out, decimal_power->ptr(),
-                        decimal_power->size_, last_size);
-  }
-  std::int32_t outlen = decimal_power->size_;
+  std::int32_t outlen = std::min(last_size, num_words);
   while (!out[outlen - 1]) --outlen;
-  return make_managed<bigint>(bigint::new_token(), std::move(pbuf), outlen);
+  return make_managed<bigint>(bigint::new_token(), std::move(pbuf),
+                              is_positive ? outlen : -outlen);
 }
 
 // NOLINTNEXTLINE(runtime/int)

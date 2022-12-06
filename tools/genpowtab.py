@@ -45,14 +45,18 @@ def main(f):
     p = 10**19
     print(f"""struct power_table_t {{
   std::uint64_t num[{WORD_LIMIT}];
-  std::uint64_t size;
+  std::uint32_t size;
 }};""", file=f)
     print("const power_table_t BI_DECIMAL_POWERS[] = {", file=f)
+    num_entries = 0
     while log2(p) < 64 * WORD_LIMIT:
+        num_entries += 1
         print_power(p, f)
         p *= p
     print("};", file=f)
     print(f"const std::uint64_t BI_DECIMAL_POWER_NEXT_SIZE = {ceil(log2(p) / 8)};",
+          file=f)
+    print(f"const std::uint32_t BI_DECIMAL_POWERS_LENGTH = {num_entries};",
           file=f)
 
 
