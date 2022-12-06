@@ -17,6 +17,9 @@
 
 namespace emil {
 
+std::u8string to_u8string(std::string_view s);
+void to_u8string(std::string_view s, std::u8string& out);
+
 std::string to_hex(std::u8string_view s);
 void to_hex(std::u8string_view s, std::string& out);
 
