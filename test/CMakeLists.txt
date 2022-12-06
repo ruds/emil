@@ -45,7 +45,7 @@ macro(emil_add_gtest TESTNAME FILES)
   set_target_properties(${TESTNAME} PROPERTIES FOLDER test)
 endmacro()
 
-emil_add_gtest(bigint_test bigint_test.cc bigint)
+emil_add_gtest(bigint_test bigint_test.cc bigint util)
 target_compile_options(bigint_test PRIVATE -Wno-overlength-strings)
 emil_add_gtest(source_test source_test.cc lexer)
 emil_add_gtest(gc_test gc_test.cc runtime)

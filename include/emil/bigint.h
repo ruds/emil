@@ -139,7 +139,7 @@ class bigint : public Managed {
    * location other than the first character or if any other character
    * besides a '0' or '1' is present, or if there are no binary digits.
    */
-  friend managed_ptr<bigint> parse_bigint_binary(std::string_view num);
+  friend managed_ptr<bigint> parse_bigint_binary(std::u8string_view num);
 
   /**
    * @brief Converts a string with an optional leading '-' followed by a
@@ -150,7 +150,7 @@ class bigint : public Managed {
    * location other than the first character or if any other character
    * besides '0'-'7' is present, or if there are no octal digits.
    */
-  friend managed_ptr<bigint> parse_bigint_octal(std::string_view num);
+  friend managed_ptr<bigint> parse_bigint_octal(std::u8string_view num);
 
   /**
    * @brief Converts a string with an optional leading '-' followed by a
@@ -161,7 +161,7 @@ class bigint : public Managed {
    * location other than the first character or if any other character
    * besides '0'-'9' is present, or if there are no decimal digits.
    */
-  friend managed_ptr<bigint> parse_bigint_decimal(std::string_view num);
+  friend managed_ptr<bigint> parse_bigint_decimal(std::u8string_view num);
 
   /**
    * @brief Converts a string with an optional leading '-' followed by a
@@ -172,7 +172,7 @@ class bigint : public Managed {
    * location other than the first character or if any other character
    * besides a hex digit is present, or if there are no hex digits.
    */
-  friend managed_ptr<bigint> parse_bigint_hex(std::string_view num);
+  friend managed_ptr<bigint> parse_bigint_hex(std::u8string_view num);
 
  private:
   friend class testing::BigintTestAccessor;
@@ -238,10 +238,10 @@ std::ostream& operator<<(std::ostream& os, const bigint& b);
 /** Writes *b as a hex value. */
 std::ostream& operator<<(std::ostream& os, const managed_ptr<bigint>& b);
 
-managed_ptr<bigint> parse_bigint_binary(std::string_view num);
-managed_ptr<bigint> parse_bigint_octal(std::string_view num);
-managed_ptr<bigint> parse_bigint_decimal(std::string_view num);
-managed_ptr<bigint> parse_bigint_hex(std::string_view num);
+managed_ptr<bigint> parse_bigint_binary(std::u8string_view num);
+managed_ptr<bigint> parse_bigint_octal(std::u8string_view num);
+managed_ptr<bigint> parse_bigint_decimal(std::u8string_view num);
+managed_ptr<bigint> parse_bigint_hex(std::u8string_view num);
 
 /**
  * @brief Adds `l` and `r` with carry.

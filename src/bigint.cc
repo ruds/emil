@@ -951,42 +951,42 @@ void bigint::free_buffer() {
 
 namespace {
 
-std::uint64_t parse_digit_binary(char d) {
+std::uint64_t parse_digit_binary(char8_t d) {
   if (d < '0' || d > '1') [[unlikely]] {
-    throw std::invalid_argument(
-        fmt::format("Illegal character '{}' in binary number.", d));
+    throw std::invalid_argument(fmt::format(
+        "Illegal character '{}' in binary number.", static_cast<char>(d)));
   }
   return d - '0';
 }
 
-std::uint64_t parse_digit_octal(char d) {
+std::uint64_t parse_digit_octal(char8_t d) {
   if (d < '0' || d > '7') [[unlikely]] {
-    throw std::invalid_argument(
-        fmt::format("Illegal character '{}' in octal number.", d));
+    throw std::invalid_argument(fmt::format(
+        "Illegal character '{}' in octal number.", static_cast<char>(d)));
   }
   return d - '0';
 }
 
-std::uint64_t parse_digit_hex(char d) {
+std::uint64_t parse_digit_hex(char8_t d) {
   if (d < '0') [[unlikely]] {
-    throw std::invalid_argument(
-        fmt::format("Illegal character '{}' in hexadecimal number.", d));
+    throw std::invalid_argument(fmt::format(
+        "Illegal character '{}' in hexadecimal number.", static_cast<char>(d)));
   }
   if (d <= '9') return d - '0';
   if (d < 'A') [[unlikely]] {
-    throw std::invalid_argument(
-        fmt::format("Illegal character '{}' in hexadecimal number.", d));
+    throw std::invalid_argument(fmt::format(
+        "Illegal character '{}' in hexadecimal number.", static_cast<char>(d)));
   }
   if (d <= 'F') return 10 + d - 'A';
   if (d < 'a' || 'f' < d) [[unlikely]] {
-    throw std::invalid_argument(
-        fmt::format("Illegal character '{}' in hexadecimal number.", d));
+    throw std::invalid_argument(fmt::format(
+        "Illegal character '{}' in hexadecimal number.", static_cast<char>(d)));
   }
   return 10 + d - 'a';
 }
 
-std::uint64_t parse_word(std::string_view num, std::uint64_t b, std::uint64_t e,
-                         std::uint64_t (*parse_digit)(char),
+std::uint64_t parse_word(std::u8string_view num, std::uint64_t b,
+                         std::uint64_t e, std::uint64_t (*parse_digit)(char8_t),
                          std::uint64_t bits_per_digit) {
   std::uint64_t word = 0;
   for (; b < e; ++b) {
@@ -1015,7 +1015,7 @@ std::uint64_t parse_word(std::string_view num, std::uint64_t b, std::uint64_t e,
  * will be the number of bits that need to be passed into the next
  * word, and excess_bits will be the value of those bits.
  */
-std::uint64_t parse_word_octal(std::string_view num, std::uint64_t start,
+std::uint64_t parse_word_octal(std::u8string_view num, std::uint64_t start,
                                std::uint64_t& e, std::uint64_t& excess_bits,
                                std::uint_fast8_t& num_excess_bits) {
   std::uint64_t word = excess_bits;
@@ -1035,7 +1035,7 @@ std::uint64_t parse_word_octal(std::string_view num, std::uint64_t start,
   return word;
 }
 
-std::pair<bool, std::uint64_t> prepare_to_parse(std::string_view num) {
+std::pair<bool, std::uint64_t> prepare_to_parse(std::u8string_view num) {
   if (num.empty()) throw std::invalid_argument("Can't parse empty string.");
   const bool is_positive = num[0] != '-';
   std::uint64_t start = 1 - is_positive;
@@ -1048,7 +1048,7 @@ std::pair<bool, std::uint64_t> prepare_to_parse(std::string_view num) {
 
 }  // namespace
 
-managed_ptr<bigint> parse_bigint_binary(std::string_view num) {
+managed_ptr<bigint> parse_bigint_binary(std::u8string_view num) {
   const auto [is_positive, start] = prepare_to_parse(num);
   if (start == num.size()) return make_managed<bigint>();
   const std::uint64_t num_words = (num.size() - start - 1) / 64 + 1;
@@ -1072,7 +1072,7 @@ managed_ptr<bigint> parse_bigint_binary(std::string_view num) {
                               is_positive ? num_words : -num_words);
 }
 
-managed_ptr<bigint> parse_bigint_hex(std::string_view num) {
+managed_ptr<bigint> parse_bigint_hex(std::u8string_view num) {
   const auto [is_positive, start] = prepare_to_parse(num);
   if (start == num.size()) return make_managed<bigint>();
   const std::uint64_t num_words = (num.size() - start - 1) / 16 + 1;
@@ -1096,7 +1096,7 @@ managed_ptr<bigint> parse_bigint_hex(std::string_view num) {
                               is_positive ? num_words : -num_words);
 }
 
-managed_ptr<bigint> parse_bigint_octal(std::string_view num) {
+managed_ptr<bigint> parse_bigint_octal(std::u8string_view num) {
   const auto [is_positive, start] = prepare_to_parse(num);
   if (start == num.size()) return make_managed<bigint>();
   const auto first = parse_digit_octal(num[start]);
@@ -1132,7 +1132,7 @@ namespace {
 
 #include "private/power_tables.h"
 
-const std::string_view UINT64_MAX_STRING = "18446744073709551615";
+const std::u8string_view UINT64_MAX_STRING = u8"18446744073709551615";
 // The length in decimal digits of the largest number representable by
 // bigint.
 const std::uint64_t MAX_DECIMAL_DIGITS = 41373247549ull;
@@ -1145,7 +1145,7 @@ std::uint64_t parse_digit_decimal(char d) {
   return d - '0';
 }
 
-std::uint64_t parse_word_decimal(std::string_view num, std::uint64_t b,
+std::uint64_t parse_word_decimal(std::u8string_view num, std::uint64_t b,
                                  std::uint64_t e) {
   std::uint64_t word = 0;
   for (; b < e; ++b) {
@@ -1175,7 +1175,7 @@ void smoosh_number_parts(std::uint32_t& pow, std::uint32_t& cap,
 
 }  // namespace
 
-managed_ptr<bigint> parse_bigint_decimal(std::string_view num) {
+managed_ptr<bigint> parse_bigint_decimal(std::u8string_view num) {
   const auto [is_positive, start] = prepare_to_parse(num);
   if (start == num.size()) return make_managed<bigint>();
   const std::uint64_t len = num.size() - start;
