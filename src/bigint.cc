@@ -14,16 +14,20 @@
 
 #include "emil/bigint.h"
 
+#include <fmt/core.h>
+
 #include <algorithm>
 #include <cassert>
 #include <compare>
 #include <cstdint>
 #include <cstring>
+#include <functional>  // IWYU pragma: keep
 #include <iomanip>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <type_traits>  // IWYU pragma: keep
 #include <utility>
 
 #include "emil/gc.h"
@@ -943,6 +947,303 @@ void bigint::free_buffer() {
   if (capacity_) {
     ctx().mgr->free_private_buffer(s_.data, capacity_);
   }
+}
+
+namespace {
+
+std::uint64_t parse_digit_binary(char d) {
+  if (d < '0' || d > '1') [[unlikely]] {
+    throw std::invalid_argument(
+        fmt::format("Illegal character '{}' in binary number.", d));
+  }
+  return d - '0';
+}
+
+std::uint64_t parse_digit_octal(char d) {
+  if (d < '0' || d > '7') [[unlikely]] {
+    throw std::invalid_argument(
+        fmt::format("Illegal character '{}' in octal number.", d));
+  }
+  return d - '0';
+}
+
+std::uint64_t parse_digit_hex(char d) {
+  if (d < '0') [[unlikely]] {
+    throw std::invalid_argument(
+        fmt::format("Illegal character '{}' in hexadecimal number.", d));
+  }
+  if (d <= '9') return d - '0';
+  if (d < 'A') [[unlikely]] {
+    throw std::invalid_argument(
+        fmt::format("Illegal character '{}' in hexadecimal number.", d));
+  }
+  if (d <= 'F') return 10 + d - 'A';
+  if (d < 'a' || 'f' < d) [[unlikely]] {
+    throw std::invalid_argument(
+        fmt::format("Illegal character '{}' in hexadecimal number.", d));
+  }
+  return 10 + d - 'a';
+}
+
+std::uint64_t parse_word(std::string_view num, std::uint64_t b, std::uint64_t e,
+                         std::uint64_t (*parse_digit)(char),
+                         std::uint64_t bits_per_digit) {
+  std::uint64_t word = 0;
+  for (; b < e; ++b) {
+    word <<= bits_per_digit;
+    word += parse_digit(num[b]);
+  }
+  return word;
+}
+
+/**
+ * @brief Parses a word's worth of octal digits.
+ *
+ * Since 3 doesn't divide evenly into 64, there may be some leftover
+ * bits when parsing octal digits, and we may need to include some
+ * leftover bits from the previously parsed word. Moreover, the number
+ * of digits parsed for each word may be 21 or 22, depending on how
+ * many excess bits must be included from the previous word.
+ *
+ * start must be the offset into num of the first digit in the number
+ * to be parsed. On the first call, e must be one more than the offset
+ * into num of the last digit in the number to be parsed, excess_bits
+ * must be 0, and num_excess_bits must be 0.
+ *
+ * When this function returns, e will be one past the offset into num
+ * of the last digit of the next word to be parsed, num_excess bits
+ * will be the number of bits that need to be passed into the next
+ * word, and excess_bits will be the value of those bits.
+ */
+std::uint64_t parse_word_octal(std::string_view num, std::uint64_t start,
+                               std::uint64_t& e, std::uint64_t& excess_bits,
+                               std::uint_fast8_t& num_excess_bits) {
+  std::uint64_t word = excess_bits;
+  std::uint64_t shift = num_excess_bits;
+  std::uint64_t digit;
+  for (; e > start && shift < 64; --e, shift += 3) {
+    digit = parse_digit_octal(num[e - 1]);
+    word += digit << shift;
+  }
+  if (shift <= 64) {
+    excess_bits = 0;
+    num_excess_bits = 0;
+  } else {
+    num_excess_bits = shift - 64;
+    excess_bits = digit >> (3 - num_excess_bits);
+  }
+  return word;
+}
+
+std::pair<bool, std::uint64_t> prepare_to_parse(std::string_view num) {
+  if (num.empty()) throw std::invalid_argument("Can't parse empty string.");
+  const bool is_positive = num[0] != '-';
+  std::uint64_t start = 1 - is_positive;
+  if (num.size() == start) {
+    throw std::invalid_argument("At least one digit is required.");
+  }
+  while (start < num.size() && num[start] == '0') ++start;
+  return std::make_pair(is_positive, start);
+}
+
+}  // namespace
+
+managed_ptr<bigint> parse_bigint_binary(std::string_view num) {
+  const auto [is_positive, start] = prepare_to_parse(num);
+  if (start == num.size()) return make_managed<bigint>();
+  const std::uint64_t num_words = (num.size() - start - 1) / 64 + 1;
+  assert(num_words > 0);
+  if (num_words == 1) {
+    return make_managed<bigint>(
+        parse_word(num, start, num.size(), parse_digit_binary, 1), is_positive);
+  }
+  if (num_words > BI_SIZE_MAX) [[unlikely]] {
+    throw std::overflow_error("Binary bigint literal is too large.");
+  }
+  auto hold = ctx().mgr->acquire_hold();
+  auto pbuf = ctx().mgr->allocate_private_buffer(num_words * 8ull);
+  auto* out = reinterpret_cast<std::uint64_t*>(pbuf.buf());
+  std::uint64_t e = num.size();
+  for (std::uint_fast64_t w = 0; w + 1 < num_words; ++w, e -= 64) {
+    out[w] = parse_word(num, e - 64, e, parse_digit_binary, 1);
+  }
+  out[num_words - 1] = parse_word(num, start, e, parse_digit_binary, 1);
+  return make_managed<bigint>(bigint::new_token(), std::move(pbuf),
+                              is_positive ? num_words : -num_words);
+}
+
+managed_ptr<bigint> parse_bigint_hex(std::string_view num) {
+  const auto [is_positive, start] = prepare_to_parse(num);
+  if (start == num.size()) return make_managed<bigint>();
+  const std::uint64_t num_words = (num.size() - start - 1) / 16 + 1;
+  assert(num_words > 0);
+  if (num_words == 1) {
+    return make_managed<bigint>(
+        parse_word(num, start, num.size(), parse_digit_hex, 4), is_positive);
+  }
+  if (num_words > BI_SIZE_MAX) [[unlikely]] {
+    throw std::overflow_error("Hex bigint literal is too large.");
+  }
+  auto hold = ctx().mgr->acquire_hold();
+  auto pbuf = ctx().mgr->allocate_private_buffer(num_words * 8ull);
+  auto* out = reinterpret_cast<std::uint64_t*>(pbuf.buf());
+  std::uint64_t e = num.size();
+  for (std::uint_fast64_t w = 0; w + 1 < num_words; ++w, e -= 16) {
+    out[w] = parse_word(num, e - 16, e, parse_digit_hex, 4);
+  }
+  out[num_words - 1] = parse_word(num, start, e, parse_digit_hex, 4);
+  return make_managed<bigint>(bigint::new_token(), std::move(pbuf),
+                              is_positive ? num_words : -num_words);
+}
+
+managed_ptr<bigint> parse_bigint_octal(std::string_view num) {
+  const auto [is_positive, start] = prepare_to_parse(num);
+  if (start == num.size()) return make_managed<bigint>();
+  const auto first = parse_digit_octal(num[start]);
+  // 3 bits per digit except possibly the first. If the first digit is 4-7, it
+  // takes 3 bits; 2-3 takes 2 bits; 1 takes 1 (0 is excluded by
+  // prepare_to_parse).
+  const std::uint64_t num_words =
+      ((num.size() - start) * 3 - (first < 4) - (first < 2) - 1) / 64 + 1;
+  assert(num_words > 0);
+  if (num_words == 1) {
+    return make_managed<bigint>(
+        parse_word(num, start, num.size(), parse_digit_octal, 3), is_positive);
+  }
+  if (num_words > BI_SIZE_MAX) [[unlikely]] {
+    throw std::overflow_error("Octal bigint literal is too large.");
+  }
+  auto hold = ctx().mgr->acquire_hold();
+  auto pbuf = ctx().mgr->allocate_private_buffer(num_words * 8ull);
+  auto* out = reinterpret_cast<std::uint64_t*>(pbuf.buf());
+  std::uint64_t e = num.size();
+  std::uint64_t excess_bits = 0;
+  std::uint_fast8_t num_excess_bits = 0;
+  for (std::uint_fast64_t w = 0; w < num_words; ++w) {
+    out[w] = parse_word_octal(num, start, e, excess_bits, num_excess_bits);
+  }
+  assert(excess_bits == 0);
+  assert(e == start);
+  return make_managed<bigint>(bigint::new_token(), std::move(pbuf),
+                              is_positive ? num_words : -num_words);
+}
+
+namespace {
+
+#include "private/power_tables.h"
+
+const std::string_view UINT64_MAX_STRING = "18446744073709551615";
+// The length in decimal digits of the largest number representable by
+// bigint.
+const std::uint64_t MAX_DECIMAL_DIGITS = 41373247549ull;
+
+std::uint64_t parse_digit_decimal(char d) {
+  if (d < '0' || d > '9') [[unlikely]] {
+    throw std::invalid_argument(
+        fmt::format("Illegal character '{}' in decimal number.", d));
+  }
+  return d - '0';
+}
+
+std::uint64_t parse_word_decimal(std::string_view num, std::uint64_t b,
+                                 std::uint64_t e) {
+  std::uint64_t word = 0;
+  for (; b < e; ++b) {
+    word *= 10;
+    word += parse_digit_decimal(num[b]);
+  }
+  return word;
+}
+
+void smoosh_number_parts(std::uint32_t& pow, std::uint32_t& cap,
+                         std::uint32_t& num_entries, std::uint64_t* out,
+                         const std::uint64_t* pt_num, std::uint64_t pt_size,
+                         std::uint32_t& last_size) {
+  for (std::uint_fast32_t i = 0; i + 1 < num_entries; i += 2) {
+    const std::uint32_t n = i + 2 < num_entries ? pt_size : last_size;
+    auto* w = out + i * cap;
+    const auto* v = w + cap;
+    multiply_and_add(pt_num, pt_size, v, n, w);
+  }
+  if (num_entries % 2 == 0) {
+    last_size += pt_size;
+  }
+  ++pow;
+  cap *= 2;
+  num_entries = (num_entries + 1) / 2;
+}
+
+}  // namespace
+
+managed_ptr<bigint> parse_bigint_decimal(std::string_view num) {
+  const auto [is_positive, start] = prepare_to_parse(num);
+  if (start == num.size()) return make_managed<bigint>();
+  const std::uint64_t len = num.size() - start;
+  // All 19-digit decimal numbers fit into uint64_t but only some
+  // 20-digit numbers do.
+  if (len < 20 || (len == 20 && num.substr(start) <= UINT64_MAX_STRING)) {
+    return make_managed<bigint>(parse_word_decimal(num, start, num.size()),
+                                is_positive);
+  }
+  if (len > MAX_DECIMAL_DIGITS) [[unlikely]] {
+    throw std::overflow_error("Decimal bigint literal is too large.");
+  }
+  // There's a chance that the number is too large when len ==
+  // MAX_DECIMAL_DIGITS; that will lead to an overflow later.
+  const std::uint32_t num_words = (len - 1) / 19 + 1;
+  auto hold = ctx().mgr->acquire_hold();
+  auto pbuf = ctx().mgr->allocate_private_buffer(num_words * 8ull);
+  auto* out = reinterpret_cast<std::uint64_t*>(pbuf.buf());
+
+  // OK, here's the general approach. Initially we parse each 19
+  // digits of the number into 1-word numbers. Then we start a loop
+  // with the invariant that our buffer contains consecutive 2^n-word
+  // numbers a_0, a_1, ... (except that the last number may be
+  // shorter). We convert that into a buffer of consecutive
+  // 2^(n+1)-word numbers by pairwise combining numbers so that the
+  // new i'th number is a_{2*i} + a_{2*i+1}* 10^(19*2^n). The loop
+  // ends when we're down to a single number of length num_words.
+  //
+  // We can do those multiplication-and-add operations in place, which
+  // is great. Also, it's not really 2^n-word numbers -- that's just a
+  // ceiling, and the amount of space each number gets in the buffer.
+  // In fact, the size grows somewhat more slowly than that, with
+  // approximately a 1% overallocation for large numbers.
+  std::uint64_t e = num.size();
+  for (std::uint_fast64_t w = 0; w + 1 < num_words; ++w, e -= 19) {
+    out[w] = parse_word_decimal(num, e - 19, e);
+  }
+  out[num_words - 1] = parse_word_decimal(num, start, e);
+  std::uint32_t pow = 0;
+  std::uint32_t cap = 1;
+  std::uint32_t num_entries = num_words;
+  std::uint32_t last_size = 1;
+  while (num_entries > 1 && pow < sizeof(BI_DECIMAL_POWERS)) {
+    const auto& p = BI_DECIMAL_POWERS[pow];
+    smoosh_number_parts(pow, cap, num_entries, out, p.num, p.size, last_size);
+  }
+
+  if (num_entries == 1) {
+    std::int32_t outlen = last_size;
+    while (!out[outlen - 1]) --outlen;
+    return make_managed<bigint>(bigint::new_token(), std::move(pbuf),
+                                is_positive ? outlen : -outlen);
+  }
+
+  // We've run out of precomputed powers.
+  const auto& last_pow = BI_DECIMAL_POWERS[pow - 1];
+  auto pbuf2 = ctx().mgr->allocate_private_buffer(last_pow.size * 8ull);
+  std::memcpy(pbuf2.buf(), last_pow.num, last_pow.size * 8ull);
+  auto decimal_power = make_managed<bigint>(bigint::new_token(),
+                                            std::move(pbuf2), last_pow.size);
+  while (num_entries > 1) {
+    decimal_power = *decimal_power * *decimal_power;
+    smoosh_number_parts(pow, cap, num_entries, out, decimal_power->ptr(),
+                        decimal_power->size_, last_size);
+  }
+  std::int32_t outlen = decimal_power->size_;
+  while (!out[outlen - 1]) --outlen;
+  return make_managed<bigint>(bigint::new_token(), std::move(pbuf), outlen);
 }
 
 // NOLINTNEXTLINE(runtime/int)

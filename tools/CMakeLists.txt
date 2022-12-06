@@ -17,3 +17,5 @@ find_package(fmt REQUIRED)
 add_executable(genast genast.cc)
 add_emil_options(genast)
 target_link_libraries(genast fmt::fmt)
+
+configure_file(genpowtab.py genpowtab.py)

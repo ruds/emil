@@ -15,12 +15,28 @@
 find_package(ICU COMPONENTS uc i18n data REQUIRED)
 find_package(fmt REQUIRED)
 find_package(GMPXX REQUIRED)
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 add_subdirectory("${PROJECT_SOURCE_DIR}/extern/utfcpp" "extern/utfcpp")
 
+add_custom_command(
+  OUTPUT
+  "${CMAKE_CURRENT_BINARY_DIR}/private-includes/private/power_tables.h"
+  COMMAND
+  "${Python3_EXECUTABLE}"
+  ../tools/genpowtab.py
+  "${CMAKE_CURRENT_BINARY_DIR}/private-includes/private/power_tables.h"
+  DEPENDS ../tools/genpowtab.py
+)
+
 add_library(bigint STATIC bigint.cc)
 add_emil_options(bigint)
-target_include_directories(bigint PUBLIC ../include)
+target_include_directories(bigint
+  PUBLIC ../include
+  PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/private-includes")
+target_sources(bigint
+  PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/private-includes/private/power_tables.h")
+target_link_libraries(bigint PRIVATE fmt::fmt)
 
 add_library(util STATIC strconvert.cc)
 add_emil_options(util)
