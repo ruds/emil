@@ -14,7 +14,6 @@
 
 find_package(ICU COMPONENTS uc i18n data REQUIRED)
 find_package(fmt REQUIRED)
-find_package(GMPXX REQUIRED)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 add_subdirectory("${PROJECT_SOURCE_DIR}/extern/utfcpp" "extern/utfcpp")
@@ -45,10 +44,11 @@ target_link_libraries(util PRIVATE fmt::fmt utf8cpp)
 
 add_library(lexer STATIC lexer.cc source.cc)
 add_emil_options(lexer)
-target_include_directories(lexer PUBLIC ../include "${GMPXX_INCLUDE_DIRS}")
-target_include_directories(lexer PRIVATE ./private-includes)
-target_link_libraries(lexer PUBLIC
-  fmt::fmt utf8cpp ICU::uc ICU::data "${GMPXX_LIBRARIES}"
+target_include_directories(lexer
+  PUBLIC ../include
+  PRIVATE ./private-includes)
+target_link_libraries(lexer
+  PUBLIC fmt::fmt utf8cpp ICU::uc ICU::data
   PRIVATE util)
 
 add_custom_command(

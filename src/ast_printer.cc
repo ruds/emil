@@ -14,11 +14,15 @@
 
 #include "private/ast_printer.h"
 
+#include <fmt/core.h>
+
 #include <cstdint>
+#include <iterator>
 #include <string>
 #include <string_view>
 
 #include "emil/strconvert.h"
+#include "emil/token.h"  // IWYU pragma: keep
 
 namespace emil::astprinter {
 
@@ -26,8 +30,8 @@ void print_ast(std::string& out, int, std::string_view arg) { out.append(arg); }
 
 void print_ast(std::string& out, int, const char* arg) { out.append(arg); }
 
-void print_ast(std::string& out, int, const mpz_class& arg) {
-  out.append(arg.get_str());
+void print_ast(std::string& out, int, const BigintLiteralData& arg) {
+  fmt::format_to(std::back_inserter(out), "{}", arg);
 }
 
 void print_ast(std::string& out, int, bool arg) {

@@ -14,8 +14,6 @@
 
 #pragma once
 
-#include <gmpxx.h>
-
 #include <algorithm>
 #include <cstdint>
 #include <iterator>
@@ -109,8 +107,13 @@ struct QualifiedIdentifier {
   }
 };
 
+struct BigintLiteralData {
+  std::u8string number;
+  int base;
+};
+
 using token_auxiliary_t =
-    std::variant<std::monostate, int64_t, mpz_class, double, char32_t,
+    std::variant<std::monostate, int64_t, BigintLiteralData, double, char32_t,
                  std::u8string, QualifiedIdentifier>;
 
 struct Location {
@@ -128,6 +131,36 @@ struct Token {
 }  // namespace emil
 
 ENUM_WITH_TEXT_FORMATTER(emil::TokenType)
+
+template <>
+struct fmt::formatter<emil::BigintLiteralData> {
+  // cppcheck-suppress functionStatic
+  constexpr auto parse(format_parse_context& ctx) -> decltype(ctx.begin()) {
+    auto it = ctx.begin(), end = ctx.end();
+    if (it != end) throw format_error("invalid format");
+    return it;
+  }
+
+  template <typename FormatContext>
+  // cppcheck-suppress functionStatic
+  auto format(const emil::BigintLiteralData& d, FormatContext& ctx) const
+      -> decltype(ctx.out()) {
+    std::string base;
+    switch (d.base) {
+      case 2:
+        base = "0b";
+        break;
+      case 8:
+        base = "0o";
+        break;
+      case 16:
+        base = "0x";
+        break;
+    }
+    return fmt::format_to(ctx.out(), "{}{}", base,
+                          emil::to_std_string(d.number));
+  }
+};
 
 template <>
 struct fmt::formatter<emil::Token> {
@@ -156,7 +189,9 @@ struct fmt::formatter<emil::Token> {
       case TokenType::ILITERAL: {
         aux = visit(
             overload{[](int64_t i) { return format("{}i", i); },
-                     [](const mpz_class& n) { return n.get_str(); },
+                     [](const emil::BigintLiteralData& d) {
+                       return fmt::format("{}", d);
+                     },
                      [](const auto&) -> std::string {
                        throw std::logic_error("Bad aux type for ILITERAL");
                      }},

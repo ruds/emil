@@ -16,7 +16,6 @@
 
 #include <fmt/core.h>
 #include <fmt/format.h>
-#include <gmpxx.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -267,9 +266,9 @@ ExprPtr match_iliteral(Token& t) {
                           return std::make_unique<IntLiteralExpr>(t.location,
                                                                   i);
                         },
-                        [&t](mpz_class& n) -> ExprPtr {
+                        [&t](BigintLiteralData& d) -> ExprPtr {
                           return std::make_unique<BigintLiteralExpr>(
-                              t.location, std::move(n));
+                              t.location, std::move(d));
                         },
                         [](const auto&) -> ExprPtr {
                           throw std::logic_error("Bad aux type for ILITERAL");

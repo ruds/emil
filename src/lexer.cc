@@ -15,7 +15,6 @@
 #include "emil/lexer.h"
 
 #include <fmt/core.h>
-#include <gmpxx.h>
 #include <sys/errno.h>
 #include <unicode/bytestream.h>
 #include <unicode/errorcode.h>
@@ -575,7 +574,9 @@ Token Lexer::match_integer(std::string& number, Pred is_digit, int base) {
     }
     return make_token(TokenType::ILITERAL, value);
   } else {
-    return make_token(TokenType::ILITERAL, mpz_class{number, base});
+    return make_token(
+        TokenType::ILITERAL,
+        BigintLiteralData{std::u8string(number.begin(), number.end()), base});
   }
 }
 

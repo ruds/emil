@@ -14,8 +14,6 @@
 
 #pragma once
 
-#include <gmpxx.h>
-
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -23,11 +21,15 @@
 #include <utility>
 #include <vector>
 
+namespace emil {
+struct BigintLiteralData;
+}
+
 namespace emil::astprinter {
 
 void print_ast(std::string& out, int, std::string_view arg);
 void print_ast(std::string& out, int, const char* arg);
-void print_ast(std::string& out, int, const mpz_class& arg);
+void print_ast(std::string& out, int, const BigintLiteralData& arg);
 void print_ast(std::string& out, int, bool arg);
 void print_ast(std::string& out, int, int64_t arg);
 void print_ast(std::string& out, int, double arg);

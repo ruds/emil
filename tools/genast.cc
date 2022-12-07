@@ -95,7 +95,7 @@ const std::vector<Category> CATEGORIES{
     {"Expr",
      "EXPR",
      {
-         {"BigintLiteral", {"mpz_class val"}},
+         {"BigintLiteral", {"BigintLiteralData val"}},
          {"IntLiteral", {"int64_t =val"}},
          {"FpLiteral", {"double =val"}},
          {"StringLiteral", {"str val"}},
@@ -151,8 +151,6 @@ const std::string HEADER_TEMPLATE = R"(%COPYRIGHT%
 
 #pragma once
 
-#include <gmpxx.h>
-
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -171,8 +169,6 @@ const std::string CC_TEMPLATE = R"(%COPYRIGHT%
 /* This file is generated. Do not hand-edit! */
 
 #include "emil/ast.h"
-
-#include <gmpxx.h>
 
 #include <memory>
 #include <string>
