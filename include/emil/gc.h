@@ -365,7 +365,7 @@ class MemoryManager {
    private:
     friend class MemoryManager;
     MemoryManager* mgr_;
-    hold(MemoryManager* mgr);
+    explicit hold(MemoryManager* mgr);
     hold(const hold&) = delete;
     hold& operator=(const hold&) = delete;
   };

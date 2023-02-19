@@ -167,7 +167,7 @@ MemoryManager::hold::hold(MemoryManager* mgr) : mgr_(mgr) {
 MemoryManager::hold MemoryManager::acquire_hold() {
   if (stats_.num_holds == 0)
     enact_decision(gc_policy_->on_hold_request(stats_));
-  return {this};
+  return hold{this};
 }
 
 MemoryManager::Stats MemoryManager::stats() const { return stats_; }
