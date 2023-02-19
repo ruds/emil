@@ -699,7 +699,7 @@ erase_from_subtree(TreePtr<K, V> tree, const U& key, const Comp& comp) {
 }
 
 template <ManagedType K, OptionalManagedType V>
-TreePtr<K, V> redden(TreePtr<K, V>&& tree) {
+TreePtr<K, V> redden(TreePtr<K, V> tree) {
   if (tree && tree->color == Color::Black &&
       (!tree->left || tree->left->color == Color::Black) &&
       (!tree->right || tree->right->color == Color::Black)) {
@@ -745,7 +745,7 @@ std::pair<TreePtr<K, V>, typename ManagedTree<K, V>::maybe_value_type> erase(
   using T = ManagedTree<K, V>;
   auto hold = ctx().mgr->acquire_hold();
   auto result =
-      *erase_from_subtree(redden(std::move(tree)), key, comp)
+      *erase_from_subtree(redden(tree), key, comp)
            .transform([&](auto&& result) {
              return std::make_pair(std::move(result.first),
                                    T::maybe_value(std::move(result.second)));
