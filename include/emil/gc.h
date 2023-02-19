@@ -111,16 +111,15 @@ template <typename T>
 void is_managed_with_self_ptr_impl(const ManagedWithSelfPtr<T>&);
 
 template <typename T>
-concept is_managed_with_self_ptr = requires(const T& t) {
-  is_managed_with_self_ptr_impl<T>(t);
-};
+concept is_managed_with_self_ptr =
+    requires(const T& t) { is_managed_with_self_ptr_impl<T>(t); };
 }  // namespace detail
 
 template <typename T>
 concept ManagedType =
     std::is_base_of<Managed, T>::value || detail::is_managed_with_self_ptr<T>;
 
-template <typename T, typename U>
+template <typename U, typename T>
 concept BaseManagedType =
     ManagedType<T> && ManagedType<U> && std::is_base_of<T, U>::value;
 
