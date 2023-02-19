@@ -203,6 +203,8 @@ class managed_ptr : public managed_ptr_base {
 
  private:
   friend class MemoryManager;
+  template <typename U>
+  friend class managed_ptr;
 
   T* val() { return static_cast<T*>(val_); }
   const T* val() const { return static_cast<T*>(val_); }
