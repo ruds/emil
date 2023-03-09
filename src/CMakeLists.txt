@@ -80,3 +80,5 @@ add_library(typer STATIC typer.cc typed_ast.cc)
 add_emil_options(typer)
 target_include_directories(typer PUBLIC ../include)
 target_link_libraries(typer PRIVATE parser runtime)
+# TODO: Remove the following
+target_compile_options(typer PRIVATE -Wno-undefined-internal)

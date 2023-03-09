@@ -17,15 +17,21 @@
 #include <memory>
 #include <utility>
 
-#include "emil/ast.h"
+#include "emil/ast.h"  // IWYU pragma: keep
 #include "emil/gc.h"
-#include "emil/typed_ast.h"
-#include "emil/types.h"  // IWYU pragma: keep
+#include "emil/typed_ast.h"  // IWYU pragma: keep
+#include "emil/types.h"      // IWYU pragma: keep
 
 namespace emil {
 
 class Typer {
  public:
+  struct UnificationResult {
+    std::unique_ptr<typing::Type> unified_type;
+  };
+
+  Typer();
+
   /** Do typing analysis of a top-level declaration. */
   std::pair<managed_ptr<typing::Basis>, std::unique_ptr<TTopDecl>> elaborate(
       managed_ptr<typing::Basis> B, const TopDecl& topdec);
@@ -38,19 +44,16 @@ class Typer {
   std::unique_ptr<TExpr> elaborate(managed_ptr<typing::Context> C,
                                    const Expr& exp);
 
+  /** Unify two types. */
+  UnificationResult unify(managed_ptr<typing::Type> l,
+                          managed_ptr<typing::Type> r);
+
+  managed_ptr<typing::Stamp> new_stamp();
+  const typing::BuiltinTypes& builtins() const;
+
  private:
-  class TopDeclElaborator : public TopDecl::Visitor {
-   public:
-    managed_ptr<typing::Basis> B;
-    std::unique_ptr<TTopDecl> typed;
-
-    TopDeclElaborator(Typer& typer, managed_ptr<typing::Basis> B);
-
-    DECLARE_TOPDECL_V_FUNCS;
-
-   private:
-    Typer& typer_;
-  };
+  typing::StampGenerator stamp_generator_;
+  typing::BuiltinTypes builtins_;
 };
 
 }  // namespace emil

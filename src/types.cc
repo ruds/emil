@@ -33,10 +33,16 @@ StampSet stamp_set(std::initializer_list<managed_ptr<Stamp>> stamps = {}) {
   return collections::managed_set<Stamp>(stamps);
 }
 
+TypeList type_list(std::initializer_list<managed_ptr<Type>> types = {}) {
+  return collections::make_array(types);
+}
+
 template <typename T>
 concept TypeObjWithNamePtr = requires(const T& t) {
-  {StringPtr{t.name_ptr()}};  // NOLINT(readability/braces)
-};                            // NOLINT(readability/braces)
+                               {
+                                 StringPtr{t.name_ptr()}
+                               };  // NOLINT(readability/braces)
+                             };    // NOLINT(readability/braces)
 
 template <TypeObjWithNamePtr T>
 StringSet to_distinct_string_set(const collections::ArrayPtr<T>& vars) {
@@ -60,7 +66,7 @@ StringSet merge_free_variables(const StringMap<T>& m) {
 }
 
 // requires hold
-StringSet merge_free_variables(const collections::ArrayPtr<Type>& types) {
+StringSet merge_free_variables(const TypeList& types) {
   StringSet s = string_set();
   for (const auto& entry : *types) {
     s = std::move(s) | entry->free_variables();
@@ -79,7 +85,7 @@ StampSet merge_type_names(const StringMap<T>& m) {
 }
 
 // requires hold
-StampSet merge_type_names(const collections::ArrayPtr<Type>& types) {
+StampSet merge_type_names(const TypeList& types) {
   StampSet s = stamp_set();
   for (const auto& entry : *types) {
     s = std::move(s) | entry->type_names();
@@ -89,11 +95,17 @@ StampSet merge_type_names(const collections::ArrayPtr<Type>& types) {
 
 }  // namespace
 
-Stamp::Stamp(std::uint64_t id) : id_(id) {}
+Stamp::Stamp(token, std::uint64_t id) : id_(id) {}
 
 bool operator<(const Stamp& l, const Stamp& r) { return l.id() < r.id(); }
 bool operator<(std::uint64_t l, const Stamp& r) { return l < r.id(); }
 bool operator<(const Stamp& l, std::uint64_t r) { return l.id() < r; }
+
+StampGenerator::StampGenerator() = default;
+
+managed_ptr<Stamp> StampGenerator::operator()() {
+  return make_managed<Stamp>(Stamp::token{}, ++next_id_);
+}
 
 TypeObj::TypeObj(StringSet free_variables, StampSet type_names)
     : free_variables_(std::move(free_variables)),
@@ -136,7 +148,7 @@ TypeName::TypeName(std::u8string_view name, managed_ptr<Stamp> stamp,
     : TypeName(make_string(name), std::move(stamp), arity) {}
 
 TypeName::TypeName(StringPtr name, managed_ptr<Stamp> stamp, std::size_t arity)
-    : Type(string_set(), stamp_set({stamp})),
+    : TypeObj(string_set(), stamp_set({stamp})),
       name_(std::move(name)),
       stamp_(std::move(stamp)),
       arity_(arity) {}
@@ -144,6 +156,14 @@ TypeName::TypeName(StringPtr name, managed_ptr<Stamp> stamp, std::size_t arity)
 void TypeName::visit_additional_subobjects(const ManagedVisitor& visitor) {
   name_.accept(visitor);
   stamp_.accept(visitor);
+}
+
+TupleType::TupleType(TypeList types)
+    : Type(merge_free_variables(types), merge_type_names(types)),
+      types_(std::move(types)) {}
+
+void TupleType::visit_additional_subobjects(const ManagedVisitor& visitor) {
+  types_.accept(visitor);
 }
 
 RecordType::RecordType(StringMap<Type> rows)
@@ -165,8 +185,7 @@ void FunctionType::visit_additional_subobjects(const ManagedVisitor& visitor) {
   result_.accept(visitor);
 }
 
-ConstructedType::ConstructedType(managed_ptr<TypeName> name,
-                                 collections::ArrayPtr<Type> types)
+ConstructedType::ConstructedType(managed_ptr<TypeName> name, TypeList types)
     : Type(merge_free_variables(types),
            merge_type_names(types) | name->type_names()),
       name_(std::move(name)),
@@ -178,6 +197,52 @@ void ConstructedType::visit_additional_subobjects(
     const ManagedVisitor& visitor) {
   name_.accept(visitor);
   types_.accept(visitor);
+}
+
+namespace {
+
+TypePtr construct_type0(managed_ptr<Stamp>&& stamp, std::u8string_view name) {
+  return make_managed<ConstructedType>(
+      make_managed<TypeName>(name, std::move(stamp), 0), type_list());
+}
+
+}  // namespace
+
+BuiltinTypes::BuiltinTypes(managed_ptr<Stamp> bi, managed_ptr<Stamp> i,
+                           managed_ptr<Stamp> by, managed_ptr<Stamp> fl,
+                           managed_ptr<Stamp> bo, managed_ptr<Stamp> c,
+                           managed_ptr<Stamp> s, managed_ptr<Stamp> l)
+    : TypeObj(string_set(), stamp_set({bi, i, by, fl, bo, c, s, l})),
+      bi_(construct_type0(std::move(bi), u8"bigint")),
+      i_(construct_type0(std::move(i), u8"int")),
+      by_(construct_type0(std::move(by), u8"byte")),
+      fl_(construct_type0(std::move(fl), u8"float")),
+      bo_(construct_type0(std::move(bo), u8"bool")),
+      c_(construct_type0(std::move(c), u8"char")),
+      s_(construct_type0(std::move(s), u8"string")),
+      l_(make_managed<TypeName>(u8"list", l, 1)) {}
+
+TypePtr BuiltinTypes::tuple_type(TypeList types) const {
+  return make_managed<TupleType>(std::move(types));
+}
+
+TypePtr BuiltinTypes::list_type(TypePtr type) const {
+  return make_managed<ConstructedType>(l_, type_list({std::move(type)}));
+}
+
+TypePtr BuiltinTypes::record_type(StringMap<Type> rows) const {
+  return make_managed<RecordType>(std::move(rows));
+}
+
+void BuiltinTypes::visit_additional_subobjects(const ManagedVisitor& visitor) {
+  bi_.accept(visitor);
+  i_.accept(visitor);
+  by_.accept(visitor);
+  fl_.accept(visitor);
+  bo_.accept(visitor);
+  c_.accept(visitor);
+  s_.accept(visitor);
+  l_.accept(visitor);
 }
 
 TypeFunction::TypeFunction(TypePtr t, collections::ArrayPtr<TypeVar> bound)
