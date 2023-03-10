@@ -143,6 +143,26 @@ class TypeObj : public Managed {
   void visit_subobjects(const ManagedVisitor& visitor) final;
 };
 
+class TypeWithAgeRestriction;
+class TypeVar;
+class UndeterminedType;
+class TupleType;
+class RecordType;
+class FunctionType;
+class ConstructedType;
+
+class TypeVisitor {
+ public:
+  virtual ~TypeVisitor();
+  virtual void visit(const TypeWithAgeRestriction& t) = 0;
+  virtual void visit(const TypeVar& t) = 0;
+  virtual void visit(const UndeterminedType& t) = 0;
+  virtual void visit(const TupleType& t) = 0;
+  virtual void visit(const RecordType& t) = 0;
+  virtual void visit(const FunctionType& t) = 0;
+  virtual void visit(const ConstructedType& t) = 0;
+};
+
 class Type : public TypeObj {
  public:
   /**
@@ -157,6 +177,8 @@ class Type : public TypeObj {
   }
 
   const StampSet& undetermined_types() const { return undetermined_types_; }
+
+  virtual void accept(TypeVisitor& v) const = 0;
 
  protected:
   Type(StringSet free_variables, StampSet undetermined_types,
@@ -196,6 +218,8 @@ class TypeWithAgeRestriction : public Type {
     return sizeof(TypeWithAgeRestriction);
   }
 
+  void accept(TypeVisitor& v) const override { v.visit(*this); }
+
  private:
   const TypePtr type_;
   const std::uint64_t age_;
@@ -212,6 +236,8 @@ class TypeVar : public Type {
 
   void visit_additional_subobjects_of_type(const ManagedVisitor&) override;
   std::size_t managed_size() const noexcept override { return sizeof(TypeVar); }
+
+  void accept(TypeVisitor& v) const override { v.visit(*this); }
 
  private:
   const StringPtr name_;
@@ -230,6 +256,8 @@ class UndeterminedType : public Type {
   std::size_t managed_size() const noexcept override {
     return sizeof(UndeterminedType);
   }
+
+  void accept(TypeVisitor& v) const override { v.visit(*this); }
 
  private:
   const StringPtr name_;
@@ -266,6 +294,8 @@ class TupleType : public Type {
 
   TypeList types() const { return types_; }
 
+  void accept(TypeVisitor& v) const override { v.visit(*this); }
+
  private:
   const TypeList types_;
 
@@ -282,6 +312,8 @@ class RecordType : public Type {
   explicit RecordType(StringMap<Type> rows);
 
   StringMap<Type> rows() const { return rows_; }
+
+  void accept(TypeVisitor& v) const override { v.visit(*this); }
 
  private:
   const StringMap<Type> rows_;
@@ -300,6 +332,8 @@ class FunctionType : public Type {
 
   TypePtr param() const { return param_; }
   TypePtr result() const { return result_; }
+
+  void accept(TypeVisitor& v) const override { v.visit(*this); }
 
  private:
   const TypePtr param_;
@@ -320,6 +354,8 @@ class ConstructedType : public Type {
   std::u8string_view name_str() const { return name_->name(); }
   managed_ptr<TypeName> name() const { return name_; }
   const TypeList& types() const { return types_; }
+
+  void accept(TypeVisitor& v) const override { v.visit(*this); }
 
  private:
   managed_ptr<TypeName> name_;

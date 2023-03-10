@@ -145,6 +145,8 @@ void TypeObj::visit_subobjects(const ManagedVisitor& visitor) {
   visit_additional_subobjects(visitor);
 }
 
+TypeVisitor::~TypeVisitor() = default;
+
 Type::Type(StringSet free_variables, StampSet undetermined_types,
            StampSet type_names)
     : TypeObj(std::move(free_variables), std::move(type_names)),
