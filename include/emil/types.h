@@ -37,6 +37,10 @@
  * Definition of Standard ML (Revised).
  */
 
+namespace emil {
+class Typer;
+}
+
 namespace emil::typing {
 
 class TypeObj;
@@ -77,13 +81,21 @@ using StringMap = collections::MapPtr<ManagedString, T>;
  */
 class Stamp : public Managed {
  public:
+  struct token {
+   private:
+    token() {}
+    friend class StampGenerator;
+  };
+
+  Stamp(token, std::uint64_t id);
+
   std::uint64_t id() const { return id_; }
 
  private:
-  friend class StampGenerator;
   const std::uint64_t id_;
 
-  explicit Stamp(std::uint64_t id);
+  void visit_subobjects(const ManagedVisitor&) override {}
+  std::size_t managed_size() const noexcept override { return sizeof(Stamp); }
 };
 
 bool operator<(const Stamp& l, const Stamp& r);
@@ -91,6 +103,22 @@ bool operator<(std::uint64_t l, const Stamp& r);
 bool operator<(const Stamp& l, std::uint64_t r);
 
 using StampSet = collections::SetPtr<Stamp>;
+
+class StampGenerator {
+ public:
+  managed_ptr<Stamp> operator()();
+
+ private:
+  friend class emil::Typer;
+
+  std::uint64_t next_id_ = 1;
+
+  StampGenerator();
+  StampGenerator(const StampGenerator&) = delete;
+  StampGenerator& operator=(const StampGenerator&) = delete;
+  StampGenerator(StampGenerator&&) = delete;
+  StampGenerator& operator=(StampGenerator&&) = delete;
+};
 
 /**
  * @brief Objects that describe types and collections of types.
@@ -120,6 +148,7 @@ class Type : public TypeObj {
   using TypeObj::TypeObj;
 };
 using TypePtr = managed_ptr<Type>;
+using TypeList = collections::ArrayPtr<Type>;
 
 /** A type variable explicitly present in the code. */
 class TypeVar : public Type {
@@ -158,7 +187,7 @@ class UndeterminedType : public Type {
 };
 
 /** A globally unique name assigned to a constructed type. */
-class TypeName : public Type {
+class TypeName : public TypeObj {
  public:
   TypeName(std::u8string_view name, managed_ptr<Stamp> stamp,
            std::size_t arity);
@@ -177,6 +206,22 @@ class TypeName : public Type {
   void visit_additional_subobjects(const ManagedVisitor&) override;
   std::size_t managed_size() const noexcept override {
     return sizeof(TypeName);
+  }
+};
+
+/** A tuple of the given types. */
+class TupleType : public Type {
+ public:
+  explicit TupleType(TypeList types);
+
+  TypeList types() const { return types_; }
+
+ private:
+  TypeList types_;
+
+  void visit_additional_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TupleType);
   }
 };
 
@@ -217,16 +262,15 @@ class FunctionType : public Type {
 /** A constructed type: a type constructor and its type parameters. */
 class ConstructedType : public Type {
  public:
-  ConstructedType(managed_ptr<TypeName> name,
-                  collections::ArrayPtr<Type> types);
+  ConstructedType(managed_ptr<TypeName> name, TypeList types);
 
   std::u8string_view name_str() const { return name_->name(); }
   managed_ptr<TypeName> name() const { return name_; }
-  const collections::ArrayPtr<Type>& types() const { return types_; }
+  const TypeList& types() const { return types_; }
 
  private:
   managed_ptr<TypeName> name_;
-  const collections::ArrayPtr<Type> types_;
+  const TypeList types_;
 
   void visit_additional_subobjects(const ManagedVisitor& visitor) override;
   std::size_t managed_size() const noexcept override {
@@ -336,6 +380,7 @@ class TypeEnv : public TypeObj {
 /** The type scheme and identifier status associated with a value variable in an
  * environment. */
 class ValueBinding : public TypeObj {
+ public:
   ValueBinding(managed_ptr<TypeScheme> scheme, IdStatus status);
 
   managed_ptr<TypeScheme> scheme() const { return scheme_; }

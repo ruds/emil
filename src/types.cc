@@ -35,8 +35,10 @@ StampSet stamp_set(std::initializer_list<managed_ptr<Stamp>> stamps = {}) {
 
 template <typename T>
 concept TypeObjWithNamePtr = requires(const T& t) {
-  {StringPtr{t.name_ptr()}};  // NOLINT(readability/braces)
-};                            // NOLINT(readability/braces)
+                               {
+                                 StringPtr{t.name_ptr()}
+                               };  // NOLINT(readability/braces)
+                             };    // NOLINT(readability/braces)
 
 template <TypeObjWithNamePtr T>
 StringSet to_distinct_string_set(const collections::ArrayPtr<T>& vars) {
@@ -60,7 +62,7 @@ StringSet merge_free_variables(const StringMap<T>& m) {
 }
 
 // requires hold
-StringSet merge_free_variables(const collections::ArrayPtr<Type>& types) {
+StringSet merge_free_variables(const TypeList& types) {
   StringSet s = string_set();
   for (const auto& entry : *types) {
     s = std::move(s) | entry->free_variables();
@@ -79,7 +81,7 @@ StampSet merge_type_names(const StringMap<T>& m) {
 }
 
 // requires hold
-StampSet merge_type_names(const collections::ArrayPtr<Type>& types) {
+StampSet merge_type_names(const TypeList& types) {
   StampSet s = stamp_set();
   for (const auto& entry : *types) {
     s = std::move(s) | entry->type_names();
@@ -89,11 +91,17 @@ StampSet merge_type_names(const collections::ArrayPtr<Type>& types) {
 
 }  // namespace
 
-Stamp::Stamp(std::uint64_t id) : id_(id) {}
+Stamp::Stamp(token, std::uint64_t id) : id_(id) {}
 
 bool operator<(const Stamp& l, const Stamp& r) { return l.id() < r.id(); }
 bool operator<(std::uint64_t l, const Stamp& r) { return l < r.id(); }
 bool operator<(const Stamp& l, std::uint64_t r) { return l.id() < r; }
+
+StampGenerator::StampGenerator() = default;
+
+managed_ptr<Stamp> StampGenerator::operator()() {
+  return make_managed<Stamp>(Stamp::token{}, ++next_id_);
+}
 
 TypeObj::TypeObj(StringSet free_variables, StampSet type_names)
     : free_variables_(std::move(free_variables)),
@@ -136,7 +144,7 @@ TypeName::TypeName(std::u8string_view name, managed_ptr<Stamp> stamp,
     : TypeName(make_string(name), std::move(stamp), arity) {}
 
 TypeName::TypeName(StringPtr name, managed_ptr<Stamp> stamp, std::size_t arity)
-    : Type(string_set(), stamp_set({stamp})),
+    : TypeObj(string_set(), stamp_set({stamp})),
       name_(std::move(name)),
       stamp_(std::move(stamp)),
       arity_(arity) {}
@@ -144,6 +152,14 @@ TypeName::TypeName(StringPtr name, managed_ptr<Stamp> stamp, std::size_t arity)
 void TypeName::visit_additional_subobjects(const ManagedVisitor& visitor) {
   name_.accept(visitor);
   stamp_.accept(visitor);
+}
+
+TupleType::TupleType(TypeList types)
+    : Type(merge_free_variables(types), merge_type_names(types)),
+      types_(std::move(types)) {}
+
+void TupleType::visit_additional_subobjects(const ManagedVisitor& visitor) {
+  types_.accept(visitor);
 }
 
 RecordType::RecordType(StringMap<Type> rows)
@@ -165,8 +181,7 @@ void FunctionType::visit_additional_subobjects(const ManagedVisitor& visitor) {
   result_.accept(visitor);
 }
 
-ConstructedType::ConstructedType(managed_ptr<TypeName> name,
-                                 collections::ArrayPtr<Type> types)
+ConstructedType::ConstructedType(managed_ptr<TypeName> name, TypeList types)
     : Type(merge_free_variables(types),
            merge_type_names(types) | name->type_names()),
       name_(std::move(name)),
