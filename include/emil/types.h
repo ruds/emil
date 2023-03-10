@@ -144,11 +144,62 @@ class TypeObj : public Managed {
 };
 
 class Type : public TypeObj {
+ public:
+  /**
+   * The id of the youngest typename used by this type, or 0 if there are no
+   * typenames.
+   *
+   * The inference algorithm requires that no undetermined type unify
+   * with a type containing a younger typename.
+   */
+  std::uint64_t id_of_youngest_typename() const {
+    return id_of_youngest_typename_;
+  }
+
+  const StampSet& undetermined_types() const { return undetermined_types_; }
+
  protected:
-  using TypeObj::TypeObj;
+  Type(StringSet free_variables, StampSet undetermined_types,
+       StampSet type_names);
+
+ private:
+  const std::uint64_t id_of_youngest_typename_;
+  const StampSet undetermined_types_;
+
+  virtual void visit_additional_subobjects_of_type(
+      const ManagedVisitor& visitor) = 0;
+
+  void visit_additional_subobjects(const ManagedVisitor& visitor) final;
 };
 using TypePtr = managed_ptr<Type>;
 using TypeList = collections::ArrayPtr<Type>;
+
+/**
+ * A wrapper for a type that is used to propagate age restrictions into
+ * subtypes.
+ *
+ * When an undetermined type '~N is substituted by a type that has
+ * undetermined types in its subtypes, it is important that none of
+ * those types is later substitued by a type containing a typename
+ * younger than '~N.
+ */
+class TypeWithAgeRestriction : public Type {
+ public:
+  TypeWithAgeRestriction(TypePtr type, std::uint64_t age);
+
+  const TypePtr& type() const { return type_; }
+  std::uint64_t age() const { return age_; }
+
+  void visit_additional_subobjects_of_type(
+      const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TypeWithAgeRestriction);
+  }
+
+ private:
+  const TypePtr type_;
+  const std::uint64_t age_;
+};
 
 /** A type variable explicitly present in the code. */
 class TypeVar : public Type {
@@ -159,31 +210,30 @@ class TypeVar : public Type {
   std::u8string_view name() const { return *name_; }
   StringPtr name_ptr() const { return name_; }
 
-  void visit_additional_subobjects(const ManagedVisitor&) override;
+  void visit_additional_subobjects_of_type(const ManagedVisitor&) override;
   std::size_t managed_size() const noexcept override { return sizeof(TypeVar); }
 
  private:
-  StringPtr name_;
+  const StringPtr name_;
 };
 
 /** An as-yet undetermined type, produced during type inference. */
 class UndeterminedType : public Type {
  public:
-  UndeterminedType(std::u8string_view name, managed_ptr<Stamp> stamp);
-  UndeterminedType(StringPtr name, managed_ptr<Stamp> stamp);
+  explicit UndeterminedType(managed_ptr<Stamp> stamp);
 
   std::u8string_view name() const { return *name_; }
   StringPtr name_ptr() const { return name_; }
   const managed_ptr<Stamp>& stamp() const { return stamp_; }
 
-  void visit_additional_subobjects(const ManagedVisitor&) override;
+  void visit_additional_subobjects_of_type(const ManagedVisitor&) override;
   std::size_t managed_size() const noexcept override {
     return sizeof(UndeterminedType);
   }
 
  private:
-  StringPtr name_;
-  managed_ptr<Stamp> stamp_;
+  const StringPtr name_;
+  const managed_ptr<Stamp> stamp_;
 };
 
 /** A globally unique name assigned to a constructed type. */
@@ -199,8 +249,8 @@ class TypeName : public TypeObj {
   std::size_t arity() const { return arity_; }
 
  private:
-  StringPtr name_;
-  managed_ptr<Stamp> stamp_;
+  const StringPtr name_;
+  const managed_ptr<Stamp> stamp_;
   const std::size_t arity_;
 
   void visit_additional_subobjects(const ManagedVisitor&) override;
@@ -217,9 +267,10 @@ class TupleType : public Type {
   TypeList types() const { return types_; }
 
  private:
-  TypeList types_;
+  const TypeList types_;
 
-  void visit_additional_subobjects(const ManagedVisitor& visitor) override;
+  void visit_additional_subobjects_of_type(
+      const ManagedVisitor& visitor) override;
   std::size_t managed_size() const noexcept override {
     return sizeof(TupleType);
   }
@@ -233,9 +284,10 @@ class RecordType : public Type {
   StringMap<Type> rows() const { return rows_; }
 
  private:
-  StringMap<Type> rows_;
+  const StringMap<Type> rows_;
 
-  void visit_additional_subobjects(const ManagedVisitor& visitor) override;
+  void visit_additional_subobjects_of_type(
+      const ManagedVisitor& visitor) override;
   std::size_t managed_size() const noexcept override {
     return sizeof(RecordType);
   }
@@ -253,7 +305,8 @@ class FunctionType : public Type {
   const TypePtr param_;
   const TypePtr result_;
 
-  void visit_additional_subobjects(const ManagedVisitor& visitor) override;
+  void visit_additional_subobjects_of_type(
+      const ManagedVisitor& visitor) override;
   std::size_t managed_size() const noexcept override {
     return sizeof(FunctionType);
   }
@@ -272,7 +325,8 @@ class ConstructedType : public Type {
   managed_ptr<TypeName> name_;
   const TypeList types_;
 
-  void visit_additional_subobjects(const ManagedVisitor& visitor) override;
+  void visit_additional_subobjects_of_type(
+      const ManagedVisitor& visitor) override;
   std::size_t managed_size() const noexcept override {
     return sizeof(ConstructedType);
   }

@@ -14,11 +14,17 @@
 
 #include "emil/types.h"
 
+#include <fmt/core.h>
+
 #include <cassert>
 #include <initializer_list>
+#include <iterator>
+#include <string>
 #include <utility>
 
 #include "emil/collections.h"
+#include "emil/gc.h"
+#include "emil/strconvert.h"
 #include "emil/string.h"
 
 namespace emil::typing {
@@ -72,6 +78,25 @@ StringSet merge_free_variables(const TypeList& types) {
 
 // requires hold
 template <TypeObjType T>
+StampSet merge_undetermined_types(const StringMap<T>& m) {
+  StampSet s = stamp_set();
+  for (const auto& entry : *m) {
+    s = std::move(s) | entry.second->undetermined_types();
+  }
+  return s;
+}
+
+// requires hold
+StampSet merge_undetermined_types(const TypeList& types) {
+  StampSet s = stamp_set();
+  for (const auto& entry : *types) {
+    s = std::move(s) | entry->undetermined_types();
+  }
+  return s;
+}
+
+// requires hold
+template <TypeObjType T>
 StampSet merge_type_names(const StringMap<T>& m) {
   StampSet s = stamp_set();
   for (const auto& entry : *m) {
@@ -89,6 +114,11 @@ StampSet merge_type_names(const TypeList& types) {
   return s;
 }
 
+// Requires hold.
+std::uint64_t compute_max_id(StampSet s) {
+  if (s->empty()) return 0;
+  return (*s->crbegin())->id();
+}
 }  // namespace
 
 Stamp::Stamp(token, std::uint64_t id) : id_(id) {}
@@ -115,25 +145,45 @@ void TypeObj::visit_subobjects(const ManagedVisitor& visitor) {
   visit_additional_subobjects(visitor);
 }
 
+Type::Type(StringSet free_variables, StampSet undetermined_types,
+           StampSet type_names)
+    : TypeObj(std::move(free_variables), std::move(type_names)),
+      id_of_youngest_typename_(compute_max_id(this->type_names())),
+      undetermined_types_(std::move(undetermined_types)) {}
+
+void Type::visit_additional_subobjects(const ManagedVisitor& visitor) {
+  undetermined_types_.accept(visitor);
+  visit_additional_subobjects_of_type(visitor);
+}
+
+TypeWithAgeRestriction::TypeWithAgeRestriction(TypePtr type, std::uint64_t age)
+    : Type(type->free_variables(), type->undetermined_types(),
+           type->type_names()),
+      type_(std::move(type)),
+      age_(age) {}
+
+void TypeWithAgeRestriction::visit_additional_subobjects_of_type(
+    const ManagedVisitor& visitor) {
+  type_.accept(visitor);
+}
+
 TypeVar::TypeVar(std::u8string_view name) : TypeVar(make_string(name)) {}
 
 TypeVar::TypeVar(StringPtr name)
-    : Type(string_set({name}), stamp_set()), name_(std::move(name)) {}
+    : Type(string_set({name}), stamp_set(), stamp_set()),
+      name_(std::move(name)) {}
 
-void TypeVar::visit_additional_subobjects(const ManagedVisitor& visitor) {
+void TypeVar::visit_additional_subobjects_of_type(
+    const ManagedVisitor& visitor) {
   name_.accept(visitor);
 }
 
-UndeterminedType::UndeterminedType(std::u8string_view name,
-                                   managed_ptr<Stamp> stamp)
-    : UndeterminedType(make_string(name), std::move(stamp)) {}
-
-UndeterminedType::UndeterminedType(StringPtr name, managed_ptr<Stamp> stamp)
-    : Type(string_set({name}), stamp_set()),
-      name_(std::move(name)),
+UndeterminedType::UndeterminedType(managed_ptr<Stamp> stamp)
+    : Type(string_set(), stamp_set({stamp}), stamp_set()),
+      name_(make_string(to_u8string(fmt::format("'~{}", stamp->id())))),
       stamp_(std::move(stamp)) {}
 
-void UndeterminedType::visit_additional_subobjects(
+void UndeterminedType::visit_additional_subobjects_of_type(
     const ManagedVisitor& visitor) {
   name_.accept(visitor);
   stamp_.accept(visitor);
@@ -155,41 +205,47 @@ void TypeName::visit_additional_subobjects(const ManagedVisitor& visitor) {
 }
 
 TupleType::TupleType(TypeList types)
-    : Type(merge_free_variables(types), merge_type_names(types)),
+    : Type(merge_free_variables(types), merge_undetermined_types(types),
+           merge_type_names(types)),
       types_(std::move(types)) {}
 
-void TupleType::visit_additional_subobjects(const ManagedVisitor& visitor) {
+void TupleType::visit_additional_subobjects_of_type(
+    const ManagedVisitor& visitor) {
   types_.accept(visitor);
 }
 
 RecordType::RecordType(StringMap<Type> rows)
-    : Type(merge_free_variables(rows), merge_type_names(rows)),
+    : Type(merge_free_variables(rows), merge_undetermined_types(rows),
+           merge_type_names(rows)),
       rows_(std::move(rows)) {}
 
-void RecordType::visit_additional_subobjects(const ManagedVisitor& visitor) {
+void RecordType::visit_additional_subobjects_of_type(
+    const ManagedVisitor& visitor) {
   rows_.accept(visitor);
 }
 
 FunctionType::FunctionType(TypePtr param, TypePtr result)
     : Type(param->free_variables() | result->free_variables(),
+           param->undetermined_types() | result->undetermined_types(),
            param->type_names() | result->type_names()),
       param_(std::move(param)),
       result_(std::move(result)) {}
 
-void FunctionType::visit_additional_subobjects(const ManagedVisitor& visitor) {
+void FunctionType::visit_additional_subobjects_of_type(
+    const ManagedVisitor& visitor) {
   param_.accept(visitor);
   result_.accept(visitor);
 }
 
 ConstructedType::ConstructedType(managed_ptr<TypeName> name, TypeList types)
-    : Type(merge_free_variables(types),
+    : Type(merge_free_variables(types), merge_undetermined_types(types),
            merge_type_names(types) | name->type_names()),
       name_(std::move(name)),
       types_(std::move(types)) {
   assert(types_->size() == name_->arity());
 }
 
-void ConstructedType::visit_additional_subobjects(
+void ConstructedType::visit_additional_subobjects_of_type(
     const ManagedVisitor& visitor) {
   name_.accept(visitor);
   types_.accept(visitor);
