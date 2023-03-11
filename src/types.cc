@@ -20,12 +20,15 @@
 #include <initializer_list>
 #include <iterator>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 #include "emil/collections.h"
 #include "emil/gc.h"
+#include "emil/runtime.h"
 #include "emil/strconvert.h"
 #include "emil/string.h"
+#include "emil/tree.h"
 
 namespace emil::typing {
 
@@ -130,7 +133,7 @@ bool operator<(const Stamp& l, std::uint64_t r) { return l.id() < r; }
 StampGenerator::StampGenerator() = default;
 
 managed_ptr<Stamp> StampGenerator::operator()() {
-  return make_managed<Stamp>(Stamp::token{}, ++next_id_);
+  return make_managed<Stamp>(Stamp::token{}, next_id_++);
 }
 
 TypeObj::TypeObj(StringSet free_variables, StampSet type_names)
@@ -185,6 +188,9 @@ UndeterminedType::UndeterminedType(managed_ptr<Stamp> stamp)
       name_(make_string(to_u8string(fmt::format("'~{}", stamp->id())))),
       stamp_(std::move(stamp)) {}
 
+UndeterminedType::UndeterminedType(StampGenerator& stamper)
+    : UndeterminedType(stamper()) {}
+
 void UndeterminedType::visit_additional_subobjects_of_type(
     const ManagedVisitor& visitor) {
   name_.accept(visitor);
@@ -195,11 +201,18 @@ TypeName::TypeName(std::u8string_view name, managed_ptr<Stamp> stamp,
                    std::size_t arity)
     : TypeName(make_string(name), std::move(stamp), arity) {}
 
+TypeName::TypeName(std::u8string_view name, StampGenerator& stamper,
+                   std::size_t arity)
+    : TypeName(name, stamper(), arity) {}
+
 TypeName::TypeName(StringPtr name, managed_ptr<Stamp> stamp, std::size_t arity)
     : TypeObj(string_set(), stamp_set({stamp})),
       name_(std::move(name)),
       stamp_(std::move(stamp)),
       arity_(arity) {}
+
+TypeName::TypeName(StringPtr name, StampGenerator& stamper, std::size_t arity)
+    : TypeName(name, stamper(), arity) {}
 
 void TypeName::visit_additional_subobjects(const ManagedVisitor& visitor) {
   name_.accept(visitor);
@@ -216,10 +229,11 @@ void TupleType::visit_additional_subobjects_of_type(
   types_.accept(visitor);
 }
 
-RecordType::RecordType(StringMap<Type> rows)
+RecordType::RecordType(StringMap<Type> rows, bool has_wildcard)
     : Type(merge_free_variables(rows), merge_undetermined_types(rows),
            merge_type_names(rows)),
-      rows_(std::move(rows)) {}
+      rows_(std::move(rows)),
+      has_wildcard_(has_wildcard) {}
 
 void RecordType::visit_additional_subobjects_of_type(
     const ManagedVisitor& visitor) {
@@ -374,6 +388,117 @@ managed_ptr<Env> operator+(const managed_ptr<Env>& l,
 managed_ptr<Basis> operator+(const managed_ptr<Basis>& B,
                              const managed_ptr<Env>& E) {
   return make_managed<Basis>(B->type_names() | E->type_names(), B->env() + E);
+}
+
+namespace {
+
+class TypePrinter : public TypeVisitor {
+ public:
+  explicit TypePrinter(CanonicalizeUndeterminedTypes c)
+      : h_(ctx().mgr->acquire_hold()), c_(c) {}
+
+  std::u8string& contents() { return contents_; }
+
+  void visit(const TypeWithAgeRestriction& t) override {
+    t.type()->accept(*this);
+  }
+
+  void visit(const TypeVar& t) override { contents_ += t.name(); }
+
+  void visit(const UndeterminedType& t) override {
+    if (c_ == CanonicalizeUndeterminedTypes::NO) {
+      contents_ += t.name();
+      return;
+    }
+    const auto id = t.stamp()->id();
+    const auto it = mappings_.find(id);
+    std::uint64_t new_id;
+    if (it == mappings_.end()) {
+      new_id = mappings_.size();
+      mappings_[id] = new_id;
+    } else {
+      new_id = it->second;
+    }
+    fmt::format_to(std::back_inserter(contents_), "'~{}", new_id);
+  }
+
+  void visit(const TupleType& t) override {
+    contents_ += u8"(";
+    bool first = true;
+    for (const auto& type : *t.types()) {
+      if (first)
+        first = false;
+      else
+        contents_ += u8" * ";
+      type->accept(*this);
+    }
+    contents_ += u8")";
+  }
+
+  void visit(const RecordType& t) override {
+    contents_ += u8"{";
+    bool first = true;
+    for (const auto& entry : *t.rows()) {
+      if (first)
+        first = false;
+      else
+        contents_ += u8", ";
+      contents_.append(entry.first->data(), entry.first->size());
+      contents_ += u8": ";
+      entry.second->accept(*this);
+    }
+    if (t.has_wildcard()) {
+      if (!first) contents_ += u8", ";
+      contents_ += u8"...";
+    }
+    contents_ += u8"}";
+  }
+
+  void visit(const FunctionType& t) override {
+    t.param()->accept(*this);
+    contents_ += u8" -> ";
+    t.result()->accept(*this);
+  }
+
+  void visit(const ConstructedType& t) override {
+    switch (t.types()->size()) {
+      case 0:
+        break;
+
+      case 1:
+        (*t.types()->begin())->accept(*this);
+        contents_ += u8" ";
+        break;
+
+      default: {
+        contents_ += u8"(";
+        bool first = true;
+        for (const auto& type : *t.types()) {
+          if (first)
+            first = false;
+          else
+            contents_ += u8", ";
+          type->accept(*this);
+        }
+        contents_ += u8") ";
+      }
+    }
+    contents_ += t.name_str();
+  }
+
+ private:
+  MemoryManager::hold h_;
+  const CanonicalizeUndeterminedTypes c_;
+  std::unordered_map<std::uint64_t, std::uint64_t> mappings_;
+  std::u8string contents_;
+};
+
+}  // namespace
+
+std::u8string print_type(TypePtr t, CanonicalizeUndeterminedTypes c) {
+  TypePrinter printer{c};
+  t->accept(printer);
+  return std::move(printer.contents());
 }
 
 }  // namespace emil::typing

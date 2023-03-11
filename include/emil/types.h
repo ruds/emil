@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <type_traits>
 
@@ -36,10 +37,6 @@
  * the static semantic objects described in Chapters 4 and 5 of the
  * Definition of Standard ML (Revised).
  */
-
-namespace emil {
-class Typer;
-}
 
 namespace emil::typing {
 
@@ -106,14 +103,13 @@ using StampSet = collections::SetPtr<Stamp>;
 
 class StampGenerator {
  public:
+  StampGenerator();
+
   managed_ptr<Stamp> operator()();
 
  private:
-  friend class emil::Typer;
-
   std::uint64_t next_id_ = 1;
 
-  StampGenerator();
   StampGenerator(const StampGenerator&) = delete;
   StampGenerator& operator=(const StampGenerator&) = delete;
   StampGenerator(StampGenerator&&) = delete;
@@ -247,6 +243,7 @@ class TypeVar : public Type {
 class UndeterminedType : public Type {
  public:
   explicit UndeterminedType(managed_ptr<Stamp> stamp);
+  explicit UndeterminedType(StampGenerator& stamper);
 
   std::u8string_view name() const { return *name_; }
   StringPtr name_ptr() const { return name_; }
@@ -269,7 +266,9 @@ class TypeName : public TypeObj {
  public:
   TypeName(std::u8string_view name, managed_ptr<Stamp> stamp,
            std::size_t arity);
+  TypeName(std::u8string_view name, StampGenerator& stamper, std::size_t arity);
   TypeName(StringPtr name, managed_ptr<Stamp> stamp, std::size_t arity);
+  TypeName(StringPtr name, StampGenerator& stamper, std::size_t arity);
 
   std::u8string_view name() const { return *name_; }
   StringPtr name_ptr() const { return name_; }
@@ -292,7 +291,7 @@ class TupleType : public Type {
  public:
   explicit TupleType(TypeList types);
 
-  TypeList types() const { return types_; }
+  const TypeList& types() const { return types_; }
 
   void accept(TypeVisitor& v) const override { v.visit(*this); }
 
@@ -309,14 +308,16 @@ class TupleType : public Type {
 /** A mapping from labels to types. */
 class RecordType : public Type {
  public:
-  explicit RecordType(StringMap<Type> rows);
+  explicit RecordType(StringMap<Type> rows, bool has_wildcard = false);
 
   StringMap<Type> rows() const { return rows_; }
+  bool has_wildcard() const { return has_wildcard_; }
 
   void accept(TypeVisitor& v) const override { v.visit(*this); }
 
  private:
   const StringMap<Type> rows_;
+  const bool has_wildcard_;
 
   void visit_additional_subobjects_of_type(
       const ManagedVisitor& visitor) override;
@@ -561,5 +562,12 @@ managed_ptr<Env> operator+(const managed_ptr<Env>& l,
 
 managed_ptr<Basis> operator+(const managed_ptr<Basis>& B,
                              const managed_ptr<Env>& E);
+
+enum class CanonicalizeUndeterminedTypes {
+  NO,
+  YES,
+};
+
+std::u8string print_type(TypePtr t, CanonicalizeUndeterminedTypes c);
 
 }  // namespace emil::typing
