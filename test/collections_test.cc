@@ -1453,6 +1453,87 @@ TEST(ManagedMapTest, Intersection) {
   EXPECT_THAT(*m135_and_m56, ElementsAre(MP(5, 56)));
 }
 
+TEST(ManagedMapTest, FilterKeys) {
+  TestContext tc;
+  managed_ptr<ManagedMap<ManagedInt, ManagedDouble>> empty;
+  managed_ptr<ManagedMap<ManagedInt, ManagedDouble>> all;
+  managed_ptr<ManagedMap<ManagedInt, ManagedDouble>> m234;
+  managed_ptr<ManagedMap<ManagedInt, ManagedDouble>> m56;
+  managed_ptr<ManagedMap<ManagedInt, ManagedDouble>> m135;
+  managed_ptr<ManagedSet<ManagedInt>> k_empty;
+  managed_ptr<ManagedSet<ManagedInt>> k_all;
+  managed_ptr<ManagedSet<ManagedInt>> k_m234;
+  managed_ptr<ManagedSet<ManagedInt>> k_m56;
+  managed_ptr<ManagedSet<ManagedInt>> k_m135;
+
+  {
+    auto hold = tc.mgr.acquire_hold();
+    empty = managed_map<ManagedInt, ManagedDouble>();
+    k_empty = managed_set<ManagedInt>();
+    all = emplace(*empty, 1, 123456).first;
+    all = emplace(*all, 2, 123456).first;
+    all = emplace(*all, 3, 123456).first;
+    all = emplace(*all, 4, 123456).first;
+    all = emplace(*all, 5, 123456).first;
+    all = emplace(*all, 6, 123456).first;
+    k_all = managed_set({mi(1), mi(2), mi(3), mi(4), mi(5), mi(6)});
+    m234 = emplace(*empty, 2, 234).first;
+    m234 = emplace(*m234, 3, 234).first;
+    m234 = emplace(*m234, 4, 234).first;
+    k_m234 = managed_set({mi(2), mi(3), mi(4)});
+    m56 = emplace(*empty, 5, 56).first;
+    m56 = emplace(*m56, 6, 56).first;
+    k_m56 = managed_set({mi(5), mi(6)});
+    m135 = emplace(*empty, 1, 135).first;
+    m135 = emplace(*m135, 3, 135).first;
+    m135 = emplace(*m135, 5, 135).first;
+    k_m135 = managed_set({mi(1), mi(3), mi(5)});
+    tc.root.add_root(empty);
+    tc.root.add_root(all);
+    tc.root.add_root(m234);
+    tc.root.add_root(m56);
+    tc.root.add_root(m135);
+    tc.root.add_root(k_empty);
+    tc.root.add_root(k_all);
+    tc.root.add_root(k_m234);
+    tc.root.add_root(k_m56);
+    tc.root.add_root(k_m135);
+  }
+  auto empty_filtered_by_empty = tc.root.add_root(empty->filter_keys(k_empty));
+  auto empty_filtered_by_m234 = tc.root.add_root(empty->filter_keys(k_m234));
+  auto m234_filtered_by_empty = tc.root.add_root(m234->filter_keys(k_empty));
+
+  auto m234_filtered_by_m234 = tc.root.add_root(m234->filter_keys(k_m234));
+  auto m234_filtered_by_m56 = tc.root.add_root(m234->filter_keys(k_m56));
+  auto m56_filtered_by_m234 = tc.root.add_root(m56->filter_keys(k_m234));
+  auto m234_filtered_by_m135 = tc.root.add_root(m234->filter_keys(k_m135));
+  auto m135_filtered_by_m234 = tc.root.add_root(m135->filter_keys(k_m234));
+  auto m234_filtered_by_all = tc.root.add_root(m234->filter_keys(k_all));
+  auto all_filtered_by_m234 = tc.root.add_root(all->filter_keys(k_m234));
+
+  auto m56_filtered_by_m135 = tc.root.add_root(m56->filter_keys(k_m135));
+  auto m135_filtered_by_m56 = tc.root.add_root(m135->filter_keys(k_m56));
+
+  auto hold = tc.mgr.acquire_hold();
+  EXPECT_THAT(*empty_filtered_by_empty, ElementsAre());
+  EXPECT_THAT(*empty_filtered_by_m234, ElementsAre());
+  EXPECT_THAT(*m234_filtered_by_empty, ElementsAre());
+
+  EXPECT_THAT(*m234_filtered_by_m234,
+              ElementsAre(MP(2, 234), MP(3, 234), MP(4, 234)));
+  EXPECT_THAT(*m234_filtered_by_m56, ElementsAre());
+  EXPECT_THAT(*m56_filtered_by_m234, ElementsAre());
+  EXPECT_THAT(*m234_filtered_by_m135, ElementsAre(MP(3, 234)));
+  EXPECT_THAT(*m135_filtered_by_m234, ElementsAre(MP(3, 135)));
+  EXPECT_THAT(*m234_filtered_by_all,
+              ElementsAre(MP(2, 234), MP(3, 234), MP(4, 234)));
+  EXPECT_THAT(*all_filtered_by_m234,
+              ElementsAre(MP(2, 123456), MP(3, 123456), MP(4, 123456)));
+
+  EXPECT_THAT(*m56_filtered_by_m135, ElementsAre(MP(5, 56)));
+  EXPECT_THAT(*m135_filtered_by_m56, ElementsAre(MP(5, 135)));
+}
+
 TEST(ManagedMapTest, Difference) {
   TestContext tc;
   managed_ptr<ManagedMap<ManagedInt, ManagedDouble>> empty;

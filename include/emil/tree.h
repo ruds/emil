@@ -1069,8 +1069,9 @@ set_set_result_t<K, V> union_left(TreePtr<K, V> left, std::size_t left_height,
  *
  * Must be called with a hold on the memory manager.
  */
-template <ManagedType K, OptionalManagedType V, typename Comp>
-set_set_result_t<K, V> intersection_right(TreePtr<K, V> left,
+template <ManagedType K, OptionalManagedType V, OptionalManagedType V2,
+          typename Comp>
+set_set_result_t<K, V> intersection_right(TreePtr<K, V2> left,
                                           std::size_t left_height,
                                           TreePtr<K, V> right,
                                           std::size_t right_height,
@@ -1104,10 +1105,10 @@ set_set_result_t<K, V> intersection_right(TreePtr<K, V> left,
  *
  * Must be called with a hold on the memory manager.
  */
-template <ManagedType K, ManagedType V, typename Comp>
+template <ManagedType K, ManagedType V, OptionalManagedType V2, typename Comp>
 set_set_result_t<K, V> intersection_left(TreePtr<K, V> left,
                                          std::size_t left_height,
-                                         TreePtr<K, V> right,
+                                         TreePtr<K, V2> right,
                                          std::size_t right_height,
                                          const Comp& comp) {
   if (!left || !right) return {nullptr, 0, 0};
