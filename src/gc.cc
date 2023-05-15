@@ -14,7 +14,6 @@
 
 #include "emil/gc.h"
 
-#include <fmt/core.h>
 #include <fmt/ostream.h>
 
 #include <cassert>

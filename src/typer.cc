@@ -14,8 +14,6 @@
 
 #include "emil/typer.h"
 
-#include <type_traits>
-
 #include "emil/ast.h"
 #include "emil/typed_ast.h"
 #include "emil/types.h"

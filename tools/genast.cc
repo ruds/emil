@@ -37,6 +37,8 @@
 #include <utility>
 #include <vector>
 
+// IWYU pragma: no_include <__tree>
+
 namespace emil::tools {
 
 namespace {
