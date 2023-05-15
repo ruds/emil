@@ -16,10 +16,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <exception>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 #include "emil/collections.h"
 #include "emil/gc.h"
@@ -568,6 +572,52 @@ enum class CanonicalizeUndeterminedTypes {
   YES,
 };
 
-std::u8string print_type(TypePtr t, CanonicalizeUndeterminedTypes c);
+/**
+ * Prints a type to string.
+ *
+ * If c is YES, undetermined types are renamed to '~0, '~1, etc. based
+ * on their order of appearance in the string.
+ */
+std::u8string print_type(TypePtr t, CanonicalizeUndeterminedTypes c =
+                                        CanonicalizeUndeterminedTypes::NO);
+std::u8string print_type(const Type& t, CanonicalizeUndeterminedTypes c =
+                                            CanonicalizeUndeterminedTypes::NO);
+
+class UnificationError : public std::exception {
+ public:
+  explicit UnificationError(const std::string& msg);
+  UnificationError(const std::string& msg, TypePtr l, TypePtr r);
+
+  const char* what() const noexcept override { return full_msg_.c_str(); }
+
+  /** Returns the types being unified from most specific subtype to most general
+   * type. */
+  const std::vector<std::pair<TypePtr, TypePtr>>& context() const {
+    return context_;
+  }
+
+  /** Used to add context during stack unwinding. */
+  void add_context(TypePtr l, TypePtr r);
+
+ private:
+  MemoryManager::hold hold_;
+  std::vector<std::pair<TypePtr, TypePtr>> context_;
+  std::string full_msg_;
+};
+
+using Substitutions = collections::MapPtr<Stamp, Type>;
+
+inline constexpr std::uint64_t NO_ADDITIONAL_TYPE_NAME_RESTRICTION =
+    std::numeric_limits<std::uint64_t>::max();
+
+/**
+ * Apply the given substitutions to the given type.
+ *
+ * Throws a UnificationError if an illegal substitution is attempted (i.e. a
+ * too-young typename is substituted for an older undetermined type).
+ */
+TypePtr apply_substitutions(
+    TypePtr t, Substitutions substitutions,
+    std::uint64_t maximum_type_name_id = NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
 
 }  // namespace emil::typing

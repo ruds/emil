@@ -16,6 +16,7 @@
 
 #include <fmt/core.h>
 
+#include <algorithm>
 #include <cassert>
 #include <initializer_list>
 #include <iterator>
@@ -44,10 +45,8 @@ StampSet stamp_set(std::initializer_list<managed_ptr<Stamp>> stamps = {}) {
 
 template <typename T>
 concept TypeObjWithNamePtr = requires(const T& t) {
-                               {
-                                 StringPtr{t.name_ptr()}
-                               };  // NOLINT(readability/braces)
-                             };    // NOLINT(readability/braces)
+  { StringPtr{t.name_ptr()} };  // NOLINT(readability/braces)
+};                              // NOLINT(readability/braces)
 
 template <TypeObjWithNamePtr T>
 StringSet to_distinct_string_set(const collections::ArrayPtr<T>& vars) {
@@ -496,9 +495,118 @@ class TypePrinter : public TypeVisitor {
 }  // namespace
 
 std::u8string print_type(TypePtr t, CanonicalizeUndeterminedTypes c) {
+  return print_type(*t, c);
+}
+
+std::u8string print_type(const Type& t, CanonicalizeUndeterminedTypes c) {
   TypePrinter printer{c};
-  t->accept(printer);
+  t.accept(printer);
   return std::move(printer.contents());
+}
+
+UnificationError::UnificationError(const std::string& msg)
+    : hold_(ctx().mgr->acquire_hold()), full_msg_(msg) {}
+
+UnificationError::UnificationError(const std::string& msg, TypePtr l, TypePtr r)
+    : UnificationError(msg) {
+  add_context(l, r);
+}
+
+void UnificationError::add_context(TypePtr l, TypePtr r) {
+  fmt::format_to(back_inserter(full_msg_),
+                 "\n----\nwhile trying to unify\n{}\nwith\n{}",
+                 to_std_string(print_type(l)), to_std_string(print_type(r)));
+  context_.emplace_back(std::move(l), std::move(r));
+}
+
+namespace {
+class Substitutor : public TypeVisitor {
+ public:
+  TypePtr result;
+
+  Substitutor(TypePtr orig, Substitutions substitutions,
+              std::uint64_t maximum_type_name_id)
+      : result(std::move(orig)),
+        substitutions_(std::move(substitutions)),
+        maximum_type_name_id_(maximum_type_name_id) {}
+
+  void visit(const TypeWithAgeRestriction& t) override {
+    result = make_managed<TypeWithAgeRestriction>(
+        apply_substitutions(t.type(), substitutions_,
+                            std::min(maximum_type_name_id_, t.age())),
+        t.age());
+  }
+
+  void visit(const TypeVar&) override {}
+
+  void visit(const UndeterminedType& t) override {
+    const auto it = substitutions_->find(*t.stamp());
+    if (it == substitutions_->cend()) return;
+    const auto id = t.stamp()->id();
+    const auto& r = it->second;
+    if (r->id_of_youngest_typename() > std::min(maximum_type_name_id_, id)) {
+      throw UnificationError(fmt::format(
+          "Illegal substitution. {} (with constraint {}) can't be "
+          "substituted by {} (with youngest type id {})",
+          to_std_string(t.name()), maximum_type_name_id_,
+          to_std_string(print_type(r)), r->id_of_youngest_typename()));
+    }
+    result = r->undetermined_types()->empty()
+                 ? r
+                 : make_managed<TypeWithAgeRestriction>(r, id);
+  }
+
+  void visit(const TupleType& t) override {
+    result = make_managed<TupleType>(apply_substitutions_to_list(t.types()));
+  }
+
+  void visit(const RecordType& t) override {
+    StringMap<Type> new_rows =
+        collections::managed_map<ManagedString, Type>({});
+    for (const auto& entry : *t.rows()) {
+      new_rows = new_rows
+                     ->insert(entry.first,
+                              apply_substitutions(entry.second, substitutions_,
+                                                  maximum_type_name_id_))
+                     .first;
+    }
+    result = make_managed<RecordType>(std::move(new_rows), t.has_wildcard());
+  }
+
+  void visit(const FunctionType& t) override {
+    result = make_managed<FunctionType>(
+        apply_substitutions(t.param(), substitutions_, maximum_type_name_id_),
+        apply_substitutions(t.result(), substitutions_, maximum_type_name_id_));
+  }
+
+  void visit(const ConstructedType& t) override {
+    result = make_managed<ConstructedType>(
+        t.name(), apply_substitutions_to_list(t.types()));
+  }
+
+ private:
+  Substitutions substitutions_;
+  std::uint64_t maximum_type_name_id_;
+
+  TypeList apply_substitutions_to_list(const TypeList& l) const {
+    return make_managed<collections::ManagedArray<Type>>(
+        l->size(), [&l, this](std::size_t i) {
+          return apply_substitutions(l->at(i), substitutions_,
+                                     maximum_type_name_id_);
+        });
+  }
+};
+
+}  // namespace
+
+TypePtr apply_substitutions(TypePtr t, Substitutions substitutions,
+                            std::uint64_t maximum_type_name_id) {
+  auto hold = ctx().mgr->acquire_hold();
+  auto filtered_subs = substitutions->filter_keys(t->undetermined_types());
+  if (filtered_subs->empty()) return t;
+  Substitutor s{t, std::move(filtered_subs), maximum_type_name_id};
+  t->accept(s);
+  return std::move(s.result);
 }
 
 }  // namespace emil::typing
