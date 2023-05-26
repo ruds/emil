@@ -628,4 +628,11 @@ TypePtr apply_substitutions(
     TypePtr t, Substitutions substitutions,
     std::uint64_t maximum_type_name_id = NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
 
+/**
+ * Unify l and r to a single type.
+ *
+ * Throws a UnificationError if the types cannot be unified.
+ */
+TypePtr unify(TypePtr l, TypePtr r);
+
 }  // namespace emil::typing

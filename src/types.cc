@@ -230,7 +230,9 @@ void TypeName::visit_additional_subobjects(const ManagedVisitor& visitor) {
 TupleType::TupleType(TypeList types)
     : Type(merge_free_variables(types), merge_undetermined_types(types),
            merge_type_names(types)),
-      types_(std::move(types)) {}
+      types_(std::move(types)) {
+  assert(types_->size() != 1);
+}
 
 void TupleType::visit_additional_subobjects_of_type(
     const ManagedVisitor& visitor) {
@@ -529,6 +531,31 @@ void UnificationError::add_context(TypePtr l, TypePtr r) {
 }
 
 namespace {
+
+/**
+ * Compute the substitution for a variable in context.
+ *
+ * Given that `var` is mapped to `type` in the substitution mapping,
+ * determine the actual type that should be substituted for `var`
+ * based on the maximum type id constraint. Throws a UnificationError
+ * if the substitution would be illegal (i.e. type contains a
+ * too-young typename).
+ */
+TypePtr compute_single_substitution(const UndeterminedType& var, TypePtr type,
+                                    std::uint64_t max_id) {
+  const auto id = var.stamp()->id();
+  if (type->id_of_youngest_typename() > std::min(max_id, id)) {
+    throw UnificationError(fmt::format(
+        "Illegal substitution. {} (with constraint {}) can't be "
+        "substituted by {} (with youngest type id {})",
+        to_std_string(var.name()), max_id, to_std_string(print_type(type)),
+        type->id_of_youngest_typename()));
+  }
+  return type->undetermined_types()->empty()
+             ? type
+             : make_managed<TypeWithAgeRestriction>(type, id);
+}
+
 class Substitutor : public TypeVisitor {
  public:
   TypePtr result;
@@ -551,18 +578,7 @@ class Substitutor : public TypeVisitor {
   void visit(const UndeterminedType& t) override {
     const auto it = substitutions_->find(*t.stamp());
     if (it == substitutions_->cend()) return;
-    const auto id = t.stamp()->id();
-    const auto& r = it->second;
-    if (r->id_of_youngest_typename() > std::min(maximum_type_name_id_, id)) {
-      throw UnificationError(fmt::format(
-          "Illegal substitution. {} (with constraint {}) can't be "
-          "substituted by {} (with youngest type id {})",
-          to_std_string(t.name()), maximum_type_name_id_,
-          to_std_string(print_type(r)), r->id_of_youngest_typename()));
-    }
-    result = r->undetermined_types()->empty()
-                 ? r
-                 : make_managed<TypeWithAgeRestriction>(r, id);
+    result = compute_single_substitution(t, it->second, maximum_type_name_id_);
   }
 
   void visit(const TupleType& t) override {
@@ -616,6 +632,539 @@ TypePtr apply_substitutions(TypePtr t, Substitutions substitutions,
   Substitutor s{t, std::move(filtered_subs), maximum_type_name_id};
   t->accept(s);
   return std::move(s.result);
+}
+
+namespace {
+
+struct unification_t {
+  TypePtr unified_type;
+  Substitutions new_substitutions = collections::managed_map<Stamp, Type>({});
+};
+
+/**
+ * Unify l and r to a single type.
+ *
+ * The given substitutions are applied to l and r before unifying. New
+ * substitutions deduced while unifying l and r are added to
+ * substitutions as well as being returned separately in the result's
+ * new_substitutions field.
+ *
+ * Implementation note: The general approach is through double
+ * dispatch. First the UnifyDispatcher visitor determines the type of
+ * l. In most cases, it creates a second visitor of the appropriate
+ * subclass of UnifierBase, which visits r to determine its type and
+ * unify it appropriately.
+ */
+unification_t unify(TypePtr l, TypePtr r, Substitutions& substitutions,
+                    std::uint64_t maximum_type_name_id_l,
+                    std::uint64_t maximum_type_name_id_r);
+
+/**
+ * Add a new substitution mapping v to t.
+ */
+void add_substitution(Substitutions& all_subs, Substitutions& new_subs,
+                      const UndeterminedType& v, TypePtr t) {
+  const auto& stamp = v.stamp();
+  if (t->undetermined_types()->contains(*stamp)) {
+    throw UnificationError(
+        fmt::format("Recursive substitution failure: cannot map {} to {}",
+                    to_std_string(v.name()), to_std_string(print_type(t))));
+  }
+  all_subs = all_subs->insert(stamp, t).first;
+  new_subs = new_subs->insert(stamp, t).first;
+  for (const auto& entry : *all_subs) {
+    if (entry.second->undetermined_types()->contains(*stamp)) {
+      auto subbed = apply_substitutions(entry.second, all_subs);
+      all_subs = all_subs->insert(entry.first, subbed).first;
+      new_subs = new_subs->insert(entry.first, subbed).first;
+    }
+  }
+}
+
+/**
+ * The base class for the second visitor (which visits r) in unify's double
+ * dispatch.
+ *
+ * This class provides implementations of `visit` which will work except when
+ * `l` is of the same type as `r`. Namely,
+ *
+ * - TypeWithAgeRestriction cracks open the wrapper and re-visits the
+ *   wrapped type.
+ *
+ * - UndeterminedType either applies an exisiting substition and
+ *   re-visits or creates a new substitution.
+ *
+ * - The remaining types throw a UnificationError indicating that `l`
+ *   and `r` are of different types and cannot be unified.
+ *
+ * Subclasses should (usually) just override the `visit` overload that
+ * corresponds to `l` and `r` having the same type.
+ */
+class UnifierBase : public TypeVisitor {
+ public:
+  unification_t result;
+
+  void visit(const TypeWithAgeRestriction& r) final {
+    orig_r_ = r.type();
+    max_id_r_ = std::min(max_id_r_, r.birthdate());
+    orig_r_->accept(*this);
+    assert(result.unified_type->id_of_youngest_typename() < r.birthdate());
+    if (!result.unified_type->undetermined_types()->empty()) {
+      result.unified_type = make_managed<TypeWithAgeRestriction>(
+          result.unified_type, r.birthdate());
+    }
+  }
+
+  void visit(const TypeVar&) override {
+    throw UnificationError(
+        fmt::format("Cannot unify {} with type variable", type_name_), orig_l_,
+        orig_r_);
+  }
+
+  void visit(const UndeterminedType& r) final {
+    const auto it = substitutions_->find(*r.stamp());
+    if (it == substitutions_->cend()) {
+      try {
+        result.unified_type =
+            compute_single_substitution(r, orig_l_, max_id_r_);
+      } catch (UnificationError& e) {
+        e.add_context(orig_l_, orig_r_);
+        throw;
+      }
+      add_substitution(substitutions_, result.new_substitutions, r, orig_l_);
+      return;
+    }
+    try {
+      orig_r_ = compute_single_substitution(r, it->second, max_id_r_);
+    } catch (UnificationError& e) {
+      e.add_context(orig_l_, orig_r_);
+      throw;
+    }
+    orig_r_->accept(*this);
+  }
+
+  void visit(const TupleType&) override {
+    throw UnificationError(
+        fmt::format("Cannot unify {} with tuple type", type_name_), orig_l_,
+        orig_r_);
+  }
+
+  void visit(const RecordType&) override {
+    throw UnificationError(
+        fmt::format("Cannot unify {} with record type", type_name_), orig_l_,
+        orig_r_);
+  }
+
+  void visit(const FunctionType&) override {
+    throw UnificationError(
+        fmt::format("Cannot unify {} with function type", type_name_), orig_l_,
+        orig_r_);
+  }
+
+  void visit(const ConstructedType&) override {
+    throw UnificationError(
+        fmt::format("Cannot unify {} with constructed type", type_name_),
+        orig_l_, orig_r_);
+  }
+
+ protected:
+  UnifierBase(std::string_view type_name, TypePtr orig_l, TypePtr orig_r,
+              Substitutions& substitutions, std::uint64_t max_id_r)
+      : type_name_(type_name),
+        orig_l_(std::move(orig_l)),
+        orig_r_(std::move(orig_r)),
+        substitutions_(substitutions),
+        max_id_r_(max_id_r) {}
+
+  const TypePtr& orig_l() const { return orig_l_; }
+  const TypePtr& orig_r() const { return orig_r_; }
+  Substitutions& substitutions() { return substitutions_; }
+  std::uint64_t max_id_r() const { return max_id_r_; }
+
+ private:
+  std::string_view type_name_;
+  TypePtr orig_l_;
+  TypePtr orig_r_;
+  Substitutions& substitutions_;
+  std::uint64_t max_id_r_;
+};
+
+/** Performs unification when l is a type variable. */
+class TypeVarUnifier : public UnifierBase {
+ public:
+  TypeVarUnifier(const TypeVar& l, TypePtr orig_l, TypePtr orig_r,
+                 Substitutions& substitutions, std::uint64_t max_id_r)
+      : UnifierBase("type variable", std::move(orig_l), std::move(orig_r),
+                    substitutions, max_id_r),
+        l_(l) {}
+
+  void visit(const TypeVar& r) override {
+    if (l_.name() != r.name()) {
+      throw UnificationError(
+          fmt::format("A type variable can only unify with itself. {} != {}",
+                      to_std_string(l_.name()), to_std_string(r.name())),
+          orig_l(), orig_r());
+    }
+    result.unified_type = orig_l();
+  }
+
+ private:
+  const TypeVar& l_;
+};
+
+/** Performs unification when l is an undetermined type. */
+class UndeterminedUnifier : public TypeVisitor {
+ public:
+  unification_t result;
+
+  UndeterminedUnifier(const UndeterminedType& l, TypePtr orig_l, TypePtr orig_r,
+                      Substitutions& substitutions, std::uint64_t max_id_l,
+                      std::uint64_t max_id_r)
+      : l_(l),
+        orig_l_(std::move(orig_l)),
+        orig_r_(std::move(orig_r)),
+        substitutions_(substitutions),
+        max_id_l_(max_id_l),
+        max_id_r_(max_id_r) {}
+
+  void visit(const TypeWithAgeRestriction& r) override {
+    orig_r_ = r.type();
+    max_id_r_ = std::min(max_id_r_, r.birthdate());
+    orig_r_->accept(*this);
+    assert(result.unified_type->id_of_youngest_typename() < r.birthdate());
+    if (!result.unified_type->undetermined_types()->empty()) {
+      result.unified_type = make_managed<TypeWithAgeRestriction>(
+          result.unified_type, r.birthdate());
+    }
+  }
+
+  void visit(const TypeVar&) override { unify_by_substitution(); }
+
+  void visit(const UndeterminedType& r) override {
+    if (l_.name() == r.name()) {
+      result.unified_type = orig_l_;
+      return;
+    }
+    const auto it = substitutions_->find(*r.stamp());
+    if (it == substitutions_->cend()) {
+      unify_by_substitution();
+      return;
+    }
+    try {
+      orig_r_ = compute_single_substitution(r, it->second, max_id_r_);
+    } catch (UnificationError& e) {
+      e.add_context(orig_l_, orig_r_);
+      throw;
+    }
+    orig_r_->accept(*this);
+  }
+
+  void visit(const TupleType&) override { unify_by_substitution(); }
+
+  void visit(const RecordType&) override { unify_by_substitution(); }
+
+  void visit(const FunctionType&) override { unify_by_substitution(); }
+
+  void visit(const ConstructedType&) override { unify_by_substitution(); }
+
+ private:
+  const UndeterminedType& l_;
+  TypePtr orig_l_;
+  TypePtr orig_r_;
+  Substitutions& substitutions_;
+  std::uint64_t max_id_l_;
+  std::uint64_t max_id_r_;
+
+  void unify_by_substitution() {
+    try {
+      result.unified_type = compute_single_substitution(l_, orig_r_, max_id_l_);
+    } catch (UnificationError& e) {
+      e.add_context(orig_l_, orig_r_);
+      throw;
+    }
+    add_substitution(substitutions_, result.new_substitutions, l_, orig_r_);
+  }
+};
+
+/** Unifies a list of subtypes from a compound type. */
+TypeList unify_subtypes(TypeList ls, TypeList rs, Substitutions& all_subs,
+                        Substitutions& new_subs, std::uint64_t max_id_l,
+                        std::uint64_t max_id_r) {
+  assert(ls->size() == rs->size());
+  TypeList us = make_managed<collections::ManagedArray<Type>>(ls->size());
+  if (ls->empty()) return us;
+  const auto max_id_u = std::min(max_id_l, max_id_r);
+  for (std::size_t i = 0; i < ls->size(); ++i) {
+    auto result = unify((*ls)[i], (*rs)[i], all_subs, max_id_l, max_id_r);
+    (*us)[i] = result.unified_type;
+    new_subs = new_subs | result.new_substitutions;
+    // We have to apply the new substitutions to everything already unified.
+    for (std::size_t j = 0; j < i; ++j) {
+      (*us)[j] =
+          apply_substitutions((*us)[j], result.new_substitutions, max_id_u);
+    }
+  }
+  return us;
+}
+
+/** Performs unification when l is a tuple type. */
+class TupleUnifier : public UnifierBase {
+ public:
+  TupleUnifier(const TupleType& l, TypePtr orig_l, TypePtr orig_r,
+               Substitutions& substitutions, std::uint64_t max_id_l,
+               std::uint64_t max_id_r)
+      : UnifierBase("tuple type", std::move(orig_l), std::move(orig_r),
+                    substitutions, max_id_r),
+        l_(l),
+        max_id_l_(max_id_l) {}
+
+  void visit(const TupleType& r) override {
+    if (l_.types()->size() != r.types()->size()) {
+      throw UnificationError("Cannot unify tuples of different length",
+                             orig_l(), orig_r());
+    }
+    result.unified_type = make_managed<TupleType>(
+        unify_subtypes(l_.types(), r.types(), substitutions(),
+                       result.new_substitutions, max_id_l_, max_id_r()));
+  }
+
+ private:
+  const TupleType& l_;
+  const std::uint64_t max_id_l_;
+};
+
+/** Performs unification when l is a record type. */
+class RecordUnifier : public UnifierBase {
+ public:
+  RecordUnifier(const RecordType& l, TypePtr orig_l, TypePtr orig_r,
+                Substitutions& substitutions, std::uint64_t max_id_l,
+                std::uint64_t max_id_r)
+      : UnifierBase("record type", std::move(orig_l), std::move(orig_r),
+                    substitutions, max_id_r),
+        l_(l),
+        max_id_l_(max_id_l) {}
+
+  // To merge two record types:
+  //
+  // 1. If r doesn't have a wildcard (...), l can't have any row labels r
+  // doesn't have. Otherwise, all of the rows with labels not in r are in the
+  // unified type.
+  //
+  // 2. If l doesn't have a wildcard, r can't have any row labels l doesn't
+  // have. Otherwise, all of the rows with labels not in l are in the unified
+  // type.
+  //
+  // 3. For all rows with labels shared by both l and r, the unified
+  // type contains a row with that label and the type resulting from
+  // unifying the types in l and r.
+  //
+  // 4. Iff both l and r have a wild card, the unified type has a
+  // wildcard.
+  void visit(const RecordType& r) override {
+    const auto l_only = l_.rows() - r.rows();
+    if (!l_only->empty() && !r.has_wildcard()) {
+      throw UnificationError("Cannot unify record types without a wildcard.",
+                             orig_l(), orig_r());
+    }
+    const auto r_only = r.rows() - l_.rows();
+    if (!r_only->empty() && !l_.has_wildcard()) {
+      throw UnificationError("Cannot unify record types without a wildcard.",
+                             orig_l(), orig_r());
+    }
+    auto rows = collections::managed_map<ManagedString, Type>({});
+    const auto max_id_u = std::min(max_id_l_, max_id_r());
+    // Order is important: `both` has the values from `r`.
+    const auto both = l_.rows() & r.rows();
+    std::vector<StringPtr> keys;
+    keys.reserve(both->size());
+    for (const auto& entry : *both) {
+      auto u = unify(*l_.rows()->get(*entry.first), entry.second,
+                     substitutions(), max_id_l_, max_id_r());
+      rows = rows->insert(entry.first, u.unified_type).first;
+      result.new_substitutions = result.new_substitutions | u.new_substitutions;
+      for (const auto& k : keys) {
+        rows =
+            rows->insert(k, apply_substitutions(*rows->get(*k),
+                                                u.new_substitutions, max_id_u))
+                .first;
+      }
+      keys.push_back(entry.first);
+    }
+    result.unified_type = make_managed<RecordType>(
+        rows | l_only | r_only, r.has_wildcard() && l_.has_wildcard());
+  }
+
+ private:
+  const RecordType& l_;
+  const std::uint64_t max_id_l_;
+};
+
+/** Performs unification when l is a function type. */
+class FunctionUnifier : public UnifierBase {
+ public:
+  FunctionUnifier(const FunctionType& l, TypePtr orig_l, TypePtr orig_r,
+                  Substitutions& substitutions, std::uint64_t max_id_l,
+                  std::uint64_t max_id_r)
+      : UnifierBase("function type", std::move(orig_l), std::move(orig_r),
+                    substitutions, max_id_r),
+        l_(l),
+        max_id_l_(max_id_l) {}
+
+  void visit(const FunctionType& r) override {
+    const auto max_id_u = std::min(max_id_l_, max_id_r());
+    auto param_u =
+        unify(l_.param(), r.param(), substitutions(), max_id_l_, max_id_r());
+    auto result_u =
+        unify(l_.result(), r.result(), substitutions(), max_id_l_, max_id_r());
+    result.unified_type = make_managed<FunctionType>(
+        apply_substitutions(param_u.unified_type, result_u.new_substitutions,
+                            max_id_u),
+        result_u.unified_type);
+    result.new_substitutions = result.new_substitutions |
+                               param_u.new_substitutions |
+                               result_u.new_substitutions;
+  }
+
+ private:
+  const FunctionType& l_;
+  const std::uint64_t max_id_l_;
+};
+
+/** Performs unification when l is a constructed type. */
+class ConstructedUnifier : public UnifierBase {
+ public:
+  ConstructedUnifier(const ConstructedType& l, TypePtr orig_l, TypePtr orig_r,
+                     Substitutions& substitutions, std::uint64_t max_id_l,
+                     std::uint64_t max_id_r)
+      : UnifierBase("constructed type", std::move(orig_l), std::move(orig_r),
+                    substitutions, max_id_r),
+        l_(l),
+        max_id_l_(max_id_l) {}
+
+  void visit(const ConstructedType& r) override {
+    if (l_.name()->stamp() != r.name()->stamp()) {
+      throw UnificationError("Cannot unify distinct constructed types",
+                             orig_l(), orig_r());
+    }
+    assert(l_.types()->size() == l_.name()->arity());
+    assert(l_.types()->size() == r.types()->size());
+    result.unified_type = make_managed<ConstructedType>(
+        l_.name(),
+        unify_subtypes(l_.types(), r.types(), substitutions(),
+                       result.new_substitutions, max_id_l_, max_id_r()));
+  }
+
+ private:
+  const ConstructedType& l_;
+  const std::uint64_t max_id_l_;
+};
+
+/**
+ * Unifies l and r.
+ *
+ * This is the first step in the double-dispatch approach. It visits `l` to
+ * determine its type and then (usually) dispatches to the appropriate visitor
+ * to visit `r`.
+ */
+class UnifyDispatcher : public TypeVisitor {
+ public:
+  unification_t result;
+
+  UnifyDispatcher(TypePtr l, TypePtr r, Substitutions& substitutions,
+                  std::uint64_t maximum_type_name_id_l,
+                  std::uint64_t maximum_type_name_id_r)
+      : orig_l_(std::move(l)),
+        orig_r_(std::move(r)),
+        substitutions_(substitutions),
+        max_id_l_(maximum_type_name_id_l),
+        max_id_r_(maximum_type_name_id_r) {}
+
+  void visit(const TypeWithAgeRestriction& l) override {
+    orig_l_ = l.type();
+    max_id_l_ = std::min(max_id_l_, l.birthdate());
+    orig_l_->accept(*this);
+    assert(result.unified_type->id_of_youngest_typename() < l.birthdate());
+    if (!result.unified_type->undetermined_types()->empty()) {
+      result.unified_type = make_managed<TypeWithAgeRestriction>(
+          result.unified_type, l.birthdate());
+    }
+  }
+
+  void visit(const TypeVar& l) override {
+    TypeVarUnifier u{l, orig_l_, orig_r_, substitutions_, max_id_r_};
+    orig_r_->accept(u);
+    result = std::move(u.result);
+  }
+
+  void visit(const UndeterminedType& l) override {
+    const auto it = substitutions_->find(*l.stamp());
+    if (it != substitutions_->cend()) {
+      try {
+        orig_l_ = compute_single_substitution(l, it->second, max_id_l_);
+      } catch (UnificationError& e) {
+        e.add_context(orig_l_, orig_r_);
+        throw;
+      }
+      orig_l_->accept(*this);
+      return;
+    }
+    UndeterminedUnifier u{l,         orig_l_,  orig_r_, substitutions_,
+                          max_id_l_, max_id_r_};
+    orig_r_->accept(u);
+    result = std::move(u.result);
+  }
+
+  void visit(const TupleType& l) override {
+    TupleUnifier u{l, orig_l_, orig_r_, substitutions_, max_id_l_, max_id_r_};
+    orig_r_->accept(u);
+    result = std::move(u.result);
+  }
+
+  void visit(const RecordType& l) override {
+    RecordUnifier u{l, orig_l_, orig_r_, substitutions_, max_id_l_, max_id_r_};
+    orig_r_->accept(u);
+    result = std::move(u.result);
+  }
+
+  void visit(const FunctionType& l) override {
+    FunctionUnifier u{l,         orig_l_,  orig_r_, substitutions_,
+                      max_id_l_, max_id_r_};
+    orig_r_->accept(u);
+    result = std::move(u.result);
+  }
+
+  void visit(const ConstructedType& l) override {
+    ConstructedUnifier u{l,         orig_l_,  orig_r_, substitutions_,
+                         max_id_l_, max_id_r_};
+    orig_r_->accept(u);
+    result = std::move(u.result);
+  }
+
+ private:
+  TypePtr orig_l_;
+  TypePtr orig_r_;
+  Substitutions& substitutions_;
+  std::uint64_t max_id_l_;
+  std::uint64_t max_id_r_;
+};
+
+unification_t unify(TypePtr l, TypePtr r, Substitutions& substitutions,
+                    std::uint64_t maximum_type_name_id_l,
+                    std::uint64_t maximum_type_name_id_r) {
+  UnifyDispatcher u{l, std::move(r), substitutions, maximum_type_name_id_l,
+                    maximum_type_name_id_r};
+  l->accept(u);
+  return std::move(u.result);
+}
+
+}  // namespace
+
+TypePtr unify(TypePtr l, TypePtr r) {
+  Substitutions subs = collections::managed_map<Stamp, Type>({});
+  return unify(std::move(l), std::move(r), subs,
+               NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+               NO_ADDITIONAL_TYPE_NAME_RESTRICTION)
+      .unified_type;
 }
 
 }  // namespace emil::typing

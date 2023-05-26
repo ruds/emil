@@ -18,6 +18,8 @@
 #include <gtest/gtest.h>
 
 #include <functional>
+#include <initializer_list>
+#include <string_view>
 #include <utility>
 
 #include "emil/collections.h"
@@ -888,6 +890,414 @@ TEST(ApplySubstitutionsTest, BasicOperation) {
           sub_ut1_is_ut3, sub_ut3_is_pair_list_ut2_and_int),
       PrintsAs(u8"('~0 list, int) pair list list -> ((('~0 list, int) pair "
                u8"list list, int) pair, int list) pair"));
+}
+
+class UnifyTest : public ::testing::Test {
+ protected:
+  TestContext tc;
+  StampGenerator stamper;
+
+  TypePtr int_type;
+  TypePtr float_type;
+  managed_ptr<TypeName> list_name;
+
+  // "Early" undetermined types -- older than `pair`.
+  managed_ptr<UndeterminedType> ute1;
+  managed_ptr<UndeterminedType> ute2;
+  managed_ptr<UndeterminedType> ute3;
+  managed_ptr<UndeterminedType> ute4;
+
+  managed_ptr<TypeName> pair_name;
+
+  // "Late" undetermined types -- newer than `pair`.
+  managed_ptr<UndeterminedType> utl1;
+  managed_ptr<UndeterminedType> utl2;
+  managed_ptr<UndeterminedType> utl3;
+  managed_ptr<UndeterminedType> utl4;
+
+  TypePtr a;  // type variable
+  TypePtr b;  // type variable
+
+  TypePtr type_variable(std::u8string_view name) {
+    return tc.root.add_root(make_managed<TypeVar>(name));
+  }
+
+  TypePtr tuple_type(std::initializer_list<TypePtr> types) {
+    auto hold = tc.mgr.acquire_hold();
+    return tc.root.add_root(
+        make_managed<TupleType>(collections::make_array(types)));
+  }
+
+  TypePtr record_type(
+      std::initializer_list<std::pair<std::u8string_view, TypePtr>> rows,
+      bool has_wildcard = false) {
+    auto hold = tc.mgr.acquire_hold();
+    auto m = collections::managed_map<ManagedString, Type>({});
+    for (const auto& r : rows) {
+      m = m->insert(make_string(r.first), r.second).first;
+    }
+    return tc.root.add_root(make_managed<RecordType>(m, has_wildcard));
+  }
+
+  TypePtr function_type(TypePtr param, TypePtr result) {
+    return tc.root.add_root(make_managed<FunctionType>(param, result));
+  }
+
+  managed_ptr<TypeName> type_name(std::u8string_view name, std::size_t arity) {
+    return tc.root.add_root(make_managed<TypeName>(name, stamper, arity));
+  }
+
+  TypePtr constructed_type(managed_ptr<TypeName> name,
+                           std::initializer_list<TypePtr> types) {
+    auto hold = tc.mgr.acquire_hold();
+    return tc.root.add_root(
+        make_managed<ConstructedType>(name, make_array(types)));
+  }
+
+  /** Creates a constructed type with a fresh name. */
+  TypePtr constructed_type(std::u8string_view name,
+                           std::initializer_list<TypePtr> types) {
+    auto hold = tc.mgr.acquire_hold();
+    return tc.root.add_root(make_managed<ConstructedType>(
+        type_name(name, types.size()), make_array(types)));
+  }
+
+  TypePtr list_type(TypePtr el_type) {
+    return constructed_type(list_name, {el_type});
+  }
+
+  TypePtr pair_type(TypePtr first, TypePtr second) {
+    return constructed_type(pair_name, {first, second});
+  }
+
+  void SetUp() override {
+    int_type = constructed_type(u8"int", {});
+    float_type = constructed_type(u8"float", {});
+    list_name = type_name(u8"list", 1);
+    ute1 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
+    ute2 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
+    ute3 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
+    ute4 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
+    pair_name = type_name(u8"pair", 2);
+    utl1 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
+    utl2 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
+    utl3 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
+    utl4 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
+    a = type_variable(u8"'a");
+    b = type_variable(u8"'b");
+  }
+};
+
+TEST_F(UnifyTest, TypeVar) {
+  EXPECT_THAT(unify(a, a), PrintsAs(u8"'a"));
+  EXPECT_THAT(unify(b, b), PrintsAs(u8"'b"));
+  EXPECT_THROW(unify(a, b), UnificationError);
+
+  EXPECT_THAT(unify(a, ute1), PrintsAs(u8"'a"));
+  EXPECT_THAT(unify(a, utl1), PrintsAs(u8"'a"));
+
+  EXPECT_THROW(unify(a, tuple_type({})), UnificationError);
+  EXPECT_THROW(unify(a, record_type({}, true)), UnificationError);
+  EXPECT_THROW(unify(a, function_type(ute1, ute2)), UnificationError);
+  EXPECT_THROW(unify(a, list_type(ute1)), UnificationError);
+}
+
+TEST_F(UnifyTest, Tuple) {
+  const auto t_empty = tuple_type({});
+  const auto t_int_list_and_ute1 = tuple_type({list_type(int_type), ute1});
+  const auto t_int_list_and_ute1_and_int =
+      tuple_type({list_type(int_type), ute1, int_type});
+  const auto t_ute2_and_ute3 = tuple_type({ute2, ute3});
+
+  auto hold = tc.mgr.acquire_hold();
+  EXPECT_THAT(unify(t_empty, t_empty), PrintsAs(u8"()"));
+  EXPECT_THAT(unify(t_empty, ute4), PrintsAs(u8"()"));
+  EXPECT_THAT(unify(t_empty, utl1), PrintsAs(u8"()"));
+
+  EXPECT_THAT(unify(t_int_list_and_ute1, t_int_list_and_ute1),
+              PrintsAs(u8"(int list * '~0)"));
+  EXPECT_THAT(unify(t_int_list_and_ute1, ute4), PrintsAs(u8"(int list * '~0)"));
+  EXPECT_THAT(unify(t_int_list_and_ute1, utl1), PrintsAs(u8"(int list * '~0)"));
+
+  EXPECT_THAT(unify(t_int_list_and_ute1_and_int, t_int_list_and_ute1_and_int),
+              PrintsAs(u8"(int list * '~0 * int)"));
+  EXPECT_THAT(unify(t_int_list_and_ute1_and_int, ute4),
+              PrintsAs(u8"(int list * '~0 * int)"));
+  EXPECT_THAT(unify(t_int_list_and_ute1_and_int, utl1),
+              PrintsAs(u8"(int list * '~0 * int)"));
+
+  EXPECT_THAT(unify(t_ute2_and_ute3, t_ute2_and_ute3),
+              PrintsAs(u8"('~0 * '~1)"));
+  EXPECT_THAT(unify(t_ute2_and_ute3, ute4), PrintsAs(u8"('~0 * '~1)"));
+  EXPECT_THAT(unify(t_ute2_and_ute3, utl1), PrintsAs(u8"('~0 * '~1)"));
+
+  EXPECT_THROW(unify(t_empty, t_int_list_and_ute1), UnificationError);
+  EXPECT_THROW(unify(t_empty, t_int_list_and_ute1_and_int), UnificationError);
+  EXPECT_THROW(unify(t_empty, t_ute2_and_ute3), UnificationError);
+
+  EXPECT_THROW(unify(t_int_list_and_ute1, t_empty), UnificationError);
+  EXPECT_THROW(unify(t_int_list_and_ute1, t_int_list_and_ute1_and_int),
+               UnificationError);
+  EXPECT_THAT(unify(t_int_list_and_ute1, t_ute2_and_ute3),
+              PrintsAs(u8"(int list * '~0)"));
+
+  EXPECT_THROW(unify(t_ute2_and_ute3, t_empty), UnificationError);
+  EXPECT_THAT(unify(t_ute2_and_ute3, t_int_list_and_ute1),
+              PrintsAs(u8"(int list * '~0)"));
+  EXPECT_THROW(unify(t_ute2_and_ute3, t_int_list_and_ute1_and_int),
+               UnificationError);
+
+  EXPECT_THROW(unify(t_empty, a), UnificationError);
+  EXPECT_THROW(unify(t_empty, record_type({}, true)), UnificationError);
+  EXPECT_THROW(unify(t_empty, function_type(ute1, ute2)), UnificationError);
+  EXPECT_THROW(unify(t_empty, list_type(ute1)), UnificationError);
+}
+
+TEST_F(UnifyTest, Record) {
+  const auto r_empty = record_type({});
+  const auto rw_empty = record_type({}, true);
+  const auto r_1int = record_type({std::make_pair(u8"f1", int_type)});
+  const auto rw_1int = record_type({std::make_pair(u8"f1", int_type)}, true);
+  const auto r_2float = record_type({std::make_pair(u8"f2", float_type)});
+  const auto rw_2float =
+      record_type({std::make_pair(u8"f2", float_type)}, true);
+  const auto r_1ute1_2ute2 =
+      record_type({std::make_pair(u8"f1", ute1), std::make_pair(u8"f2", ute2)});
+  const auto rw_1ute1_2ute2 = record_type(
+      {std::make_pair(u8"f1", ute1), std::make_pair(u8"f2", ute2)}, true);
+  const auto r_2float_3ute3 = record_type(
+      {std::make_pair(u8"f2", float_type), std::make_pair(u8"f3", ute3)});
+  const auto rw_2float_3ute3 = record_type(
+      {std::make_pair(u8"f2", float_type), std::make_pair(u8"f3", ute3)}, true);
+
+  auto hold = tc.mgr.acquire_hold();
+
+  EXPECT_THAT(unify(r_empty, r_empty), PrintsAs(u8"{}"));
+  EXPECT_THAT(unify(r_empty, rw_empty), PrintsAs(u8"{}"));
+  EXPECT_THAT(unify(rw_empty, r_empty), PrintsAs(u8"{}"));
+  EXPECT_THAT(unify(r_empty, ute4), PrintsAs(u8"{}"));
+  EXPECT_THAT(unify(r_empty, utl1), PrintsAs(u8"{}"));
+
+  EXPECT_THAT(unify(rw_empty, rw_empty), PrintsAs(u8"{...}"));
+  EXPECT_THAT(unify(rw_empty, ute4), PrintsAs(u8"{...}"));
+  EXPECT_THAT(unify(rw_empty, utl1), PrintsAs(u8"{...}"));
+
+  EXPECT_THAT(unify(r_1int, r_1int), PrintsAs(u8"{f1: int}"));
+  EXPECT_THAT(unify(r_1int, rw_1int), PrintsAs(u8"{f1: int}"));
+  EXPECT_THAT(unify(rw_1int, r_1int), PrintsAs(u8"{f1: int}"));
+  EXPECT_THAT(unify(r_1int, ute4), PrintsAs(u8"{f1: int}"));
+  EXPECT_THAT(unify(r_1int, utl1), PrintsAs(u8"{f1: int}"));
+
+  EXPECT_THAT(unify(rw_1int, rw_1int), PrintsAs(u8"{f1: int, ...}"));
+  EXPECT_THAT(unify(rw_1int, ute4), PrintsAs(u8"{f1: int, ...}"));
+  EXPECT_THAT(unify(rw_1int, utl1), PrintsAs(u8"{f1: int, ...}"));
+
+  EXPECT_THAT(unify(r_2float, r_2float), PrintsAs(u8"{f2: float}"));
+  EXPECT_THAT(unify(r_2float, rw_2float), PrintsAs(u8"{f2: float}"));
+  EXPECT_THAT(unify(rw_2float, r_2float), PrintsAs(u8"{f2: float}"));
+  EXPECT_THAT(unify(r_2float, ute4), PrintsAs(u8"{f2: float}"));
+  EXPECT_THAT(unify(r_2float, utl1), PrintsAs(u8"{f2: float}"));
+
+  EXPECT_THAT(unify(rw_2float, rw_2float), PrintsAs(u8"{f2: float, ...}"));
+  EXPECT_THAT(unify(rw_2float, ute4), PrintsAs(u8"{f2: float, ...}"));
+  EXPECT_THAT(unify(rw_2float, utl1), PrintsAs(u8"{f2: float, ...}"));
+
+  EXPECT_THAT(unify(r_1ute1_2ute2, r_1ute1_2ute2),
+              PrintsAs(u8"{f1: '~0, f2: '~1}"));
+  EXPECT_THAT(unify(r_1ute1_2ute2, rw_1ute1_2ute2),
+              PrintsAs(u8"{f1: '~0, f2: '~1}"));
+  EXPECT_THAT(unify(rw_1ute1_2ute2, r_1ute1_2ute2),
+              PrintsAs(u8"{f1: '~0, f2: '~1}"));
+  EXPECT_THAT(unify(r_1ute1_2ute2, ute4), PrintsAs(u8"{f1: '~0, f2: '~1}"));
+  EXPECT_THAT(unify(r_1ute1_2ute2, utl1), PrintsAs(u8"{f1: '~0, f2: '~1}"));
+
+  EXPECT_THAT(unify(rw_1ute1_2ute2, rw_1ute1_2ute2),
+              PrintsAs(u8"{f1: '~0, f2: '~1, ...}"));
+  EXPECT_THAT(unify(rw_1ute1_2ute2, ute4),
+              PrintsAs(u8"{f1: '~0, f2: '~1, ...}"));
+  EXPECT_THAT(unify(rw_1ute1_2ute2, utl1),
+              PrintsAs(u8"{f1: '~0, f2: '~1, ...}"));
+
+  EXPECT_THAT(unify(r_2float_3ute3, r_2float_3ute3),
+              PrintsAs(u8"{f2: float, f3: '~0}"));
+  EXPECT_THAT(unify(r_2float_3ute3, rw_2float_3ute3),
+              PrintsAs(u8"{f2: float, f3: '~0}"));
+  EXPECT_THAT(unify(rw_2float_3ute3, r_2float_3ute3),
+              PrintsAs(u8"{f2: float, f3: '~0}"));
+  EXPECT_THAT(unify(r_2float_3ute3, ute4), PrintsAs(u8"{f2: float, f3: '~0}"));
+  EXPECT_THAT(unify(r_2float_3ute3, utl1), PrintsAs(u8"{f2: float, f3: '~0}"));
+
+  EXPECT_THAT(unify(rw_2float_3ute3, rw_2float_3ute3),
+              PrintsAs(u8"{f2: float, f3: '~0, ...}"));
+  EXPECT_THAT(unify(rw_2float_3ute3, ute4),
+              PrintsAs(u8"{f2: float, f3: '~0, ...}"));
+  EXPECT_THAT(unify(rw_2float_3ute3, utl1),
+              PrintsAs(u8"{f2: float, f3: '~0, ...}"));
+
+  EXPECT_THROW(unify(r_empty, r_1int), UnificationError);
+  EXPECT_THAT(unify(rw_empty, r_1int), PrintsAs(u8"{f1: int}"));
+  EXPECT_THROW(unify(r_empty, rw_1int), UnificationError);
+  EXPECT_THAT(unify(rw_empty, rw_1int), PrintsAs(u8"{f1: int, ...}"));
+
+  EXPECT_THROW(unify(r_1int, r_2float), UnificationError);
+  EXPECT_THROW(unify(rw_1int, r_2float), UnificationError);
+  EXPECT_THROW(unify(r_1int, rw_2float), UnificationError);
+  EXPECT_THAT(unify(rw_1int, rw_2float),
+              PrintsAs(u8"{f1: int, f2: float, ...}"));
+
+  EXPECT_THROW(unify(r_1int, r_1ute1_2ute2), UnificationError);
+  EXPECT_THAT(unify(rw_1int, r_1ute1_2ute2), PrintsAs(u8"{f1: int, f2: '~0}"));
+  EXPECT_THROW(unify(r_1int, rw_1ute1_2ute2), UnificationError);
+  EXPECT_THAT(unify(rw_1int, rw_1ute1_2ute2),
+              PrintsAs(u8"{f1: int, f2: '~0, ...}"));
+
+  EXPECT_THROW(unify(r_2float, r_2float_3ute3), UnificationError);
+  EXPECT_THAT(unify(rw_2float, r_2float_3ute3),
+              PrintsAs(u8"{f2: float, f3: '~0}"));
+  EXPECT_THROW(unify(r_2float, rw_2float_3ute3), UnificationError);
+  EXPECT_THAT(unify(rw_2float, rw_2float_3ute3),
+              PrintsAs(u8"{f2: float, f3: '~0, ...}"));
+
+  EXPECT_THROW(unify(r_1ute1_2ute2, r_2float_3ute3), UnificationError);
+  EXPECT_THROW(unify(rw_1ute1_2ute2, r_2float_3ute3), UnificationError);
+  EXPECT_THROW(unify(r_1ute1_2ute2, rw_2float_3ute3), UnificationError);
+  EXPECT_THAT(unify(rw_1ute1_2ute2, rw_2float_3ute3),
+              PrintsAs(u8"{f1: '~0, f2: float, f3: '~1, ...}"));
+}
+
+TEST_F(UnifyTest, Function) {
+  const auto int_to_float = function_type(int_type, float_type);
+  const auto ute1_to_ute2 = function_type(ute1, ute2);
+
+  auto hold = tc.mgr.acquire_hold();
+
+  EXPECT_THAT(unify(int_to_float, int_to_float), PrintsAs(u8"int -> float"));
+  EXPECT_THAT(unify(ute1_to_ute2, ute1_to_ute2), PrintsAs(u8"'~0 -> '~1"));
+  EXPECT_THAT(unify(ute1_to_ute2, int_to_float), PrintsAs(u8"int -> float"));
+  EXPECT_THAT(unify(int_to_float, ute1_to_ute2), PrintsAs(u8"int -> float"));
+}
+
+TEST_F(UnifyTest, Constructed) {
+  const auto list_int = list_type(int_type);
+  const auto list_ute1 = list_type(ute1);
+  const auto list_utl1 = list_type(utl1);
+  const auto pair_int_float = pair_type(int_type, float_type);
+  const auto pair_ute2_utl2 = pair_type(ute2, utl2);
+  const auto list_pair_int_float = list_type(pair_int_float);
+
+  const auto new_pair_name = type_name(u8"pair", 2);
+  const auto new_pair_int_float =
+      constructed_type(new_pair_name, {int_type, float_type});
+
+  auto hold = tc.mgr.acquire_hold();
+
+  EXPECT_THAT(unify(list_int, list_int), PrintsAs(u8"int list"));
+  EXPECT_THAT(unify(list_int, ute4), PrintsAs(u8"int list"));
+  EXPECT_THAT(unify(list_int, utl4), PrintsAs(u8"int list"));
+
+  EXPECT_THAT(unify(list_ute1, list_ute1), PrintsAs(u8"'~0 list"));
+  EXPECT_THAT(unify(list_ute1, ute4), PrintsAs(u8"'~0 list"));
+  EXPECT_THAT(unify(list_ute1, utl4), PrintsAs(u8"'~0 list"));
+
+  EXPECT_THAT(unify(list_utl1, list_ute1), PrintsAs(u8"'~0 list"));
+  EXPECT_THAT(unify(list_utl1, ute4), PrintsAs(u8"'~0 list"));
+  EXPECT_THAT(unify(list_utl1, utl4), PrintsAs(u8"'~0 list"));
+
+  EXPECT_THAT(unify(pair_int_float, pair_int_float),
+              PrintsAs(u8"(int, float) pair"));
+  EXPECT_THROW(unify(pair_int_float, ute4), UnificationError);
+  EXPECT_THAT(unify(pair_int_float, utl4), PrintsAs(u8"(int, float) pair"));
+
+  EXPECT_THAT(unify(pair_ute2_utl2, pair_ute2_utl2),
+              PrintsAs(u8"('~0, '~1) pair"));
+  EXPECT_THROW(unify(pair_ute2_utl2, ute4), UnificationError);
+  EXPECT_THAT(unify(pair_ute2_utl2, utl4), PrintsAs(u8"('~0, '~1) pair"));
+
+  EXPECT_THAT(unify(list_pair_int_float, list_pair_int_float),
+              PrintsAs(u8"(int, float) pair list"));
+  EXPECT_THROW(unify(list_pair_int_float, ute4), UnificationError);
+  EXPECT_THAT(unify(list_pair_int_float, utl4),
+              PrintsAs(u8"(int, float) pair list"));
+
+  EXPECT_THAT(unify(new_pair_int_float, new_pair_int_float),
+              PrintsAs(u8"(int, float) pair"));
+  EXPECT_THROW(unify(new_pair_int_float, ute4), UnificationError);
+  EXPECT_THROW(unify(new_pair_int_float, utl4), UnificationError);
+
+  EXPECT_THAT(unify(list_int, list_ute1), PrintsAs(u8"int list"));
+  EXPECT_THAT(unify(list_ute1, list_int), PrintsAs(u8"int list"));
+  EXPECT_THAT(unify(list_int, list_utl1), PrintsAs(u8"int list"));
+  EXPECT_THAT(unify(list_utl1, list_int), PrintsAs(u8"int list"));
+
+  EXPECT_THAT(unify(pair_int_float, pair_ute2_utl2),
+              PrintsAs(u8"(int, float) pair"));
+  EXPECT_THAT(unify(pair_ute2_utl2, pair_int_float),
+              PrintsAs(u8"(int, float) pair"));
+  EXPECT_THROW(unify(pair_int_float, new_pair_int_float), UnificationError);
+  EXPECT_THROW(unify(new_pair_int_float, pair_int_float), UnificationError);
+
+  EXPECT_THROW(unify(list_ute1, list_pair_int_float), UnificationError);
+  EXPECT_THROW(unify(list_pair_int_float, list_ute1), UnificationError);
+  EXPECT_THAT(unify(list_utl1, list_pair_int_float),
+              PrintsAs(u8"(int, float) pair list"));
+  EXPECT_THAT(unify(list_pair_int_float, list_utl1),
+              PrintsAs(u8"(int, float) pair list"));
+}
+
+TEST_F(UnifyTest, Undetermined) {
+  const auto list_ute1 = list_type(ute1);
+  const auto list_utl1 = list_type(utl1);
+  const auto pair_int_float = pair_type(int_type, float_type);
+
+  auto hold = tc.mgr.acquire_hold();
+
+  EXPECT_THAT(unify(ute1, a), PrintsAs(u8"'a"));
+  EXPECT_THAT(unify(ute1, tuple_type({int_type, float_type})),
+              PrintsAs(u8"(int * float)"));
+  EXPECT_THAT(unify(ute1, record_type({std::make_pair(u8"f1", int_type)})),
+              PrintsAs(u8"{f1: int}"));
+  EXPECT_THAT(unify(ute1, function_type(int_type, float_type)),
+              PrintsAs(u8"int -> float"));
+  EXPECT_THAT(unify(ute1, list_type(int_type)), PrintsAs(u8"int list"));
+  EXPECT_THAT(unify(utl1, list_type(int_type)), PrintsAs(u8"int list"));
+  EXPECT_THROW(unify(ute1, pair_int_float), UnificationError);
+  EXPECT_THAT(unify(utl1, pair_int_float), PrintsAs(u8"(int, float) pair"));
+
+  EXPECT_THAT(unify(ute1, ute1), PrintsAs(u8"'~0"));
+  EXPECT_THAT(unify(ute1, ute2), PrintsAs(u8"'~0"));
+  EXPECT_THAT(unify(ute2, list_ute1), PrintsAs(u8"'~0 list"));
+  EXPECT_THROW(unify(ute1, list_ute1), UnificationError);
+
+  EXPECT_THROW(unify(ute1, pair_int_float), UnificationError);
+  EXPECT_THROW(unify(pair_int_float, ute1), UnificationError);
+  EXPECT_THAT(unify(utl1, pair_int_float), PrintsAs(u8"(int, float) pair"));
+  EXPECT_THAT(unify(pair_int_float, utl1), PrintsAs(u8"(int, float) pair"));
+
+  EXPECT_THAT(unify(tuple_type({ute1, ute2}), tuple_type({ute2, ute1})),
+              PrintsAs(u8"('~0 * '~0)"));
+  EXPECT_THAT(unify(record_type({std::make_pair(u8"f1", ute1),
+                                 std::make_pair(u8"f2", ute2)}),
+                    record_type({std::make_pair(u8"f1", ute2),
+                                 std::make_pair(u8"f2", ute1)})),
+              PrintsAs(u8"{f1: '~0, f2: '~0}"));
+  EXPECT_THAT(unify(function_type(ute1, ute2), function_type(ute2, ute1)),
+              PrintsAs(u8"'~0 -> '~0"));
+  EXPECT_THAT(unify(pair_type(ute1, ute2), pair_type(ute2, ute1)),
+              PrintsAs(u8"('~0, '~0) pair"));
+
+  EXPECT_THAT(unify(tuple_type({ute2, list_ute1, ute3}),
+                    tuple_type({list_type(ute3), ute2, int_type})),
+              PrintsAs(u8"(int list * int list * int)"));
+
+  EXPECT_THAT(
+      unify(tuple_type({utl1, utl2}), tuple_type({utl2, pair_int_float})),
+      PrintsAs(u8"((int, float) pair * (int, float) pair)"));
+  EXPECT_THROW(
+      unify(tuple_type({utl1, ute2}), tuple_type({ute2, pair_int_float})),
+      UnificationError);
+  EXPECT_THROW(
+      unify(tuple_type({ute1, utl2}), tuple_type({utl2, pair_int_float})),
+      UnificationError);
 }
 
 }  // namespace emil::typing::testing
