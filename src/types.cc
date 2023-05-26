@@ -168,11 +168,12 @@ void Type::visit_additional_subobjects(const ManagedVisitor& visitor) {
   visit_additional_subobjects_of_type(visitor);
 }
 
-TypeWithAgeRestriction::TypeWithAgeRestriction(TypePtr type, std::uint64_t age)
+TypeWithAgeRestriction::TypeWithAgeRestriction(TypePtr type,
+                                               std::uint64_t birthdate)
     : Type(type->free_variables(), type->undetermined_types(),
            type->type_names()),
       type_(std::move(type)),
-      age_(age) {}
+      birthdate_(birthdate) {}
 
 void TypeWithAgeRestriction::visit_additional_subobjects_of_type(
     const ManagedVisitor& visitor) {
@@ -541,8 +542,8 @@ class Substitutor : public TypeVisitor {
   void visit(const TypeWithAgeRestriction& t) override {
     result = make_managed<TypeWithAgeRestriction>(
         apply_substitutions(t.type(), substitutions_,
-                            std::min(maximum_type_name_id_, t.age())),
-        t.age());
+                            std::min(maximum_type_name_id_, t.birthdate())),
+        t.birthdate());
   }
 
   void visit(const TypeVar&) override {}

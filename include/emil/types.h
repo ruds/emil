@@ -215,10 +215,10 @@ using TypeList = collections::ArrayPtr<Type>;
  */
 class TypeWithAgeRestriction : public Type {
  public:
-  TypeWithAgeRestriction(TypePtr type, std::uint64_t age);
+  TypeWithAgeRestriction(TypePtr type, std::uint64_t birthdate);
 
   const TypePtr& type() const { return type_; }
-  std::uint64_t age() const { return age_; }
+  std::uint64_t birthdate() const { return birthdate_; }
 
   void visit_additional_subobjects_of_type(
       const ManagedVisitor& visitor) override;
@@ -230,7 +230,7 @@ class TypeWithAgeRestriction : public Type {
 
  private:
   const TypePtr type_;
-  const std::uint64_t age_;
+  const std::uint64_t birthdate_;
 };
 
 /** A type variable explicitly present in the code. */
