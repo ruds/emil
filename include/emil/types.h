@@ -99,6 +99,14 @@ class Stamp : public Managed {
   std::size_t managed_size() const noexcept override { return sizeof(Stamp); }
 };
 
+bool operator==(const Stamp& l, const Stamp& r);
+bool operator==(std::uint64_t l, const Stamp& r);
+bool operator==(const Stamp& l, std::uint64_t r);
+
+bool operator!=(const Stamp& l, const Stamp& r);
+bool operator!=(std::uint64_t l, const Stamp& r);
+bool operator!=(const Stamp& l, std::uint64_t r);
+
 bool operator<(const Stamp& l, const Stamp& r);
 bool operator<(std::uint64_t l, const Stamp& r);
 bool operator<(const Stamp& l, std::uint64_t r);

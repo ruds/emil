@@ -125,6 +125,14 @@ std::uint64_t compute_max_id(StampSet s) {
 
 Stamp::Stamp(token, std::uint64_t id) : id_(id) {}
 
+bool operator==(const Stamp& l, const Stamp& r) { return l.id() == r.id(); }
+bool operator==(std::uint64_t l, const Stamp& r) { return l == r.id(); }
+bool operator==(const Stamp& l, std::uint64_t r) { return l.id() == r; }
+
+bool operator!=(const Stamp& l, const Stamp& r) { return l.id() != r.id(); }
+bool operator!=(std::uint64_t l, const Stamp& r) { return l != r.id(); }
+bool operator!=(const Stamp& l, std::uint64_t r) { return l.id() != r; }
+
 bool operator<(const Stamp& l, const Stamp& r) { return l.id() < r.id(); }
 bool operator<(std::uint64_t l, const Stamp& r) { return l < r.id(); }
 bool operator<(const Stamp& l, std::uint64_t r) { return l.id() < r; }
