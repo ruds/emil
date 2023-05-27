@@ -1,8 +1,10 @@
 [
     { include: ["@<__algorithm/.*>", "private", "<algorithm>", "public"] },
+    { include: ["@<__bit/.*>", "private", "<bit>", "public"] },
     { include: ["@<__charconv/.*>", "private", "<charconv>", "public"] },
     { include: ["@<__compare/.*>", "private", "<compare>", "public"] },
     { include: ["@<__filesystem/.*>", "private", "<filesystem>", "public"] },
+    { include: ["<__fwd/string.h>", "private", "<string>", "public"]},
     { include: ["<__fwd/string_view.h>", "private", "<string_view>", "public"] },
     { include: ["@<__functional/.*>", "private", "<functional>", "public"] },
     { include: ["@<__memory/.*>", "private", "<memory>", "public"] },

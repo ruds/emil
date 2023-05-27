@@ -20,7 +20,6 @@
 #include <functional>
 #include <initializer_list>
 #include <iterator>
-#include <new>
 #include <optional>
 #include <stdexcept>
 #include <tuple>
@@ -154,13 +153,12 @@ ArrayPtr<T> make_array(std::initializer_list<managed_ptr<T>> els) {
 namespace detail {
 
 template <typename T, typename... Args>
-requires std::is_constructible_v<T, Args...>
+  requires std::is_constructible_v<T, Args...>
 void is_constructible_from_tuple_impl(const std::tuple<Args...>&);
 
 template <typename Tuple, typename T>
-concept is_constructible_from_tuple = requires(const Tuple& t) {
-  is_constructible_from_tuple_impl<T>(t);
-};
+concept is_constructible_from_tuple =
+    requires(const Tuple& t) { is_constructible_from_tuple_impl<T>(t); };
 
 }  // namespace detail
 
@@ -371,6 +369,8 @@ class ManagedSet : public ManagedWithSelfPtr<ManagedSet<T, Comp>> {
  private:
   friend class MemoryManager;
   friend class testing::ManagedSetAccessor;
+  template <ManagedType K, ManagedType V, typename C>
+  friend class ManagedMap;
 
   const Comp* comp_;
   trees::TreePtr<T> tree_;
@@ -612,6 +612,28 @@ class ManagedMap : public ManagedWithSelfPtr<ManagedMap<K, V, Comp>> {
                              black_height(r->tree_), *l->comp_);
     }
     return make_managed<ManagedMap>(token{}, *l->comp_, std::move(u.tree),
+                                    u.count);
+  }
+
+  /**
+   * Filter the keys in this map by a set of keys.
+   *
+   * The returned map has all the keys that are in both `keys` and
+   * `this`, mapped to the same values as in `this`.
+   */
+  managed_ptr<ManagedMap> filter_keys(SetPtr<K, Comp> keys) {
+    if (empty()) return this->self();
+    if (keys->empty()) return make_managed<ManagedMap>(*comp_);
+    auto hold = ctx().mgr->acquire_hold();
+    trees::set_set_result_t<K, V> u;
+    if (keys->size() < size()) {
+      u = intersection_left(tree_, black_height(tree_), keys->tree_,
+                            black_height(keys->tree_), *comp_);
+    } else {
+      u = intersection_right(keys->tree_, black_height(keys->tree_), tree_,
+                             black_height(tree_), *comp_);
+    }
+    return make_managed<ManagedMap>(token{}, *comp_, std::move(u.tree),
                                     u.count);
   }
 

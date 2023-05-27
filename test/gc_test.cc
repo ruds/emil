@@ -17,7 +17,6 @@
 #include <gtest/gtest.h>
 
 #include <new>
-#include <string>
 #include <utility>
 
 #include "testing/test_util.h"

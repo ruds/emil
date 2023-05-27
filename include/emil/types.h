@@ -16,9 +16,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <exception>
+#include <limits>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 #include "emil/collections.h"
 #include "emil/gc.h"
@@ -77,20 +82,51 @@ using StringMap = collections::MapPtr<ManagedString, T>;
  */
 class Stamp : public Managed {
  public:
+  struct token {
+   private:
+    token() {}
+    friend class StampGenerator;
+  };
+
+  Stamp(token, std::uint64_t id);
+
   std::uint64_t id() const { return id_; }
 
  private:
-  friend class StampGenerator;
   const std::uint64_t id_;
 
-  explicit Stamp(std::uint64_t id);
+  void visit_subobjects(const ManagedVisitor&) override {}
+  std::size_t managed_size() const noexcept override { return sizeof(Stamp); }
 };
+
+bool operator==(const Stamp& l, const Stamp& r);
+bool operator==(std::uint64_t l, const Stamp& r);
+bool operator==(const Stamp& l, std::uint64_t r);
+
+bool operator!=(const Stamp& l, const Stamp& r);
+bool operator!=(std::uint64_t l, const Stamp& r);
+bool operator!=(const Stamp& l, std::uint64_t r);
 
 bool operator<(const Stamp& l, const Stamp& r);
 bool operator<(std::uint64_t l, const Stamp& r);
 bool operator<(const Stamp& l, std::uint64_t r);
 
 using StampSet = collections::SetPtr<Stamp>;
+
+class StampGenerator {
+ public:
+  StampGenerator();
+
+  managed_ptr<Stamp> operator()();
+
+ private:
+  std::uint64_t next_id_ = 1;
+
+  StampGenerator(const StampGenerator&) = delete;
+  StampGenerator& operator=(const StampGenerator&) = delete;
+  StampGenerator(StampGenerator&&) = delete;
+  StampGenerator& operator=(StampGenerator&&) = delete;
+};
 
 /**
  * @brief Objects that describe types and collections of types.
@@ -115,11 +151,87 @@ class TypeObj : public Managed {
   void visit_subobjects(const ManagedVisitor& visitor) final;
 };
 
+class TypeWithAgeRestriction;
+class TypeVar;
+class UndeterminedType;
+class TupleType;
+class RecordType;
+class FunctionType;
+class ConstructedType;
+
+class TypeVisitor {
+ public:
+  virtual ~TypeVisitor();
+  virtual void visit(const TypeWithAgeRestriction& t) = 0;
+  virtual void visit(const TypeVar& t) = 0;
+  virtual void visit(const UndeterminedType& t) = 0;
+  virtual void visit(const TupleType& t) = 0;
+  virtual void visit(const RecordType& t) = 0;
+  virtual void visit(const FunctionType& t) = 0;
+  virtual void visit(const ConstructedType& t) = 0;
+};
+
 class Type : public TypeObj {
+ public:
+  /**
+   * The id of the youngest typename used by this type, or 0 if there are no
+   * typenames.
+   *
+   * The inference algorithm requires that no undetermined type unify
+   * with a type containing a younger typename.
+   */
+  std::uint64_t id_of_youngest_typename() const {
+    return id_of_youngest_typename_;
+  }
+
+  const StampSet& undetermined_types() const { return undetermined_types_; }
+
+  virtual void accept(TypeVisitor& v) const = 0;
+
  protected:
-  using TypeObj::TypeObj;
+  Type(StringSet free_variables, StampSet undetermined_types,
+       StampSet type_names);
+
+ private:
+  const std::uint64_t id_of_youngest_typename_;
+  const StampSet undetermined_types_;
+
+  virtual void visit_additional_subobjects_of_type(
+      const ManagedVisitor& visitor) = 0;
+
+  void visit_additional_subobjects(const ManagedVisitor& visitor) final;
 };
 using TypePtr = managed_ptr<Type>;
+using TypeList = collections::ArrayPtr<Type>;
+
+/**
+ * A wrapper for a type that is used to propagate age restrictions into
+ * subtypes.
+ *
+ * When an undetermined type '~N is substituted by a type that has
+ * undetermined types in its subtypes, it is important that none of
+ * those types is later substitued by a type containing a typename
+ * younger than '~N.
+ */
+class TypeWithAgeRestriction : public Type {
+ public:
+  TypeWithAgeRestriction(TypePtr type, std::uint64_t birthdate);
+
+  const TypePtr& type() const { return type_; }
+  std::uint64_t birthdate() const { return birthdate_; }
+
+  void visit_additional_subobjects_of_type(
+      const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TypeWithAgeRestriction);
+  }
+
+  void accept(TypeVisitor& v) const override { v.visit(*this); }
+
+ private:
+  const TypePtr type_;
+  const std::uint64_t birthdate_;
+};
 
 /** A type variable explicitly present in the code. */
 class TypeVar : public Type {
@@ -130,39 +242,45 @@ class TypeVar : public Type {
   std::u8string_view name() const { return *name_; }
   StringPtr name_ptr() const { return name_; }
 
-  void visit_additional_subobjects(const ManagedVisitor&) override;
+  void visit_additional_subobjects_of_type(const ManagedVisitor&) override;
   std::size_t managed_size() const noexcept override { return sizeof(TypeVar); }
 
+  void accept(TypeVisitor& v) const override { v.visit(*this); }
+
  private:
-  StringPtr name_;
+  const StringPtr name_;
 };
 
 /** An as-yet undetermined type, produced during type inference. */
 class UndeterminedType : public Type {
  public:
-  UndeterminedType(std::u8string_view name, managed_ptr<Stamp> stamp);
-  UndeterminedType(StringPtr name, managed_ptr<Stamp> stamp);
+  explicit UndeterminedType(managed_ptr<Stamp> stamp);
+  explicit UndeterminedType(StampGenerator& stamper);
 
   std::u8string_view name() const { return *name_; }
   StringPtr name_ptr() const { return name_; }
   const managed_ptr<Stamp>& stamp() const { return stamp_; }
 
-  void visit_additional_subobjects(const ManagedVisitor&) override;
+  void visit_additional_subobjects_of_type(const ManagedVisitor&) override;
   std::size_t managed_size() const noexcept override {
     return sizeof(UndeterminedType);
   }
 
+  void accept(TypeVisitor& v) const override { v.visit(*this); }
+
  private:
-  StringPtr name_;
-  managed_ptr<Stamp> stamp_;
+  const StringPtr name_;
+  const managed_ptr<Stamp> stamp_;
 };
 
 /** A globally unique name assigned to a constructed type. */
-class TypeName : public Type {
+class TypeName : public TypeObj {
  public:
   TypeName(std::u8string_view name, managed_ptr<Stamp> stamp,
            std::size_t arity);
+  TypeName(std::u8string_view name, StampGenerator& stamper, std::size_t arity);
   TypeName(StringPtr name, managed_ptr<Stamp> stamp, std::size_t arity);
+  TypeName(StringPtr name, StampGenerator& stamper, std::size_t arity);
 
   std::u8string_view name() const { return *name_; }
   StringPtr name_ptr() const { return name_; }
@@ -170,8 +288,8 @@ class TypeName : public Type {
   std::size_t arity() const { return arity_; }
 
  private:
-  StringPtr name_;
-  managed_ptr<Stamp> stamp_;
+  const StringPtr name_;
+  const managed_ptr<Stamp> stamp_;
   const std::size_t arity_;
 
   void visit_additional_subobjects(const ManagedVisitor&) override;
@@ -180,17 +298,41 @@ class TypeName : public Type {
   }
 };
 
+/** A tuple of the given types. */
+class TupleType : public Type {
+ public:
+  explicit TupleType(TypeList types);
+
+  const TypeList& types() const { return types_; }
+
+  void accept(TypeVisitor& v) const override { v.visit(*this); }
+
+ private:
+  const TypeList types_;
+
+  void visit_additional_subobjects_of_type(
+      const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TupleType);
+  }
+};
+
 /** A mapping from labels to types. */
 class RecordType : public Type {
  public:
-  explicit RecordType(StringMap<Type> rows);
+  explicit RecordType(StringMap<Type> rows, bool has_wildcard = false);
 
   StringMap<Type> rows() const { return rows_; }
+  bool has_wildcard() const { return has_wildcard_; }
+
+  void accept(TypeVisitor& v) const override { v.visit(*this); }
 
  private:
-  StringMap<Type> rows_;
+  const StringMap<Type> rows_;
+  const bool has_wildcard_;
 
-  void visit_additional_subobjects(const ManagedVisitor& visitor) override;
+  void visit_additional_subobjects_of_type(
+      const ManagedVisitor& visitor) override;
   std::size_t managed_size() const noexcept override {
     return sizeof(RecordType);
   }
@@ -204,11 +346,14 @@ class FunctionType : public Type {
   TypePtr param() const { return param_; }
   TypePtr result() const { return result_; }
 
+  void accept(TypeVisitor& v) const override { v.visit(*this); }
+
  private:
   const TypePtr param_;
   const TypePtr result_;
 
-  void visit_additional_subobjects(const ManagedVisitor& visitor) override;
+  void visit_additional_subobjects_of_type(
+      const ManagedVisitor& visitor) override;
   std::size_t managed_size() const noexcept override {
     return sizeof(FunctionType);
   }
@@ -217,18 +362,20 @@ class FunctionType : public Type {
 /** A constructed type: a type constructor and its type parameters. */
 class ConstructedType : public Type {
  public:
-  ConstructedType(managed_ptr<TypeName> name,
-                  collections::ArrayPtr<Type> types);
+  ConstructedType(managed_ptr<TypeName> name, TypeList types);
 
   std::u8string_view name_str() const { return name_->name(); }
   managed_ptr<TypeName> name() const { return name_; }
-  const collections::ArrayPtr<Type>& types() const { return types_; }
+  const TypeList& types() const { return types_; }
+
+  void accept(TypeVisitor& v) const override { v.visit(*this); }
 
  private:
   managed_ptr<TypeName> name_;
-  const collections::ArrayPtr<Type> types_;
+  const TypeList types_;
 
-  void visit_additional_subobjects(const ManagedVisitor& visitor) override;
+  void visit_additional_subobjects_of_type(
+      const ManagedVisitor& visitor) override;
   std::size_t managed_size() const noexcept override {
     return sizeof(ConstructedType);
   }
@@ -336,6 +483,7 @@ class TypeEnv : public TypeObj {
 /** The type scheme and identifier status associated with a value variable in an
  * environment. */
 class ValueBinding : public TypeObj {
+ public:
   ValueBinding(managed_ptr<TypeScheme> scheme, IdStatus status);
 
   managed_ptr<TypeScheme> scheme() const { return scheme_; }
@@ -426,5 +574,65 @@ managed_ptr<Env> operator+(const managed_ptr<Env>& l,
 
 managed_ptr<Basis> operator+(const managed_ptr<Basis>& B,
                              const managed_ptr<Env>& E);
+
+enum class CanonicalizeUndeterminedTypes {
+  NO,
+  YES,
+};
+
+/**
+ * Prints a type to string.
+ *
+ * If c is YES, undetermined types are renamed to '~0, '~1, etc. based
+ * on their order of appearance in the string.
+ */
+std::u8string print_type(TypePtr t, CanonicalizeUndeterminedTypes c =
+                                        CanonicalizeUndeterminedTypes::NO);
+std::u8string print_type(const Type& t, CanonicalizeUndeterminedTypes c =
+                                            CanonicalizeUndeterminedTypes::NO);
+
+class UnificationError : public std::exception {
+ public:
+  explicit UnificationError(const std::string& msg);
+  UnificationError(const std::string& msg, TypePtr l, TypePtr r);
+
+  const char* what() const noexcept override { return full_msg_.c_str(); }
+
+  /** Returns the types being unified from most specific subtype to most general
+   * type. */
+  const std::vector<std::pair<TypePtr, TypePtr>>& context() const {
+    return context_;
+  }
+
+  /** Used to add context during stack unwinding. */
+  void add_context(TypePtr l, TypePtr r);
+
+ private:
+  MemoryManager::hold hold_;
+  std::vector<std::pair<TypePtr, TypePtr>> context_;
+  std::string full_msg_;
+};
+
+using Substitutions = collections::MapPtr<Stamp, Type>;
+
+inline constexpr std::uint64_t NO_ADDITIONAL_TYPE_NAME_RESTRICTION =
+    std::numeric_limits<std::uint64_t>::max();
+
+/**
+ * Apply the given substitutions to the given type.
+ *
+ * Throws a UnificationError if an illegal substitution is attempted (i.e. a
+ * too-young typename is substituted for an older undetermined type).
+ */
+TypePtr apply_substitutions(
+    TypePtr t, Substitutions substitutions,
+    std::uint64_t maximum_type_name_id = NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
+
+/**
+ * Unify l and r to a single type.
+ *
+ * Throws a UnificationError if the types cannot be unified.
+ */
+TypePtr unify(TypePtr l, TypePtr r);
 
 }  // namespace emil::typing
