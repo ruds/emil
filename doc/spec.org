@@ -33,7 +33,7 @@ In addition to restrictions elaborated in the text, two rules are
 applied to the grammar productions. First, alternatives in a
 production are presented in priority order. Second, productions
 containing repetitions (~*~ or ~+~) match as extensively as possible.
-These rules eliminate abiguities in the grammar.
+These rules eliminate ambiguities in the grammar.
 
 * Lexical Structure
 
