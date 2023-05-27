@@ -45,5 +45,5 @@ installed.
 
 * Licensing
 
-Files that are not otherwise marked are copyright 2022 Matt Rudary
-and released under the Apache License, Version 2.0.
+Files that are not otherwise marked are copyright 2022-2023 Matt
+Rudary and released under the Apache License, Version 2.0.
