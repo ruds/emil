@@ -366,7 +366,7 @@ TypeEnv::TypeEnv(StringMap<TypeStructure> env)
       env_(std::move(env)) {}
 
 std::optional<managed_ptr<TypeStructure>> TypeEnv::get(
-    const std::u8string_view& key) const {
+    std::u8string_view key) const {
   return env_->get(key);
 }
 
@@ -388,7 +388,7 @@ ValEnv::ValEnv(StringMap<ValueBinding> env)
       env_(std::move(env)) {}
 
 std::optional<managed_ptr<ValueBinding>> ValEnv::get(
-    const std::u8string_view& key) const {
+    std::u8string_view key) const {
   return env_->get(key);
 }
 

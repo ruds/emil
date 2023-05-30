@@ -506,8 +506,7 @@ class TypeEnv : public TypeObj {
  public:
   explicit TypeEnv(StringMap<TypeStructure> env);
 
-  std::optional<managed_ptr<TypeStructure>> get(
-      const std::u8string_view& key) const;
+  std::optional<managed_ptr<TypeStructure>> get(std::u8string_view key) const;
 
   const StringMap<TypeStructure>& env() const { return env_; }
 
@@ -542,8 +541,7 @@ class ValEnv : public TypeObj {
  public:
   explicit ValEnv(StringMap<ValueBinding> env);
 
-  std::optional<managed_ptr<ValueBinding>> get(
-      const std::u8string_view& key) const;
+  std::optional<managed_ptr<ValueBinding>> get(std::u8string_view key) const;
 
   const StringMap<ValueBinding>& env() const { return env_; }
 
