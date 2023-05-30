@@ -381,6 +381,44 @@ class ConstructedType : public Type {
   }
 };
 
+class BuiltinTypes : public TypeObj {
+ public:
+  static BuiltinTypes create(StampGenerator& g);
+
+  TypePtr bigint_type() const { return bi_; }
+  TypePtr int_type() const { return i_; }
+  TypePtr byte_type() const { return by_; }
+  TypePtr float_type() const { return fl_; }
+  TypePtr bool_type() const { return bo_; }
+  TypePtr char_type() const { return c_; }
+  TypePtr string_type() const { return s_; }
+  // cppcheck-suppress functionStatic
+  TypePtr tuple_type(TypeList types) const;
+  TypePtr list_type(TypePtr type) const;
+  // cppcheck-suppress functionStatic
+  TypePtr record_type(StringMap<Type> rows) const;
+
+ private:
+  const TypePtr bi_;
+  const TypePtr i_;
+  const TypePtr by_;
+  const TypePtr fl_;
+  const TypePtr bo_;
+  const TypePtr c_;
+  const TypePtr s_;
+  const managed_ptr<TypeName> l_;
+
+  BuiltinTypes(managed_ptr<Stamp> bi, managed_ptr<Stamp> i,
+               managed_ptr<Stamp> by, managed_ptr<Stamp> fl,
+               managed_ptr<Stamp> bo, managed_ptr<Stamp> c,
+               managed_ptr<Stamp> s, managed_ptr<Stamp> l);
+
+  void visit_additional_subobjects(const ManagedVisitor&) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(BuiltinTypes);
+  }
+};
+
 /** All bound identifiers are associated with one of these statuses. */
 enum class IdStatus {
   Exception,

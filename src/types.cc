@@ -43,6 +43,10 @@ StampSet stamp_set(std::initializer_list<managed_ptr<Stamp>> stamps = {}) {
   return collections::managed_set<Stamp>(stamps);
 }
 
+TypeList type_list(std::initializer_list<managed_ptr<Type>> types = {}) {
+  return collections::make_array(types);
+}
+
 template <typename T>
 concept TypeObjWithNamePtr = requires(const T& t) {
   { StringPtr{t.name_ptr()} };  // NOLINT(readability/braces)
@@ -275,6 +279,52 @@ void ConstructedType::visit_additional_subobjects_of_type(
     const ManagedVisitor& visitor) {
   name_.accept(visitor);
   types_.accept(visitor);
+}
+
+namespace {
+
+TypePtr construct_type0(managed_ptr<Stamp>&& stamp, std::u8string_view name) {
+  return make_managed<ConstructedType>(
+      make_managed<TypeName>(name, std::move(stamp), 0), type_list());
+}
+
+}  // namespace
+
+BuiltinTypes::BuiltinTypes(managed_ptr<Stamp> bi, managed_ptr<Stamp> i,
+                           managed_ptr<Stamp> by, managed_ptr<Stamp> fl,
+                           managed_ptr<Stamp> bo, managed_ptr<Stamp> c,
+                           managed_ptr<Stamp> s, managed_ptr<Stamp> l)
+    : TypeObj(string_set(), stamp_set({bi, i, by, fl, bo, c, s, l})),
+      bi_(construct_type0(std::move(bi), u8"bigint")),
+      i_(construct_type0(std::move(i), u8"int")),
+      by_(construct_type0(std::move(by), u8"byte")),
+      fl_(construct_type0(std::move(fl), u8"float")),
+      bo_(construct_type0(std::move(bo), u8"bool")),
+      c_(construct_type0(std::move(c), u8"char")),
+      s_(construct_type0(std::move(s), u8"string")),
+      l_(make_managed<TypeName>(u8"list", l, 1)) {}
+
+TypePtr BuiltinTypes::tuple_type(TypeList types) const {
+  return make_managed<TupleType>(std::move(types));
+}
+
+TypePtr BuiltinTypes::list_type(TypePtr type) const {
+  return make_managed<ConstructedType>(l_, type_list({std::move(type)}));
+}
+
+TypePtr BuiltinTypes::record_type(StringMap<Type> rows) const {
+  return make_managed<RecordType>(std::move(rows));
+}
+
+void BuiltinTypes::visit_additional_subobjects(const ManagedVisitor& visitor) {
+  bi_.accept(visitor);
+  i_.accept(visitor);
+  by_.accept(visitor);
+  fl_.accept(visitor);
+  bo_.accept(visitor);
+  c_.accept(visitor);
+  s_.accept(visitor);
+  l_.accept(visitor);
 }
 
 TypeFunction::TypeFunction(TypePtr t, collections::ArrayPtr<TypeVar> bound)
