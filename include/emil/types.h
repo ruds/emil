@@ -562,20 +562,47 @@ class ValEnv : public TypeObj {
   std::size_t managed_size() const noexcept override { return sizeof(ValEnv); }
 };
 
+class StrEnv;
+
 /** The type environment of a program. */
 class Env : public TypeObj {
  public:
-  Env(managed_ptr<TypeEnv> type_env, managed_ptr<ValEnv> val_env);
+  Env(managed_ptr<StrEnv> str_env, managed_ptr<TypeEnv> type_env,
+      managed_ptr<ValEnv> val_env);
 
+  std::optional<managed_ptr<ValueBinding>> lookup_val(
+      const std::vector<std::u8string>& qualifiers,
+      std::u8string_view id) const;
+
+  managed_ptr<StrEnv> str_env() const;
   managed_ptr<TypeEnv> type_env() const { return type_env_; }
   managed_ptr<ValEnv> val_env() const { return val_env_; }
 
  private:
+  const managed_ptr<StrEnv> str_env_;
   const managed_ptr<TypeEnv> type_env_;
   const managed_ptr<ValEnv> val_env_;
 
   void visit_additional_subobjects(const ManagedVisitor& visitor) override;
   std::size_t managed_size() const noexcept override { return sizeof(Env); }
+};
+
+/**
+ * The mapping between structure ids and structures in an environment.
+ */
+class StrEnv : public TypeObj {
+ public:
+  explicit StrEnv(StringMap<Env> env);
+
+  std::optional<managed_ptr<Env>> get(std::u8string_view key) const;
+
+  const StringMap<Env>& env() const { return env_; }
+
+ private:
+  StringMap<Env> env_;
+
+  void visit_additional_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override { return sizeof(StrEnv); }
 };
 
 /** The type context of a program. */
@@ -611,6 +638,8 @@ class Basis : public TypeObj {
   std::size_t managed_size() const noexcept override { return sizeof(Basis); }
 };
 
+managed_ptr<StrEnv> operator+(const managed_ptr<StrEnv>& l,
+                              const managed_ptr<StrEnv>& r);
 managed_ptr<TypeEnv> operator+(const managed_ptr<TypeEnv>& l,
                                const managed_ptr<TypeEnv>& r);
 managed_ptr<ValEnv> operator+(const managed_ptr<ValEnv>& l,

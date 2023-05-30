@@ -20,6 +20,7 @@
 #include <cassert>
 #include <initializer_list>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -407,15 +408,48 @@ void ValEnv::visit_additional_subobjects(const ManagedVisitor& visitor) {
   env_.accept(visitor);
 }
 
-Env::Env(managed_ptr<TypeEnv> type_env, managed_ptr<ValEnv> val_env)
-    : TypeObj(type_env->free_variables() | val_env->free_variables(),
-              type_env->type_names() | val_env->type_names()),
+Env::Env(managed_ptr<StrEnv> str_env, managed_ptr<TypeEnv> type_env,
+         managed_ptr<ValEnv> val_env)
+    : TypeObj(str_env->free_variables() | type_env->free_variables() |
+                  val_env->free_variables(),
+              str_env->type_names() | type_env->type_names() |
+                  val_env->type_names()),
+      str_env_(std::move(str_env)),
       type_env_(std::move(type_env)),
       val_env_(std::move(val_env)) {}
 
+std::optional<managed_ptr<ValueBinding>> Env::lookup_val(
+    const std::vector<std::u8string>& qualifiers, std::u8string_view id) const {
+  const Env* e = this;
+  for (const auto& q : qualifiers) {
+    const auto r = e->str_env()->get(q);
+    if (r) {
+      e = &**r;
+    } else {
+      return std::nullopt;
+    }
+  }
+  return e->val_env()->get(id);
+}
+
+managed_ptr<StrEnv> Env::str_env() const { return str_env_; }
+
 void Env::visit_additional_subobjects(const ManagedVisitor& visitor) {
+  str_env_.accept(visitor);
   type_env_.accept(visitor);
   val_env_.accept(visitor);
+}
+
+StrEnv::StrEnv(StringMap<Env> env)
+    : TypeObj(merge_free_variables(env), merge_type_names(env)),
+      env_(std::move(env)) {}
+
+std::optional<managed_ptr<Env>> StrEnv::get(std::u8string_view key) const {
+  return env_->get(key);
+}
+
+void StrEnv::visit_additional_subobjects(const ManagedVisitor& visitor) {
+  env_.accept(visitor);
 }
 
 Context::Context(StampSet type_names, StringSet explicit_type_variables,
@@ -441,6 +475,11 @@ void Basis::visit_additional_subobjects(const ManagedVisitor& visitor) {
   env_.accept(visitor);
 }
 
+managed_ptr<StrEnv> operator+(const managed_ptr<StrEnv>& l,
+                              const managed_ptr<StrEnv>& r) {
+  return make_managed<StrEnv>(l->env() | r->env());
+}
+
 managed_ptr<TypeEnv> operator+(const managed_ptr<TypeEnv>& l,
                                const managed_ptr<TypeEnv>& r) {
   return make_managed<TypeEnv>(l->env() | r->env());
@@ -452,7 +491,8 @@ managed_ptr<ValEnv> operator+(const managed_ptr<ValEnv>& l,
 
 managed_ptr<Env> operator+(const managed_ptr<Env>& l,
                            const managed_ptr<Env>& r) {
-  return make_managed<Env>(l->type_env() + r->type_env(),
+  return make_managed<Env>(l->str_env() + r->str_env(),
+                           l->type_env() + r->type_env(),
                            l->val_env() + r->val_env());
 }
 
