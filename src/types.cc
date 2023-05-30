@@ -383,6 +383,17 @@ void ValueBinding::visit_additional_subobjects(const ManagedVisitor& visitor) {
   scheme_.accept(visitor);
 }
 
+std::u8string canonicalize_val_id(std::u8string_view id, bool is_op,
+                                  bool is_prefix_op) {
+  assert(!is_prefix_op || is_op);
+  if (!is_op) return std::u8string(id);
+  std::u8string out = u8"(";
+  if (is_prefix_op) out += u8"prefix ";
+  out += id;
+  out += u8")";
+  return out;
+}
+
 ValEnv::ValEnv(StringMap<ValueBinding> env)
     : TypeObj(merge_free_variables(env), merge_type_names(env)),
       env_(std::move(env)) {}

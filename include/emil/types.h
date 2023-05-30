@@ -536,6 +536,16 @@ class ValueBinding : public TypeObj {
   }
 };
 
+/**
+ * Canonicalizes the name of a value identifier.
+ *
+ * Infix operators, prefix operators, and other value identifiers do not share a
+ * namespace. This function applies a canonical renaming to `id` so that they
+ * can share the same map.
+ */
+std::u8string canonicalize_val_id(std::u8string_view id, bool is_op,
+                                  bool is_prefix_op);
+
 /** The mapping from value variable identifiers to their value bindings. */
 class ValEnv : public TypeObj {
  public:
