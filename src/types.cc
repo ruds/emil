@@ -737,29 +737,6 @@ TypePtr apply_substitutions(TypePtr t, Substitutions substitutions,
 
 namespace {
 
-struct unification_t {
-  TypePtr unified_type;
-  Substitutions new_substitutions = collections::managed_map<Stamp, Type>({});
-};
-
-/**
- * Unify l and r to a single type.
- *
- * The given substitutions are applied to l and r before unifying. New
- * substitutions deduced while unifying l and r are added to
- * substitutions as well as being returned separately in the result's
- * new_substitutions field.
- *
- * Implementation note: The general approach is through double
- * dispatch. First the UnifyDispatcher visitor determines the type of
- * l. In most cases, it creates a second visitor of the appropriate
- * subclass of UnifierBase, which visits r to determine its type and
- * unify it appropriately.
- */
-unification_t unify(TypePtr l, TypePtr r, Substitutions& substitutions,
-                    std::uint64_t maximum_type_name_id_l,
-                    std::uint64_t maximum_type_name_id_r);
-
 /**
  * Add a new substitution mapping v to t.
  */
@@ -1249,6 +1226,15 @@ class UnifyDispatcher : public TypeVisitor {
   std::uint64_t max_id_r_;
 };
 
+}  // namespace
+
+/**
+ * Implementation note: The general approach is through double
+ * dispatch. First the UnifyDispatcher visitor determines the type of
+ * l. In most cases, it creates a second visitor of the appropriate
+ * subclass of UnifierBase, which visits r to determine its type and
+ * unify it appropriately.
+ */
 unification_t unify(TypePtr l, TypePtr r, Substitutions& substitutions,
                     std::uint64_t maximum_type_name_id_l,
                     std::uint64_t maximum_type_name_id_r) {
@@ -1256,16 +1242,6 @@ unification_t unify(TypePtr l, TypePtr r, Substitutions& substitutions,
                     maximum_type_name_id_r};
   l->accept(u);
   return std::move(u.result);
-}
-
-}  // namespace
-
-TypePtr unify(TypePtr l, TypePtr r) {
-  Substitutions subs = collections::managed_map<Stamp, Type>({});
-  return unify(std::move(l), std::move(r), subs,
-               NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
-               NO_ADDITIONAL_TYPE_NAME_RESTRICTION)
-      .unified_type;
 }
 
 }  // namespace emil::typing

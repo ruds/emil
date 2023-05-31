@@ -704,10 +704,27 @@ TypePtr apply_substitutions(
     std::uint64_t maximum_type_name_id = NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
 
 /**
+ * The result of a unification.
+ */
+struct unification_t {
+  // The type resulting from the unification.
+  TypePtr unified_type;
+  // New substitutions deduced during the unification.
+  Substitutions new_substitutions = collections::managed_map<Stamp, Type>({});
+};
+
+/**
  * Unify l and r to a single type.
+ *
+ * The given substitutions are applied to l and r before unifying. New
+ * substitutions deduced while unifying l and r are added to
+ * substitutions as well as being returned separately in the result's
+ * new_substitutions field.
  *
  * Throws a UnificationError if the types cannot be unified.
  */
-TypePtr unify(TypePtr l, TypePtr r);
+unification_t unify(TypePtr l, TypePtr r, Substitutions& substitutions,
+                    std::uint64_t maximum_type_name_id_l,
+                    std::uint64_t maximum_type_name_id_r);
 
 }  // namespace emil::typing

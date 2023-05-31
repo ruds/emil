@@ -892,6 +892,14 @@ TEST(ApplySubstitutionsTest, BasicOperation) {
                u8"list list, int) pair, int list) pair"));
 }
 
+TypePtr unify(TypePtr l, TypePtr r) {
+  Substitutions subs = collections::managed_map<Stamp, Type>({});
+  return unify(std::move(l), std::move(r), subs,
+               NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+               NO_ADDITIONAL_TYPE_NAME_RESTRICTION)
+      .unified_type;
+}
+
 class UnifyTest : public ::testing::Test {
  protected:
   TestContext tc;
