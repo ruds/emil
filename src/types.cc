@@ -964,27 +964,6 @@ class UndeterminedUnifier : public TypeVisitor {
   }
 };
 
-/** Unifies a list of subtypes from a compound type. */
-TypeList unify_subtypes(TypeList ls, TypeList rs, Substitutions& all_subs,
-                        Substitutions& new_subs, std::uint64_t max_id_l,
-                        std::uint64_t max_id_r) {
-  assert(ls->size() == rs->size());
-  TypeList us = make_managed<collections::ManagedArray<Type>>(ls->size());
-  if (ls->empty()) return us;
-  const auto max_id_u = std::min(max_id_l, max_id_r);
-  for (std::size_t i = 0; i < ls->size(); ++i) {
-    auto result = unify((*ls)[i], (*rs)[i], all_subs, max_id_l, max_id_r);
-    (*us)[i] = result.unified_type;
-    new_subs = new_subs | result.new_substitutions;
-    // We have to apply the new substitutions to everything already unified.
-    for (std::size_t j = 0; j < i; ++j) {
-      (*us)[j] =
-          apply_substitutions((*us)[j], result.new_substitutions, max_id_u);
-    }
-  }
-  return us;
-}
-
 /** Performs unification when l is a tuple type. */
 class TupleUnifier : public UnifierBase {
  public:
@@ -1001,9 +980,11 @@ class TupleUnifier : public UnifierBase {
       throw UnificationError("Cannot unify tuples of different length",
                              orig_l(), orig_r());
     }
-    result.unified_type = make_managed<TupleType>(
-        unify_subtypes(l_.types(), r.types(), substitutions(),
-                       result.new_substitutions, max_id_l_, max_id_r()));
+    auto subtypes = unify_subtypes(l_.types(), r.types(), substitutions(),
+                                   max_id_l_, max_id_r());
+    result.unified_type = make_managed<TupleType>(subtypes.unified_subtypes);
+    result.new_substitutions =
+        result.new_substitutions | subtypes.new_substitutions;
   }
 
  private:
@@ -1126,10 +1107,12 @@ class ConstructedUnifier : public UnifierBase {
     }
     assert(l_.types()->size() == l_.name()->arity());
     assert(l_.types()->size() == r.types()->size());
-    result.unified_type = make_managed<ConstructedType>(
-        l_.name(),
-        unify_subtypes(l_.types(), r.types(), substitutions(),
-                       result.new_substitutions, max_id_l_, max_id_r()));
+    auto subtypes = unify_subtypes(l_.types(), r.types(), substitutions(),
+                                   max_id_l_, max_id_r());
+    result.unified_type =
+        make_managed<ConstructedType>(l_.name(), subtypes.unified_subtypes);
+    result.new_substitutions =
+        result.new_substitutions | subtypes.new_substitutions;
   }
 
  private:
@@ -1242,6 +1225,45 @@ unification_t unify(TypePtr l, TypePtr r, Substitutions& substitutions,
                     maximum_type_name_id_r};
   l->accept(u);
   return std::move(u.result);
+}
+
+unification_t unify(TypeList types, Substitutions& substitutions,
+                    std::uint64_t maximum_type_name_id,
+                    managed_ptr<Stamp> fresh_stamp) {
+  unification_t result;
+  result.unified_type = make_managed<UndeterminedType>(std::move(fresh_stamp));
+  for (std::size_t i = 0; i < types->size(); ++i) {
+    auto u = unify(result.unified_type, (*types)[i], substitutions,
+                   maximum_type_name_id, maximum_type_name_id);
+    result.unified_type = u.unified_type;
+    result.new_substitutions = result.new_substitutions | u.new_substitutions;
+  }
+  return result;
+}
+
+subtype_unification_t unify_subtypes(TypeList ls, TypeList rs,
+                                     Substitutions& substitutions,
+                                     std::uint64_t maximum_type_name_id_l,
+                                     std::uint64_t maximum_type_name_id_r) {
+  assert(ls->size() == rs->size());
+  subtype_unification_t result;
+  result.unified_subtypes =
+      make_managed<collections::ManagedArray<Type>>(ls->size());
+  if (ls->empty()) return result;
+  const auto max_id_u =
+      std::min(maximum_type_name_id_l, maximum_type_name_id_r);
+  for (std::size_t i = 0; i < ls->size(); ++i) {
+    auto u = unify((*ls)[i], (*rs)[i], substitutions, maximum_type_name_id_l,
+                   maximum_type_name_id_r);
+    (*result.unified_subtypes)[i] = u.unified_type;
+    result.new_substitutions = result.new_substitutions | u.new_substitutions;
+    // We have to apply the new substitutions to everything already unified.
+    for (std::size_t j = 0; j < i; ++j) {
+      (*result.unified_subtypes)[j] = apply_substitutions(
+          (*result.unified_subtypes)[j], u.new_substitutions, max_id_u);
+    }
+  }
+  return result;
 }
 
 }  // namespace emil::typing

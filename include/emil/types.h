@@ -727,4 +727,37 @@ unification_t unify(TypePtr l, TypePtr r, Substitutions& substitutions,
                     std::uint64_t maximum_type_name_id_l,
                     std::uint64_t maximum_type_name_id_r);
 
+/**
+ * Unify all the types to a single type.
+ *
+ * The given substitutions are applied to each type before unifying. New
+ * substitutions deduced while unifying are added to substitutions as well as
+ * being returned separately in the result's new_substitutions field.
+ *
+ * Throws a UnificationError if the types cannot be unified.
+ */
+unification_t unify(TypeList types, Substitutions& substitutions,
+                    std::uint64_t maximum_type_name_id,
+                    managed_ptr<Stamp> fresh_stamp);
+
+struct subtype_unification_t {
+  TypeList unified_subtypes;
+  Substitutions new_substitutions = collections::managed_map<Stamp, Type>({});
+};
+
+/**
+ * Unify the types in ls and rs in a pairwise fashion.
+ *
+ * The given substitutions are applied to each type before unifying.
+ * New substitutions deduced while unifying are added to substitutions
+ * as well as being returned separately in the result's
+ * new_substitutions field.
+ *
+ * Throws a UnificationError if any pair of types cannot be unified.
+ */
+subtype_unification_t unify_subtypes(TypeList ls, TypeList rs,
+                                     Substitutions& substitutions,
+                                     std::uint64_t maximum_type_name_id_l,
+                                     std::uint64_t maximum_type_name_id_r);
+
 }  // namespace emil::typing
