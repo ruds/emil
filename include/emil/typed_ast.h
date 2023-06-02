@@ -205,10 +205,12 @@ class TFstringLiteralExpr : public TExpr {
 /** An identifier expression. Nonexpansive. */
 class TIdentifierExpr : public TExpr {
  public:
+  typing::IdStatus status;
   collections::ConsPtr<ManagedString> qualifiers;
   StringPtr canonical_identifier;
 
   TIdentifierExpr(const Location& location, typing::TypePtr type,
+                  typing::IdStatus status,
                   collections::ConsPtr<ManagedString> qualifiers,
                   StringPtr canonical_identifier);
 
@@ -320,9 +322,9 @@ class TLetExpr : public TExpr {
  *
  * Function applications can be "true" function applications, or else
  * application of a type constructor or exception constructor. True
- * function applications are expansive. Applyication of a type
- * constructor or exception constructor to a nonexpansive expression
- * is nonexpansive.
+ * function applications are expansive. Application of a type
+ * constructor (except `ref`) or exception constructor to a nonexpansive
+ * expression is nonexpansive.
  *
  * This information is available in the elaboration context and should
  * be computed by the elaborator when constructing this object.

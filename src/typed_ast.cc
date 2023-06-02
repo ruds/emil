@@ -126,17 +126,19 @@ std::unique_ptr<TExpr> TFstringLiteralExpr::apply_substitutions(
 }
 
 TIdentifierExpr::TIdentifierExpr(const Location& location, typing::TypePtr type,
+                                 typing::IdStatus status,
                                  collections::ConsPtr<ManagedString> qualifiers,
                                  StringPtr canonical_identifier)
     : TExpr(location, type, true),
+      status(status),
       qualifiers(qualifiers),
       canonical_identifier(canonical_identifier) {}
 
 std::unique_ptr<TExpr> TIdentifierExpr::apply_substitutions(
     typing::Substitutions substitutions) const {
   return std::make_unique<TIdentifierExpr>(
-      location, typing::apply_substitutions(type, substitutions), qualifiers,
-      canonical_identifier);
+      location, typing::apply_substitutions(type, substitutions), status,
+      qualifiers, canonical_identifier);
 }
 
 TRecRowExpr::TRecRowExpr(const Location& location, typing::TypePtr type,
