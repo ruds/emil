@@ -61,159 +61,148 @@ MATCHER_P(PrintsAs, expected, "") {
   return ExplainMatchResult(Eq(expected), s, result_listener);
 }
 
-TEST(PrintTypeTest, BasicOperation) {
+class TypesTestBase : public ::testing::Test {
+ protected:
   TestContext tc;
   StampGenerator stamper;
 
-  TypePtr a = tc.root.add_root(make_managed<TypeVar>(u8"'a"));
+  TypePtr int_type = constructed_type(u8"int", {});
+  TypePtr float_type = constructed_type(u8"float", {});
+  managed_ptr<TypeName> list_name = type_name(u8"list", 1);
+
+  TypePtr type_variable(std::u8string_view name) {
+    return tc.root.add_root(make_managed<TypeVar>(name));
+  }
+
+  managed_ptr<UndeterminedType> undetermined_type() {
+    return tc.root.add_root(make_managed<UndeterminedType>(stamper));
+  }
+
+  TypePtr tuple_type(std::initializer_list<TypePtr> types) {
+    auto hold = tc.mgr.acquire_hold();
+    return tc.root.add_root(
+        make_managed<TupleType>(collections::make_array(types)));
+  }
+
+  TypePtr record_type(
+      std::initializer_list<std::pair<std::u8string_view, TypePtr>> rows,
+      bool has_wildcard = false) {
+    auto hold = tc.mgr.acquire_hold();
+    auto m = collections::managed_map<ManagedString, Type>({});
+    for (const auto& r : rows) {
+      m = m->insert(make_string(r.first), r.second).first;
+    }
+    return tc.root.add_root(make_managed<RecordType>(m, has_wildcard));
+  }
+
+  TypePtr function_type(TypePtr param, TypePtr result) {
+    return tc.root.add_root(make_managed<FunctionType>(param, result));
+  }
+
+  managed_ptr<TypeName> type_name(std::u8string_view name, std::size_t arity) {
+    return tc.root.add_root(make_managed<TypeName>(name, stamper, arity));
+  }
+
+  TypePtr constructed_type(managed_ptr<TypeName> name,
+                           std::initializer_list<TypePtr> types) {
+    auto hold = tc.mgr.acquire_hold();
+    return tc.root.add_root(
+        make_managed<ConstructedType>(name, make_array(types)));
+  }
+
+  /** Creates a constructed type with a fresh name. */
+  TypePtr constructed_type(std::u8string_view name,
+                           std::initializer_list<TypePtr> types) {
+    auto hold = tc.mgr.acquire_hold();
+    return tc.root.add_root(make_managed<ConstructedType>(
+        type_name(name, types.size()), make_array(types)));
+  }
+
+  TypePtr list_type(TypePtr el_type) {
+    return constructed_type(list_name, {el_type});
+  }
+};
+
+using PrintTypeTest = TypesTestBase;
+
+TEST_F(PrintTypeTest, BasicOperation) {
+  TypePtr a = type_variable(u8"'a");
   EXPECT_THAT(a, PrintsCorrectly(std::ref(tc), u8"'a", u8"'a"));
 
-  TypePtr b = tc.root.add_root(make_managed<TypeVar>(u8"'b"));
+  TypePtr b = type_variable(u8"'b");
   EXPECT_THAT(b, PrintsCorrectly(std::ref(tc), u8"'b", u8"'b"));
 
-  TypePtr ut1 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
-  EXPECT_THAT(ut1, PrintsCorrectly(std::ref(tc), u8"'~1", u8"'~0"));
+  TypePtr ut1 = undetermined_type();
+  EXPECT_THAT(ut1, PrintsCorrectly(std::ref(tc), u8"'~4", u8"'~0"));
 
-  TypePtr ut2 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
-  EXPECT_THAT(ut2, PrintsCorrectly(std::ref(tc), u8"'~2", u8"'~0"));
+  TypePtr ut2 = undetermined_type();
+  EXPECT_THAT(ut2, PrintsCorrectly(std::ref(tc), u8"'~5", u8"'~0"));
 
-  TypePtr int_type;
-  {
-    auto hold = tc.mgr.acquire_hold();
-    int_type = tc.root.add_root(make_managed<ConstructedType>(
-        make_managed<TypeName>(u8"int", stamper, 0),
-        collections::make_array<Type>({})));
-  }
   EXPECT_THAT(int_type, PrintsCorrectly(std::ref(tc), u8"int", u8"int"));
 
-  auto list_name =
-      tc.root.add_root(make_managed<TypeName>(u8"list", stamper, 1));
-  TypePtr list_int_type, list_ut2_type, list_list_ut2_type;
-  {
-    auto hold = tc.mgr.acquire_hold();
-    list_int_type = tc.root.add_root(make_managed<ConstructedType>(
-        list_name, collections::make_array({int_type})));
-    list_ut2_type = tc.root.add_root(make_managed<ConstructedType>(
-        list_name, collections::make_array({ut2})));
-    list_list_ut2_type = tc.root.add_root(make_managed<ConstructedType>(
-        list_name, collections::make_array({list_ut2_type})));
-  }
-  EXPECT_THAT(list_int_type,
+  EXPECT_THAT(list_type(int_type),
               PrintsCorrectly(std::ref(tc), u8"int list", u8"int list"));
-  EXPECT_THAT(list_ut2_type,
-              PrintsCorrectly(std::ref(tc), u8"'~2 list", u8"'~0 list"));
+  EXPECT_THAT(list_type(ut2),
+              PrintsCorrectly(std::ref(tc), u8"'~5 list", u8"'~0 list"));
   EXPECT_THAT(
-      list_list_ut2_type,
-      PrintsCorrectly(std::ref(tc), u8"'~2 list list", u8"'~0 list list"));
+      list_type(list_type(ut2)),
+      PrintsCorrectly(std::ref(tc), u8"'~5 list list", u8"'~0 list list"));
 
-  auto pair_name =
-      tc.root.add_root(make_managed<TypeName>(u8"pair", stamper, 2));
-  TypePtr pair_int_int_type, pair_ut2_ut1_type, pair_a_ut1_type,
-      pair_list_list_ut2_b_type;
-  {
-    auto hold = tc.mgr.acquire_hold();
-    pair_int_int_type = tc.root.add_root(make_managed<ConstructedType>(
-        pair_name, collections::make_array({int_type, int_type})));
-    pair_ut2_ut1_type = tc.root.add_root(make_managed<ConstructedType>(
-        pair_name, collections::make_array({ut2, ut1})));
-    pair_a_ut1_type = tc.root.add_root(make_managed<ConstructedType>(
-        pair_name, collections::make_array({a, ut1})));
-    pair_list_list_ut2_b_type = tc.root.add_root(make_managed<ConstructedType>(
-        pair_name, collections::make_array({list_list_ut2_type, b})));
-  }
+  auto pair_name = type_name(u8"pair", 2);
   EXPECT_THAT(
-      pair_int_int_type,
+      constructed_type(pair_name, {int_type, int_type}),
       PrintsCorrectly(std::ref(tc), u8"(int, int) pair", u8"(int, int) pair"));
   EXPECT_THAT(
-      pair_ut2_ut1_type,
-      PrintsCorrectly(std::ref(tc), u8"('~2, '~1) pair", u8"('~0, '~1) pair"));
-  EXPECT_THAT(pair_a_ut1_type, PrintsCorrectly(std::ref(tc), u8"('a, '~1) pair",
-                                               u8"('a, '~0) pair"));
-  EXPECT_THAT(pair_list_list_ut2_b_type,
-              PrintsCorrectly(std::ref(tc), u8"('~2 list list, 'b) pair",
+      constructed_type(pair_name, {ut2, ut1}),
+      PrintsCorrectly(std::ref(tc), u8"('~5, '~4) pair", u8"('~0, '~1) pair"));
+  EXPECT_THAT(
+      constructed_type(pair_name, {a, ut1}),
+      PrintsCorrectly(std::ref(tc), u8"('a, '~4) pair", u8"('a, '~0) pair"));
+  EXPECT_THAT(constructed_type(pair_name, {list_type(list_type(ut2)), b}),
+              PrintsCorrectly(std::ref(tc), u8"('~5 list list, 'b) pair",
                               u8"('~0 list list, 'b) pair"));
 
-  TypePtr tuple0, tuple_ut2_ut1, tuple_pair_ut2_ut1_a_ut2;
-  {
-    auto hold = tc.mgr.acquire_hold();
-    tuple0 = tc.root.add_root(
-        make_managed<TupleType>(collections::make_array<Type>({})));
-    tuple_ut2_ut1 = tc.root.add_root(
-        make_managed<TupleType>(collections::make_array({ut2, ut1})));
-    tuple_pair_ut2_ut1_a_ut2 = tc.root.add_root(make_managed<TupleType>(
-        collections::make_array({pair_ut2_ut1_type, a, ut2})));
-  }
-  EXPECT_THAT(tuple0, PrintsCorrectly(std::ref(tc), u8"()", u8"()"));
-  EXPECT_THAT(tuple_ut2_ut1,
-              PrintsCorrectly(std::ref(tc), u8"('~2 * '~1)", u8"('~0 * '~1)"));
-  EXPECT_THAT(tuple_pair_ut2_ut1_a_ut2,
-              PrintsCorrectly(std::ref(tc), u8"(('~2, '~1) pair * 'a * '~2)",
+  EXPECT_THAT(tuple_type({}), PrintsCorrectly(std::ref(tc), u8"()", u8"()"));
+  EXPECT_THAT(tuple_type({ut2, ut1}),
+              PrintsCorrectly(std::ref(tc), u8"('~5 * '~4)", u8"('~0 * '~1)"));
+  EXPECT_THAT(tuple_type({constructed_type(pair_name, {ut2, ut1}), a, ut2}),
+              PrintsCorrectly(std::ref(tc), u8"(('~5, '~4) pair * 'a * '~5)",
                               u8"(('~0, '~1) pair * 'a * '~0)"));
 
-  TypePtr record0, record0w, record_ut2, record_ut2w, record_ut2_ut1,
-      record_ut2_ut1w, record_ut2_tuple_ut2_ut1_a_ut2_list_int;
-  {
-    auto hold = tc.mgr.acquire_hold();
-    record0 = tc.root.add_root(make_managed<RecordType>(
-        collections::managed_map<ManagedString, Type>({})));
-    record0w = tc.root.add_root(make_managed<RecordType>(
-        collections::managed_map<ManagedString, Type>({}), true));
-    record_ut2 = tc.root.add_root(make_managed<RecordType>(
-        collections::managed_map({std::make_pair(make_string(u8"k0"), ut2)})));
-    record_ut2w = tc.root.add_root(make_managed<RecordType>(
-        collections::managed_map({std::make_pair(make_string(u8"k0"), ut2)}),
-        true));
-    record_ut2_ut1 = tc.root.add_root(make_managed<RecordType>(
-        collections::managed_map({std::make_pair(make_string(u8"k0"), ut2),
-                                  std::make_pair(make_string(u8"k1"), ut1)})));
-    record_ut2_ut1w = tc.root.add_root(make_managed<RecordType>(
-        collections::managed_map({std::make_pair(make_string(u8"k0"), ut2),
-                                  std::make_pair(make_string(u8"k1"), ut1)}),
-        true));
-    record_ut2_tuple_ut2_ut1_a_ut2_list_int =
-        tc.root.add_root(make_managed<RecordType>(collections::managed_map(
-            {std::make_pair(make_string(u8"k0"), ut2),
-             std::make_pair(make_string(u8"k1"), tuple_ut2_ut1),
-             std::make_pair(make_string(u8"k2"), a),
-             std::make_pair(make_string(u8"k3"), ut2),
-             std::make_pair(make_string(u8"k4"), list_int_type)})));
-  }
-  EXPECT_THAT(record0, PrintsCorrectly(std::ref(tc), u8"{}", u8"{}"));
-  EXPECT_THAT(record0w, PrintsCorrectly(std::ref(tc), u8"{...}", u8"{...}"));
-  EXPECT_THAT(record_ut2,
-              PrintsCorrectly(std::ref(tc), u8"{k0: '~2}", u8"{k0: '~0}"));
-  EXPECT_THAT(record_ut2w, PrintsCorrectly(std::ref(tc), u8"{k0: '~2, ...}",
-                                           u8"{k0: '~0, ...}"));
-  EXPECT_THAT(record_ut2_ut1,
-              PrintsCorrectly(std::ref(tc), u8"{k0: '~2, k1: '~1}",
+  EXPECT_THAT(record_type({}), PrintsCorrectly(std::ref(tc), u8"{}", u8"{}"));
+  EXPECT_THAT(record_type({}, true),
+              PrintsCorrectly(std::ref(tc), u8"{...}", u8"{...}"));
+  EXPECT_THAT(record_type({{u8"k0", ut2}}),
+              PrintsCorrectly(std::ref(tc), u8"{k0: '~5}", u8"{k0: '~0}"));
+  EXPECT_THAT(
+      record_type({{u8"k0", ut2}}, true),
+      PrintsCorrectly(std::ref(tc), u8"{k0: '~5, ...}", u8"{k0: '~0, ...}"));
+  EXPECT_THAT(record_type({{u8"k0", ut2}, {u8"k1", ut1}}),
+              PrintsCorrectly(std::ref(tc), u8"{k0: '~5, k1: '~4}",
                               u8"{k0: '~0, k1: '~1}"));
-  EXPECT_THAT(record_ut2_ut1w,
-              PrintsCorrectly(std::ref(tc), u8"{k0: '~2, k1: '~1, ...}",
+  EXPECT_THAT(record_type({{u8"k0", ut2}, {u8"k1", ut1}}, true),
+              PrintsCorrectly(std::ref(tc), u8"{k0: '~5, k1: '~4, ...}",
                               u8"{k0: '~0, k1: '~1, ...}"));
   EXPECT_THAT(
-      record_ut2_tuple_ut2_ut1_a_ut2_list_int,
+      record_type({{u8"k0", ut2},
+                   {u8"k1", tuple_type({ut2, ut1})},
+                   {u8"k2", a},
+                   {u8"k3", ut2},
+                   {u8"k4", list_type(int_type)}}),
       PrintsCorrectly(
           std::ref(tc),
-          u8"{k0: '~2, k1: ('~2 * '~1), k2: 'a, k3: '~2, k4: int list}",
+          u8"{k0: '~5, k1: ('~5 * '~4), k2: 'a, k3: '~5, k4: int list}",
           u8"{k0: '~0, k1: ('~0 * '~1), k2: 'a, k3: '~0, k4: int list}"));
 
-  TypePtr fun_ut2_to_ut1 =
-      tc.root.add_root(make_managed<FunctionType>(ut2, ut1));
-  EXPECT_THAT(fun_ut2_to_ut1,
-              PrintsCorrectly(std::ref(tc), u8"'~2 -> '~1", u8"'~0 -> '~1"));
-  TypePtr fun_b_to_record0w =
-      tc.root.add_root(make_managed<FunctionType>(b, record0w));
-  EXPECT_THAT(fun_b_to_record0w,
+  EXPECT_THAT(function_type(ut2, ut1),
+              PrintsCorrectly(std::ref(tc), u8"'~5 -> '~4", u8"'~0 -> '~1"));
+  EXPECT_THAT(function_type(b, record_type({}, true)),
               PrintsCorrectly(std::ref(tc), u8"'b -> {...}", u8"'b -> {...}"));
-  TypePtr fun_list_int_to_ut1 =
-      tc.root.add_root(make_managed<FunctionType>(list_int_type, ut1));
   EXPECT_THAT(
-      fun_list_int_to_ut1,
-      PrintsCorrectly(std::ref(tc), u8"int list -> '~1", u8"int list -> '~0"));
-  TypePtr fun_tuple_ut2_ut1_to_ut1 =
-      tc.root.add_root(make_managed<FunctionType>(tuple_ut2_ut1, ut1));
-  EXPECT_THAT(fun_tuple_ut2_ut1_to_ut1,
-              PrintsCorrectly(std::ref(tc), u8"('~2 * '~1) -> '~1",
+      function_type(list_type(int_type), ut1),
+      PrintsCorrectly(std::ref(tc), u8"int list -> '~4", u8"int list -> '~0"));
+  EXPECT_THAT(function_type(tuple_type({ut2, ut1}), ut1),
+              PrintsCorrectly(std::ref(tc), u8"('~5 * '~4) -> '~4",
                               u8"('~0 * '~1) -> '~1"));
 }
 
@@ -223,538 +212,409 @@ TypePtr apply_two_substitutions(TypePtr t, Substitutions first,
   return apply_substitutions(apply_substitutions(t, first), second);
 }
 
-TEST(ApplySubstitutionsTest, BasicOperation) {
-  TestContext tc;
-  StampGenerator stamper;
+class ApplySubstitutionsTest : public TypesTestBase {
+ protected:
+  managed_ptr<UndeterminedType> ut1 = undetermined_type();
+  managed_ptr<UndeterminedType> ut2 = undetermined_type();
 
-  const auto int_name =
-      tc.root.add_root(make_managed<TypeName>(u8"int", stamper, 0));
-  const auto list_name =
-      tc.root.add_root(make_managed<TypeName>(u8"list", stamper, 1));
-  const auto ut1 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
-  const auto ut2 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
-  const auto pair_name =
-      tc.root.add_root(make_managed<TypeName>(u8"pair", stamper, 2));
-  const auto ut3 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
-  const auto ut4 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
+  managed_ptr<TypeName> pair_name = type_name(u8"pair", 2);
 
-  TypePtr a = tc.root.add_root(make_managed<TypeVar>(u8"'a"));
-  TypePtr b = tc.root.add_root(make_managed<TypeVar>(u8"'b"));
-  TypePtr int_type, list_int, list_ut2, list_ut3, list_list_ut3,
-      pair_list_ut2_and_int, pair_list_list_ut3_and_int,
-      pair_pair_list_list_ut3_and_int_and_list_int, tuple0,
-      tuple_pair_list_ut2_and_int_with_tuple0, tuple_list_list_ut3_and_int,
-      record0, record0w, record_ut2, record_ut2w,
-      record_ut2_plus_tuple_list_list_ut3_and_int_plus_list_list_ut3,
-      fun_ut3_to_ut1, fun_b_to_record_ut2w,
-      fun_list_list_ut3_to_pair_pair_list_list_ut3_and_int_and_list_int;
-  {
-    auto hold = tc.mgr.acquire_hold();
-    int_type = tc.root.add_root(
-        make_managed<ConstructedType>(int_name, make_array<Type>({})));
-    list_int = tc.root.add_root(
-        make_managed<ConstructedType>(list_name, make_array({int_type})));
-    list_ut2 = tc.root.add_root(
-        make_managed<ConstructedType>(list_name, make_array<Type>({ut2})));
-    list_ut3 = tc.root.add_root(
-        make_managed<ConstructedType>(list_name, make_array<Type>({ut3})));
-    list_list_ut3 = tc.root.add_root(
-        make_managed<ConstructedType>(list_name, make_array({list_ut3})));
-    pair_list_ut2_and_int = tc.root.add_root(make_managed<ConstructedType>(
-        pair_name, make_array({list_ut2, int_type})));
-    pair_list_list_ut3_and_int = tc.root.add_root(make_managed<ConstructedType>(
-        pair_name, make_array({list_list_ut3, int_type})));
-    pair_pair_list_list_ut3_and_int_and_list_int =
-        tc.root.add_root(make_managed<ConstructedType>(
-            pair_name, make_array({pair_list_list_ut3_and_int, list_int})));
-    tuple0 = tc.root.add_root(make_managed<TupleType>(make_array<Type>({})));
-    tuple_pair_list_ut2_and_int_with_tuple0 = tc.root.add_root(
-        make_managed<TupleType>(make_array({pair_list_ut2_and_int, tuple0})));
-    tuple_list_list_ut3_and_int = tc.root.add_root(
-        make_managed<TupleType>(make_array({list_list_ut3, int_type})));
-    record0 = tc.root.add_root(
-        make_managed<RecordType>(managed_map<ManagedString, Type>({})));
-    record0w = tc.root.add_root(
-        make_managed<RecordType>(managed_map<ManagedString, Type>({}), true));
-    record_ut2 = tc.root.add_root(
-        make_managed<RecordType>(managed_map<ManagedString, Type>(
-            {std::make_pair(make_string(u8"k0"), ut2)})));
-    record_ut2w = tc.root.add_root(make_managed<RecordType>(
-        managed_map<ManagedString, Type>(
-            {std::make_pair(make_string(u8"k0"), ut2)}),
-        true));
-    record_ut2_plus_tuple_list_list_ut3_and_int_plus_list_list_ut3 =
-        tc.root.add_root(
-            make_managed<RecordType>(managed_map<ManagedString, Type>(
-                {std::make_pair(make_string(u8"k0"), ut2),
-                 std::make_pair(make_string(u8"k1"),
-                                tuple_list_list_ut3_and_int),
-                 std::make_pair(make_string(u8"k2"), list_list_ut3)})));
-    fun_ut3_to_ut1 = tc.root.add_root(make_managed<FunctionType>(ut3, ut1));
-    fun_b_to_record_ut2w =
-        tc.root.add_root(make_managed<FunctionType>(b, record_ut2w));
-    fun_list_list_ut3_to_pair_pair_list_list_ut3_and_int_and_list_int =
-        tc.root.add_root(make_managed<FunctionType>(
-            list_list_ut3, pair_pair_list_list_ut3_and_int_and_list_int));
+  managed_ptr<UndeterminedType> ut3 = undetermined_type();
+  managed_ptr<UndeterminedType> ut4 = undetermined_type();
+
+  TypePtr a = type_variable(u8"'a");
+  TypePtr b = type_variable(u8"'b");
+
+  TypePtr list_int = list_type(int_type);
+  TypePtr list_ut2 = list_type(ut2);
+  TypePtr list_ut3 = list_type(ut3);
+  TypePtr list_list_ut3 = list_type(list_ut3);
+  TypePtr pair_list_ut2_and_int = pair_type(list_ut2, int_type);
+  TypePtr pair_list_list_ut3_and_int = pair_type(list_list_ut3, int_type);
+  TypePtr pair_pair_list_list_ut3_and_int_and_list_int =
+      pair_type(pair_list_list_ut3_and_int, list_int);
+  TypePtr tuple0 = tuple_type({});
+  TypePtr tuple_pair_list_ut2_and_int_with_tuple0 =
+      tuple_type({pair_list_ut2_and_int, tuple0});
+  TypePtr tuple_list_list_ut3_and_int = tuple_type({list_list_ut3, int_type});
+  TypePtr record0 = record_type({});
+  TypePtr record0w = record_type({}, true);
+  TypePtr record_ut2 = record_type({{u8"k0", ut2}});
+  TypePtr record_ut2w = record_type({{u8"k0", ut2}}, true);
+  TypePtr record_ut2_plus_tuple_list_list_ut3_and_int_plus_list_list_ut3 =
+      record_type({{u8"k0", ut2},
+                   {u8"k1", tuple_list_list_ut3_and_int},
+                   {u8"k2", list_list_ut3}});
+  TypePtr fun_ut3_to_ut1 = function_type(ut3, ut1);
+  TypePtr fun_b_to_record_ut2w = function_type(b, record_ut2w);
+  TypePtr fun_list_list_ut3_to_pair_pair_list_list_ut3_and_int_and_list_int =
+      function_type(list_list_ut3,
+                    pair_pair_list_list_ut3_and_int_and_list_int);
+
+  MemoryManager::hold hold = tc.mgr.acquire_hold();
+
+  TypePtr pair_type(TypePtr a, TypePtr b) {
+    return constructed_type(pair_name, {a, b});
   }
+};
 
-  Substitutions sub_empty, sub_ut1_is_list_int,
-      sub_ut1_is_list_int_also_ut2_is_list_list_ut3,
-      sub_ut1_is_pair_list_ut2_and_int, sub_ut3_is_pair_list_ut2_and_int,
-      sub_ut1_is_ut3, sub_ut1_is_b, sub_ut3_is_int;
-  {
-    auto hold = tc.mgr.acquire_hold();
-    sub_empty = tc.root.add_root(managed_map<Stamp, Type>({}));
-    sub_ut1_is_list_int =
-        tc.root.add_root(sub_empty->insert(ut1->stamp(), list_int).first);
-    sub_ut1_is_list_int_also_ut2_is_list_list_ut3 = tc.root.add_root(
-        sub_ut1_is_list_int->insert(ut2->stamp(), list_list_ut3).first);
-    sub_ut1_is_pair_list_ut2_and_int = tc.root.add_root(
-        sub_empty->insert(ut1->stamp(), pair_list_ut2_and_int).first);
-    sub_ut3_is_pair_list_ut2_and_int = tc.root.add_root(
-        sub_empty->insert(ut3->stamp(), pair_list_ut2_and_int).first);
-    sub_ut1_is_ut3 =
-        tc.root.add_root(sub_empty->insert(ut1->stamp(), ut3).first);
-    sub_ut1_is_b = tc.root.add_root(sub_empty->insert(ut1->stamp(), b).first);
-    sub_ut3_is_int =
-        tc.root.add_root(sub_empty->insert(ut3->stamp(), int_type).first);
-  }
+TEST_F(ApplySubstitutionsTest, EmptySubs) {
+  auto sub = managed_map<Stamp, Type>({});
 
-  auto hold = tc.mgr.acquire_hold();
-
-  EXPECT_THAT(apply_substitutions(a, sub_empty), PrintsAs(u8"'a"));
-  EXPECT_THAT(apply_substitutions(b, sub_empty), PrintsAs(u8"'b"));
-  EXPECT_THAT(apply_substitutions(int_type, sub_empty), PrintsAs(u8"int"));
-  EXPECT_THAT(apply_substitutions(list_int, sub_empty), PrintsAs(u8"int list"));
-  EXPECT_THAT(apply_substitutions(list_ut2, sub_empty), PrintsAs(u8"'~0 list"));
-  EXPECT_THAT(apply_substitutions(list_ut3, sub_empty), PrintsAs(u8"'~0 list"));
-  EXPECT_THAT(apply_substitutions(list_list_ut3, sub_empty),
+  EXPECT_THAT(apply_substitutions(a, sub), PrintsAs(u8"'a"));
+  EXPECT_THAT(apply_substitutions(b, sub), PrintsAs(u8"'b"));
+  EXPECT_THAT(apply_substitutions(int_type, sub), PrintsAs(u8"int"));
+  EXPECT_THAT(apply_substitutions(list_int, sub), PrintsAs(u8"int list"));
+  EXPECT_THAT(apply_substitutions(list_ut2, sub), PrintsAs(u8"'~0 list"));
+  EXPECT_THAT(apply_substitutions(list_ut3, sub), PrintsAs(u8"'~0 list"));
+  EXPECT_THAT(apply_substitutions(list_list_ut3, sub),
               PrintsAs(u8"'~0 list list"));
-  EXPECT_THAT(apply_substitutions(pair_list_ut2_and_int, sub_empty),
+  EXPECT_THAT(apply_substitutions(pair_list_ut2_and_int, sub),
               PrintsAs(u8"('~0 list, int) pair"));
-  EXPECT_THAT(apply_substitutions(pair_list_list_ut3_and_int, sub_empty),
+  EXPECT_THAT(apply_substitutions(pair_list_list_ut3_and_int, sub),
               PrintsAs(u8"('~0 list list, int) pair"));
-  EXPECT_THAT(apply_substitutions(pair_pair_list_list_ut3_and_int_and_list_int,
-                                  sub_empty),
-              PrintsAs(u8"(('~0 list list, int) pair, int list) pair"));
-  EXPECT_THAT(apply_substitutions(tuple0, sub_empty), PrintsAs(u8"()"));
   EXPECT_THAT(
-      apply_substitutions(tuple_pair_list_ut2_and_int_with_tuple0, sub_empty),
-      PrintsAs(u8"(('~0 list, int) pair * ())"));
-  EXPECT_THAT(apply_substitutions(tuple_list_list_ut3_and_int, sub_empty),
-              PrintsAs(u8"('~0 list list * int)"));
-  EXPECT_THAT(apply_substitutions(record0, sub_empty), PrintsAs(u8"{}"));
-  EXPECT_THAT(apply_substitutions(record0w, sub_empty), PrintsAs(u8"{...}"));
-  EXPECT_THAT(apply_substitutions(record_ut2, sub_empty),
-              PrintsAs(u8"{k0: '~0}"));
-  EXPECT_THAT(apply_substitutions(record_ut2w, sub_empty),
-              PrintsAs(u8"{k0: '~0, ...}"));
-  EXPECT_THAT(
-      apply_substitutions(
-          record_ut2_plus_tuple_list_list_ut3_and_int_plus_list_list_ut3,
-          sub_empty),
-      PrintsAs(u8"{k0: '~0, k1: ('~1 list list * int), k2: '~1 list list}"));
-  EXPECT_THAT(apply_substitutions(fun_ut3_to_ut1, sub_empty),
-              PrintsAs(u8"'~0 -> '~1"));
-  EXPECT_THAT(apply_substitutions(fun_b_to_record_ut2w, sub_empty),
-              PrintsAs(u8"'b -> {k0: '~0, ...}"));
-  EXPECT_THAT(
-      apply_substitutions(
-          fun_list_list_ut3_to_pair_pair_list_list_ut3_and_int_and_list_int,
-          sub_empty),
-      PrintsAs(
-          u8"'~0 list list -> (('~0 list list, int) pair, int list) pair"));
-
-  EXPECT_THAT(apply_substitutions(a, sub_ut1_is_list_int), PrintsAs(u8"'a"));
-  EXPECT_THAT(apply_substitutions(b, sub_ut1_is_list_int), PrintsAs(u8"'b"));
-  EXPECT_THAT(apply_substitutions(int_type, sub_ut1_is_list_int),
-              PrintsAs(u8"int"));
-  EXPECT_THAT(apply_substitutions(list_int, sub_ut1_is_list_int),
-              PrintsAs(u8"int list"));
-  EXPECT_THAT(apply_substitutions(list_ut2, sub_ut1_is_list_int),
-              PrintsAs(u8"'~0 list"));
-  EXPECT_THAT(apply_substitutions(list_ut3, sub_ut1_is_list_int),
-              PrintsAs(u8"'~0 list"));
-  EXPECT_THAT(apply_substitutions(list_list_ut3, sub_ut1_is_list_int),
-              PrintsAs(u8"'~0 list list"));
-  EXPECT_THAT(apply_substitutions(pair_list_ut2_and_int, sub_ut1_is_list_int),
-              PrintsAs(u8"('~0 list, int) pair"));
-  EXPECT_THAT(
-      apply_substitutions(pair_list_list_ut3_and_int, sub_ut1_is_list_int),
-      PrintsAs(u8"('~0 list list, int) pair"));
-  EXPECT_THAT(apply_substitutions(pair_pair_list_list_ut3_and_int_and_list_int,
-                                  sub_ut1_is_list_int),
-              PrintsAs(u8"(('~0 list list, int) pair, int list) pair"));
-  EXPECT_THAT(apply_substitutions(tuple0, sub_ut1_is_list_int),
-              PrintsAs(u8"()"));
-  EXPECT_THAT(apply_substitutions(tuple_pair_list_ut2_and_int_with_tuple0,
-                                  sub_ut1_is_list_int),
-              PrintsAs(u8"(('~0 list, int) pair * ())"));
-  EXPECT_THAT(
-      apply_substitutions(tuple_list_list_ut3_and_int, sub_ut1_is_list_int),
-      PrintsAs(u8"('~0 list list * int)"));
-  EXPECT_THAT(apply_substitutions(record0, sub_ut1_is_list_int),
-              PrintsAs(u8"{}"));
-  EXPECT_THAT(apply_substitutions(record0w, sub_ut1_is_list_int),
-              PrintsAs(u8"{...}"));
-  EXPECT_THAT(apply_substitutions(record_ut2, sub_ut1_is_list_int),
-              PrintsAs(u8"{k0: '~0}"));
-  EXPECT_THAT(apply_substitutions(record_ut2w, sub_ut1_is_list_int),
-              PrintsAs(u8"{k0: '~0, ...}"));
-  EXPECT_THAT(
-      apply_substitutions(
-          record_ut2_plus_tuple_list_list_ut3_and_int_plus_list_list_ut3,
-          sub_ut1_is_list_int),
-      PrintsAs(u8"{k0: '~0, k1: ('~1 list list * int), k2: '~1 list list}"));
-  EXPECT_THAT(apply_substitutions(fun_ut3_to_ut1, sub_ut1_is_list_int),
-              PrintsAs(u8"'~0 -> int list"));
-  EXPECT_THAT(apply_substitutions(fun_b_to_record_ut2w, sub_ut1_is_list_int),
-              PrintsAs(u8"'b -> {k0: '~0, ...}"));
-  EXPECT_THAT(
-      apply_substitutions(
-          fun_list_list_ut3_to_pair_pair_list_list_ut3_and_int_and_list_int,
-          sub_ut1_is_list_int),
-      PrintsAs(
-          u8"'~0 list list -> (('~0 list list, int) pair, int list) pair"));
-
-  EXPECT_THAT(
-      apply_substitutions(a, sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
-      PrintsAs(u8"'a"));
-  EXPECT_THAT(
-      apply_substitutions(b, sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
-      PrintsAs(u8"'b"));
-  EXPECT_THAT(apply_substitutions(
-                  int_type, sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
-              PrintsAs(u8"int"));
-  EXPECT_THAT(apply_substitutions(
-                  list_int, sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
-              PrintsAs(u8"int list"));
-  EXPECT_THAT(apply_substitutions(
-                  list_ut2, sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
-              PrintsAs(u8"'~0 list list list"));
-  EXPECT_THAT(apply_substitutions(
-                  list_ut3, sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
-              PrintsAs(u8"'~0 list"));
-  EXPECT_THAT(apply_substitutions(
-                  list_list_ut3, sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
-              PrintsAs(u8"'~0 list list"));
-  EXPECT_THAT(
-      apply_substitutions(pair_list_ut2_and_int,
-                          sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
-      PrintsAs(u8"('~0 list list list, int) pair"));
-  EXPECT_THAT(
-      apply_substitutions(pair_list_list_ut3_and_int,
-                          sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
-      PrintsAs(u8"('~0 list list, int) pair"));
-  EXPECT_THAT(
-      apply_substitutions(pair_pair_list_list_ut3_and_int_and_list_int,
-                          sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
+      apply_substitutions(pair_pair_list_list_ut3_and_int_and_list_int, sub),
       PrintsAs(u8"(('~0 list list, int) pair, int list) pair"));
-  EXPECT_THAT(apply_substitutions(
-                  tuple0, sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
-              PrintsAs(u8"()"));
+  EXPECT_THAT(apply_substitutions(tuple0, sub), PrintsAs(u8"()"));
+  EXPECT_THAT(apply_substitutions(tuple_pair_list_ut2_and_int_with_tuple0, sub),
+              PrintsAs(u8"(('~0 list, int) pair * ())"));
+  EXPECT_THAT(apply_substitutions(tuple_list_list_ut3_and_int, sub),
+              PrintsAs(u8"('~0 list list * int)"));
+  EXPECT_THAT(apply_substitutions(record0, sub), PrintsAs(u8"{}"));
+  EXPECT_THAT(apply_substitutions(record0w, sub), PrintsAs(u8"{...}"));
+  EXPECT_THAT(apply_substitutions(record_ut2, sub), PrintsAs(u8"{k0: '~0}"));
+  EXPECT_THAT(apply_substitutions(record_ut2w, sub),
+              PrintsAs(u8"{k0: '~0, ...}"));
   EXPECT_THAT(
-      apply_substitutions(tuple_pair_list_ut2_and_int_with_tuple0,
-                          sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
-      PrintsAs(u8"(('~0 list list list, int) pair * ())"));
+      apply_substitutions(
+          record_ut2_plus_tuple_list_list_ut3_and_int_plus_list_list_ut3, sub),
+      PrintsAs(u8"{k0: '~0, k1: ('~1 list list * int), k2: '~1 list list}"));
+  EXPECT_THAT(apply_substitutions(fun_ut3_to_ut1, sub),
+              PrintsAs(u8"'~0 -> '~1"));
+  EXPECT_THAT(apply_substitutions(fun_b_to_record_ut2w, sub),
+              PrintsAs(u8"'b -> {k0: '~0, ...}"));
   EXPECT_THAT(
-      apply_substitutions(tuple_list_list_ut3_and_int,
-                          sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
-      PrintsAs(u8"('~0 list list * int)"));
-  EXPECT_THAT(apply_substitutions(
-                  record0, sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
-              PrintsAs(u8"{}"));
-  EXPECT_THAT(apply_substitutions(
-                  record0w, sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
-              PrintsAs(u8"{...}"));
-  EXPECT_THAT(apply_substitutions(
-                  record_ut2, sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
+      apply_substitutions(
+          fun_list_list_ut3_to_pair_pair_list_list_ut3_and_int_and_list_int,
+          sub),
+      PrintsAs(
+          u8"'~0 list list -> (('~0 list list, int) pair, int list) pair"));
+}
+
+TEST_F(ApplySubstitutionsTest, SingleSub) {
+  auto sub = managed_map<Stamp, Type>({{ut1->stamp(), list_int}});
+  EXPECT_THAT(apply_substitutions(a, sub), PrintsAs(u8"'a"));
+  EXPECT_THAT(apply_substitutions(b, sub), PrintsAs(u8"'b"));
+  EXPECT_THAT(apply_substitutions(int_type, sub), PrintsAs(u8"int"));
+  EXPECT_THAT(apply_substitutions(list_int, sub), PrintsAs(u8"int list"));
+  EXPECT_THAT(apply_substitutions(list_ut2, sub), PrintsAs(u8"'~0 list"));
+  EXPECT_THAT(apply_substitutions(list_ut3, sub), PrintsAs(u8"'~0 list"));
+  EXPECT_THAT(apply_substitutions(list_list_ut3, sub),
+              PrintsAs(u8"'~0 list list"));
+  EXPECT_THAT(apply_substitutions(pair_list_ut2_and_int, sub),
+              PrintsAs(u8"('~0 list, int) pair"));
+  EXPECT_THAT(apply_substitutions(pair_list_list_ut3_and_int, sub),
+              PrintsAs(u8"('~0 list list, int) pair"));
+  EXPECT_THAT(
+      apply_substitutions(pair_pair_list_list_ut3_and_int_and_list_int, sub),
+      PrintsAs(u8"(('~0 list list, int) pair, int list) pair"));
+  EXPECT_THAT(apply_substitutions(tuple0, sub), PrintsAs(u8"()"));
+  EXPECT_THAT(apply_substitutions(tuple_pair_list_ut2_and_int_with_tuple0, sub),
+              PrintsAs(u8"(('~0 list, int) pair * ())"));
+  EXPECT_THAT(apply_substitutions(tuple_list_list_ut3_and_int, sub),
+              PrintsAs(u8"('~0 list list * int)"));
+  EXPECT_THAT(apply_substitutions(record0, sub), PrintsAs(u8"{}"));
+  EXPECT_THAT(apply_substitutions(record0w, sub), PrintsAs(u8"{...}"));
+  EXPECT_THAT(apply_substitutions(record_ut2, sub), PrintsAs(u8"{k0: '~0}"));
+  EXPECT_THAT(apply_substitutions(record_ut2w, sub),
+              PrintsAs(u8"{k0: '~0, ...}"));
+  EXPECT_THAT(
+      apply_substitutions(
+          record_ut2_plus_tuple_list_list_ut3_and_int_plus_list_list_ut3, sub),
+      PrintsAs(u8"{k0: '~0, k1: ('~1 list list * int), k2: '~1 list list}"));
+  EXPECT_THAT(apply_substitutions(fun_ut3_to_ut1, sub),
+              PrintsAs(u8"'~0 -> int list"));
+  EXPECT_THAT(apply_substitutions(fun_b_to_record_ut2w, sub),
+              PrintsAs(u8"'b -> {k0: '~0, ...}"));
+  EXPECT_THAT(
+      apply_substitutions(
+          fun_list_list_ut3_to_pair_pair_list_list_ut3_and_int_and_list_int,
+          sub),
+      PrintsAs(
+          u8"'~0 list list -> (('~0 list list, int) pair, int list) pair"));
+}
+
+TEST_F(ApplySubstitutionsTest, TwoSubs) {
+  auto sub = managed_map<Stamp, Type>(
+      {{ut1->stamp(), list_int}, {ut2->stamp(), list_list_ut3}});
+  EXPECT_THAT(apply_substitutions(a, sub), PrintsAs(u8"'a"));
+  EXPECT_THAT(apply_substitutions(b, sub), PrintsAs(u8"'b"));
+  EXPECT_THAT(apply_substitutions(int_type, sub), PrintsAs(u8"int"));
+  EXPECT_THAT(apply_substitutions(list_int, sub), PrintsAs(u8"int list"));
+  EXPECT_THAT(apply_substitutions(list_ut2, sub),
+              PrintsAs(u8"'~0 list list list"));
+  EXPECT_THAT(apply_substitutions(list_ut3, sub), PrintsAs(u8"'~0 list"));
+  EXPECT_THAT(apply_substitutions(list_list_ut3, sub),
+              PrintsAs(u8"'~0 list list"));
+  EXPECT_THAT(apply_substitutions(pair_list_ut2_and_int, sub),
+              PrintsAs(u8"('~0 list list list, int) pair"));
+  EXPECT_THAT(apply_substitutions(pair_list_list_ut3_and_int, sub),
+              PrintsAs(u8"('~0 list list, int) pair"));
+  EXPECT_THAT(
+      apply_substitutions(pair_pair_list_list_ut3_and_int_and_list_int, sub),
+      PrintsAs(u8"(('~0 list list, int) pair, int list) pair"));
+  EXPECT_THAT(apply_substitutions(tuple0, sub), PrintsAs(u8"()"));
+  EXPECT_THAT(apply_substitutions(tuple_pair_list_ut2_and_int_with_tuple0, sub),
+              PrintsAs(u8"(('~0 list list list, int) pair * ())"));
+  EXPECT_THAT(apply_substitutions(tuple_list_list_ut3_and_int, sub),
+              PrintsAs(u8"('~0 list list * int)"));
+  EXPECT_THAT(apply_substitutions(record0, sub), PrintsAs(u8"{}"));
+  EXPECT_THAT(apply_substitutions(record0w, sub), PrintsAs(u8"{...}"));
+  EXPECT_THAT(apply_substitutions(record_ut2, sub),
               PrintsAs(u8"{k0: '~0 list list}"));
-  EXPECT_THAT(apply_substitutions(
-                  record_ut2w, sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
+  EXPECT_THAT(apply_substitutions(record_ut2w, sub),
               PrintsAs(u8"{k0: '~0 list list, ...}"));
   EXPECT_THAT(
       apply_substitutions(
-          record_ut2_plus_tuple_list_list_ut3_and_int_plus_list_list_ut3,
-          sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
+          record_ut2_plus_tuple_list_list_ut3_and_int_plus_list_list_ut3, sub),
       PrintsAs(u8"{k0: '~0 list list, k1: ('~0 list list * int), k2: '~0 list "
                u8"list}"));
-  EXPECT_THAT(
-      apply_substitutions(fun_ut3_to_ut1,
-                          sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
-      PrintsAs(u8"'~0 -> int list"));
-  EXPECT_THAT(
-      apply_substitutions(fun_b_to_record_ut2w,
-                          sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
-      PrintsAs(u8"'b -> {k0: '~0 list list, ...}"));
+  EXPECT_THAT(apply_substitutions(fun_ut3_to_ut1, sub),
+              PrintsAs(u8"'~0 -> int list"));
+  EXPECT_THAT(apply_substitutions(fun_b_to_record_ut2w, sub),
+              PrintsAs(u8"'b -> {k0: '~0 list list, ...}"));
   EXPECT_THAT(
       apply_substitutions(
           fun_list_list_ut3_to_pair_pair_list_list_ut3_and_int_and_list_int,
-          sub_ut1_is_list_int_also_ut2_is_list_list_ut3),
+          sub),
       PrintsAs(
           u8"'~0 list list -> (('~0 list list, int) pair, int list) pair"));
+}
 
-  EXPECT_THAT(apply_substitutions(a, sub_ut1_is_pair_list_ut2_and_int),
-              PrintsAs(u8"'a"));
-  EXPECT_THAT(apply_substitutions(b, sub_ut1_is_pair_list_ut2_and_int),
-              PrintsAs(u8"'b"));
-  EXPECT_THAT(apply_substitutions(int_type, sub_ut1_is_pair_list_ut2_and_int),
-              PrintsAs(u8"int"));
-  EXPECT_THAT(apply_substitutions(list_int, sub_ut1_is_pair_list_ut2_and_int),
-              PrintsAs(u8"int list"));
-  EXPECT_THAT(apply_substitutions(list_ut2, sub_ut1_is_pair_list_ut2_and_int),
-              PrintsAs(u8"'~0 list"));
-  EXPECT_THAT(apply_substitutions(list_ut3, sub_ut1_is_pair_list_ut2_and_int),
-              PrintsAs(u8"'~0 list"));
-  EXPECT_THAT(
-      apply_substitutions(list_list_ut3, sub_ut1_is_pair_list_ut2_and_int),
-      PrintsAs(u8"'~0 list list"));
-  EXPECT_THAT(apply_substitutions(pair_list_ut2_and_int,
-                                  sub_ut1_is_pair_list_ut2_and_int),
+TEST_F(ApplySubstitutionsTest, SubYoungType) {
+  auto sub = managed_map<Stamp, Type>({{ut1->stamp(), pair_list_ut2_and_int}});
+
+  EXPECT_THAT(apply_substitutions(a, sub), PrintsAs(u8"'a"));
+  EXPECT_THAT(apply_substitutions(b, sub), PrintsAs(u8"'b"));
+  EXPECT_THAT(apply_substitutions(int_type, sub), PrintsAs(u8"int"));
+  EXPECT_THAT(apply_substitutions(list_int, sub), PrintsAs(u8"int list"));
+  EXPECT_THAT(apply_substitutions(list_ut2, sub), PrintsAs(u8"'~0 list"));
+  EXPECT_THAT(apply_substitutions(list_ut3, sub), PrintsAs(u8"'~0 list"));
+  EXPECT_THAT(apply_substitutions(list_list_ut3, sub),
+              PrintsAs(u8"'~0 list list"));
+  EXPECT_THAT(apply_substitutions(pair_list_ut2_and_int, sub),
               PrintsAs(u8"('~0 list, int) pair"));
-  EXPECT_THAT(apply_substitutions(pair_list_list_ut3_and_int,
-                                  sub_ut1_is_pair_list_ut2_and_int),
+  EXPECT_THAT(apply_substitutions(pair_list_list_ut3_and_int, sub),
               PrintsAs(u8"('~0 list list, int) pair"));
-  EXPECT_THAT(apply_substitutions(pair_pair_list_list_ut3_and_int_and_list_int,
-                                  sub_ut1_is_pair_list_ut2_and_int),
-              PrintsAs(u8"(('~0 list list, int) pair, int list) pair"));
-  EXPECT_THAT(apply_substitutions(tuple0, sub_ut1_is_pair_list_ut2_and_int),
-              PrintsAs(u8"()"));
-  EXPECT_THAT(apply_substitutions(tuple_pair_list_ut2_and_int_with_tuple0,
-                                  sub_ut1_is_pair_list_ut2_and_int),
-              PrintsAs(u8"(('~0 list, int) pair * ())"));
-  EXPECT_THAT(apply_substitutions(tuple_list_list_ut3_and_int,
-                                  sub_ut1_is_pair_list_ut2_and_int),
-              PrintsAs(u8"('~0 list list * int)"));
-  EXPECT_THAT(apply_substitutions(record0, sub_ut1_is_pair_list_ut2_and_int),
-              PrintsAs(u8"{}"));
-  EXPECT_THAT(apply_substitutions(record0w, sub_ut1_is_pair_list_ut2_and_int),
-              PrintsAs(u8"{...}"));
-  EXPECT_THAT(apply_substitutions(record_ut2, sub_ut1_is_pair_list_ut2_and_int),
-              PrintsAs(u8"{k0: '~0}"));
   EXPECT_THAT(
-      apply_substitutions(record_ut2w, sub_ut1_is_pair_list_ut2_and_int),
-      PrintsAs(u8"{k0: '~0, ...}"));
+      apply_substitutions(pair_pair_list_list_ut3_and_int_and_list_int, sub),
+      PrintsAs(u8"(('~0 list list, int) pair, int list) pair"));
+  EXPECT_THAT(apply_substitutions(tuple0, sub), PrintsAs(u8"()"));
+  EXPECT_THAT(apply_substitutions(tuple_pair_list_ut2_and_int_with_tuple0, sub),
+              PrintsAs(u8"(('~0 list, int) pair * ())"));
+  EXPECT_THAT(apply_substitutions(tuple_list_list_ut3_and_int, sub),
+              PrintsAs(u8"('~0 list list * int)"));
+  EXPECT_THAT(apply_substitutions(record0, sub), PrintsAs(u8"{}"));
+  EXPECT_THAT(apply_substitutions(record0w, sub), PrintsAs(u8"{...}"));
+  EXPECT_THAT(apply_substitutions(record_ut2, sub), PrintsAs(u8"{k0: '~0}"));
+  EXPECT_THAT(apply_substitutions(record_ut2w, sub),
+              PrintsAs(u8"{k0: '~0, ...}"));
   EXPECT_THAT(
       apply_substitutions(
-          record_ut2_plus_tuple_list_list_ut3_and_int_plus_list_list_ut3,
-          sub_ut1_is_pair_list_ut2_and_int),
+          record_ut2_plus_tuple_list_list_ut3_and_int_plus_list_list_ut3, sub),
       PrintsAs(u8"{k0: '~0, k1: ('~1 list list * int), k2: '~1 list list}"));
-  EXPECT_THROW(
-      apply_substitutions(fun_ut3_to_ut1, sub_ut1_is_pair_list_ut2_and_int),
-      UnificationError);
-  EXPECT_THAT(apply_substitutions(fun_b_to_record_ut2w,
-                                  sub_ut1_is_pair_list_ut2_and_int),
+  EXPECT_THROW(apply_substitutions(fun_ut3_to_ut1, sub), UnificationError);
+  EXPECT_THAT(apply_substitutions(fun_b_to_record_ut2w, sub),
               PrintsAs(u8"'b -> {k0: '~0, ...}"));
   EXPECT_THAT(
       apply_substitutions(
           fun_list_list_ut3_to_pair_pair_list_list_ut3_and_int_and_list_int,
-          sub_ut1_is_pair_list_ut2_and_int),
+          sub),
       PrintsAs(
           u8"'~0 list list -> (('~0 list list, int) pair, int list) pair"));
+}
 
-  EXPECT_THAT(apply_substitutions(a, sub_ut3_is_pair_list_ut2_and_int),
-              PrintsAs(u8"'a"));
-  EXPECT_THAT(apply_substitutions(b, sub_ut3_is_pair_list_ut2_and_int),
-              PrintsAs(u8"'b"));
-  EXPECT_THAT(apply_substitutions(int_type, sub_ut3_is_pair_list_ut2_and_int),
-              PrintsAs(u8"int"));
-  EXPECT_THAT(apply_substitutions(list_int, sub_ut3_is_pair_list_ut2_and_int),
-              PrintsAs(u8"int list"));
-  EXPECT_THAT(apply_substitutions(list_ut2, sub_ut3_is_pair_list_ut2_and_int),
-              PrintsAs(u8"'~0 list"));
-  EXPECT_THAT(apply_substitutions(list_ut3, sub_ut3_is_pair_list_ut2_and_int),
+TEST_F(ApplySubstitutionsTest, YoungTypeForYoungVar) {
+  auto sub = managed_map<Stamp, Type>({{ut3->stamp(), pair_list_ut2_and_int}});
+  EXPECT_THAT(apply_substitutions(a, sub), PrintsAs(u8"'a"));
+  EXPECT_THAT(apply_substitutions(b, sub), PrintsAs(u8"'b"));
+  EXPECT_THAT(apply_substitutions(int_type, sub), PrintsAs(u8"int"));
+  EXPECT_THAT(apply_substitutions(list_int, sub), PrintsAs(u8"int list"));
+  EXPECT_THAT(apply_substitutions(list_ut2, sub), PrintsAs(u8"'~0 list"));
+  EXPECT_THAT(apply_substitutions(list_ut3, sub),
               PrintsAs(u8"('~0 list, int) pair list"));
-  EXPECT_THAT(
-      apply_substitutions(list_list_ut3, sub_ut3_is_pair_list_ut2_and_int),
-      PrintsAs(u8"('~0 list, int) pair list list"));
-  EXPECT_THAT(apply_substitutions(pair_list_ut2_and_int,
-                                  sub_ut3_is_pair_list_ut2_and_int),
+  EXPECT_THAT(apply_substitutions(list_list_ut3, sub),
+              PrintsAs(u8"('~0 list, int) pair list list"));
+  EXPECT_THAT(apply_substitutions(pair_list_ut2_and_int, sub),
               PrintsAs(u8"('~0 list, int) pair"));
-  EXPECT_THAT(apply_substitutions(pair_list_list_ut3_and_int,
-                                  sub_ut3_is_pair_list_ut2_and_int),
+  EXPECT_THAT(apply_substitutions(pair_list_list_ut3_and_int, sub),
               PrintsAs(u8"(('~0 list, int) pair list list, int) pair"));
   EXPECT_THAT(
-      apply_substitutions(pair_pair_list_list_ut3_and_int_and_list_int,
-                          sub_ut3_is_pair_list_ut2_and_int),
+      apply_substitutions(pair_pair_list_list_ut3_and_int_and_list_int, sub),
       PrintsAs(
           u8"((('~0 list, int) pair list list, int) pair, int list) pair"));
-  EXPECT_THAT(apply_substitutions(tuple0, sub_ut3_is_pair_list_ut2_and_int),
-              PrintsAs(u8"()"));
-  EXPECT_THAT(apply_substitutions(tuple_pair_list_ut2_and_int_with_tuple0,
-                                  sub_ut3_is_pair_list_ut2_and_int),
+  EXPECT_THAT(apply_substitutions(tuple0, sub), PrintsAs(u8"()"));
+  EXPECT_THAT(apply_substitutions(tuple_pair_list_ut2_and_int_with_tuple0, sub),
               PrintsAs(u8"(('~0 list, int) pair * ())"));
-  EXPECT_THAT(apply_substitutions(tuple_list_list_ut3_and_int,
-                                  sub_ut3_is_pair_list_ut2_and_int),
+  EXPECT_THAT(apply_substitutions(tuple_list_list_ut3_and_int, sub),
               PrintsAs(u8"(('~0 list, int) pair list list * int)"));
-  EXPECT_THAT(apply_substitutions(record0, sub_ut3_is_pair_list_ut2_and_int),
-              PrintsAs(u8"{}"));
-  EXPECT_THAT(apply_substitutions(record0w, sub_ut3_is_pair_list_ut2_and_int),
-              PrintsAs(u8"{...}"));
-  EXPECT_THAT(apply_substitutions(record_ut2, sub_ut3_is_pair_list_ut2_and_int),
-              PrintsAs(u8"{k0: '~0}"));
-  EXPECT_THAT(
-      apply_substitutions(record_ut2w, sub_ut3_is_pair_list_ut2_and_int),
-      PrintsAs(u8"{k0: '~0, ...}"));
+  EXPECT_THAT(apply_substitutions(record0, sub), PrintsAs(u8"{}"));
+  EXPECT_THAT(apply_substitutions(record0w, sub), PrintsAs(u8"{...}"));
+  EXPECT_THAT(apply_substitutions(record_ut2, sub), PrintsAs(u8"{k0: '~0}"));
+  EXPECT_THAT(apply_substitutions(record_ut2w, sub),
+              PrintsAs(u8"{k0: '~0, ...}"));
   EXPECT_THAT(
       apply_substitutions(
-          record_ut2_plus_tuple_list_list_ut3_and_int_plus_list_list_ut3,
-          sub_ut3_is_pair_list_ut2_and_int),
+          record_ut2_plus_tuple_list_list_ut3_and_int_plus_list_list_ut3, sub),
       PrintsAs(u8"{k0: '~0, k1: (('~0 list, int) pair list list * int), k2: "
                u8"('~0 list, int) pair list list}"));
-  EXPECT_THAT(
-      apply_substitutions(fun_ut3_to_ut1, sub_ut3_is_pair_list_ut2_and_int),
-      PrintsAs(u8"('~0 list, int) pair -> '~1"));
-  EXPECT_THAT(apply_substitutions(fun_b_to_record_ut2w,
-                                  sub_ut3_is_pair_list_ut2_and_int),
+  EXPECT_THAT(apply_substitutions(fun_ut3_to_ut1, sub),
+              PrintsAs(u8"('~0 list, int) pair -> '~1"));
+  EXPECT_THAT(apply_substitutions(fun_b_to_record_ut2w, sub),
               PrintsAs(u8"'b -> {k0: '~0, ...}"));
   EXPECT_THAT(
       apply_substitutions(
           fun_list_list_ut3_to_pair_pair_list_list_ut3_and_int_and_list_int,
-          sub_ut3_is_pair_list_ut2_and_int),
+          sub),
       PrintsAs(u8"('~0 list, int) pair list list -> ((('~0 list, int) pair "
                u8"list list, int) pair, int list) pair"));
+}
 
-  EXPECT_THAT(apply_substitutions(a, sub_ut1_is_ut3), PrintsAs(u8"'a"));
-  EXPECT_THAT(apply_substitutions(b, sub_ut1_is_ut3), PrintsAs(u8"'b"));
-  EXPECT_THAT(apply_substitutions(int_type, sub_ut1_is_ut3), PrintsAs(u8"int"));
-  EXPECT_THAT(apply_substitutions(list_int, sub_ut1_is_ut3),
-              PrintsAs(u8"int list"));
-  EXPECT_THAT(apply_substitutions(list_ut2, sub_ut1_is_ut3),
-              PrintsAs(u8"'~0 list"));
-  EXPECT_THAT(apply_substitutions(list_ut3, sub_ut1_is_ut3),
-              PrintsAs(u8"'~0 list"));
-  EXPECT_THAT(apply_substitutions(list_list_ut3, sub_ut1_is_ut3),
+TEST_F(ApplySubstitutionsTest, YoungVariableForOld) {
+  auto sub = managed_map<Stamp, Type>({{ut1->stamp(), ut3}});
+
+  EXPECT_THAT(apply_substitutions(a, sub), PrintsAs(u8"'a"));
+  EXPECT_THAT(apply_substitutions(b, sub), PrintsAs(u8"'b"));
+  EXPECT_THAT(apply_substitutions(int_type, sub), PrintsAs(u8"int"));
+  EXPECT_THAT(apply_substitutions(list_int, sub), PrintsAs(u8"int list"));
+  EXPECT_THAT(apply_substitutions(list_ut2, sub), PrintsAs(u8"'~0 list"));
+  EXPECT_THAT(apply_substitutions(list_ut3, sub), PrintsAs(u8"'~0 list"));
+  EXPECT_THAT(apply_substitutions(list_list_ut3, sub),
               PrintsAs(u8"'~0 list list"));
-  EXPECT_THAT(apply_substitutions(pair_list_ut2_and_int, sub_ut1_is_ut3),
+  EXPECT_THAT(apply_substitutions(pair_list_ut2_and_int, sub),
               PrintsAs(u8"('~0 list, int) pair"));
-  EXPECT_THAT(apply_substitutions(pair_list_list_ut3_and_int, sub_ut1_is_ut3),
+  EXPECT_THAT(apply_substitutions(pair_list_list_ut3_and_int, sub),
               PrintsAs(u8"('~0 list list, int) pair"));
-  EXPECT_THAT(apply_substitutions(pair_pair_list_list_ut3_and_int_and_list_int,
-                                  sub_ut1_is_ut3),
-              PrintsAs(u8"(('~0 list list, int) pair, int list) pair"));
-  EXPECT_THAT(apply_substitutions(tuple0, sub_ut1_is_ut3), PrintsAs(u8"()"));
-  EXPECT_THAT(apply_substitutions(tuple_pair_list_ut2_and_int_with_tuple0,
-                                  sub_ut1_is_ut3),
+  EXPECT_THAT(
+      apply_substitutions(pair_pair_list_list_ut3_and_int_and_list_int, sub),
+      PrintsAs(u8"(('~0 list list, int) pair, int list) pair"));
+  EXPECT_THAT(apply_substitutions(tuple0, sub), PrintsAs(u8"()"));
+  EXPECT_THAT(apply_substitutions(tuple_pair_list_ut2_and_int_with_tuple0, sub),
               PrintsAs(u8"(('~0 list, int) pair * ())"));
-  EXPECT_THAT(apply_substitutions(tuple_list_list_ut3_and_int, sub_ut1_is_ut3),
+  EXPECT_THAT(apply_substitutions(tuple_list_list_ut3_and_int, sub),
               PrintsAs(u8"('~0 list list * int)"));
-  EXPECT_THAT(apply_substitutions(record0, sub_ut1_is_ut3), PrintsAs(u8"{}"));
-  EXPECT_THAT(apply_substitutions(record0w, sub_ut1_is_ut3),
-              PrintsAs(u8"{...}"));
-  EXPECT_THAT(apply_substitutions(record_ut2, sub_ut1_is_ut3),
-              PrintsAs(u8"{k0: '~0}"));
-  EXPECT_THAT(apply_substitutions(record_ut2w, sub_ut1_is_ut3),
+  EXPECT_THAT(apply_substitutions(record0, sub), PrintsAs(u8"{}"));
+  EXPECT_THAT(apply_substitutions(record0w, sub), PrintsAs(u8"{...}"));
+  EXPECT_THAT(apply_substitutions(record_ut2, sub), PrintsAs(u8"{k0: '~0}"));
+  EXPECT_THAT(apply_substitutions(record_ut2w, sub),
               PrintsAs(u8"{k0: '~0, ...}"));
   EXPECT_THAT(
       apply_substitutions(
-          record_ut2_plus_tuple_list_list_ut3_and_int_plus_list_list_ut3,
-          sub_ut1_is_ut3),
+          record_ut2_plus_tuple_list_list_ut3_and_int_plus_list_list_ut3, sub),
       PrintsAs(u8"{k0: '~0, k1: ('~1 list list * int), k2: '~1 list list}"));
-  EXPECT_THAT(apply_substitutions(fun_ut3_to_ut1, sub_ut1_is_ut3),
+  EXPECT_THAT(apply_substitutions(fun_ut3_to_ut1, sub),
               PrintsAs(u8"'~0 -> '~0"));
-  EXPECT_THAT(apply_substitutions(fun_b_to_record_ut2w, sub_ut1_is_ut3),
+  EXPECT_THAT(apply_substitutions(fun_b_to_record_ut2w, sub),
               PrintsAs(u8"'b -> {k0: '~0, ...}"));
   EXPECT_THAT(
       apply_substitutions(
           fun_list_list_ut3_to_pair_pair_list_list_ut3_and_int_and_list_int,
-          sub_ut1_is_ut3),
+          sub),
       PrintsAs(
           u8"'~0 list list -> (('~0 list list, int) pair, int list) pair"));
+}
 
-  EXPECT_THAT(apply_substitutions(a, sub_ut1_is_b), PrintsAs(u8"'a"));
-  EXPECT_THAT(apply_substitutions(b, sub_ut1_is_b), PrintsAs(u8"'b"));
-  EXPECT_THAT(apply_substitutions(int_type, sub_ut1_is_b), PrintsAs(u8"int"));
-  EXPECT_THAT(apply_substitutions(list_int, sub_ut1_is_b),
-              PrintsAs(u8"int list"));
-  EXPECT_THAT(apply_substitutions(list_ut2, sub_ut1_is_b),
-              PrintsAs(u8"'~0 list"));
-  EXPECT_THAT(apply_substitutions(list_ut3, sub_ut1_is_b),
-              PrintsAs(u8"'~0 list"));
-  EXPECT_THAT(apply_substitutions(list_list_ut3, sub_ut1_is_b),
+TEST_F(ApplySubstitutionsTest, SubTypeVar) {
+  auto sub = managed_map<Stamp, Type>({{ut1->stamp(), b}});
+
+  EXPECT_THAT(apply_substitutions(a, sub), PrintsAs(u8"'a"));
+  EXPECT_THAT(apply_substitutions(b, sub), PrintsAs(u8"'b"));
+  EXPECT_THAT(apply_substitutions(int_type, sub), PrintsAs(u8"int"));
+  EXPECT_THAT(apply_substitutions(list_int, sub), PrintsAs(u8"int list"));
+  EXPECT_THAT(apply_substitutions(list_ut2, sub), PrintsAs(u8"'~0 list"));
+  EXPECT_THAT(apply_substitutions(list_ut3, sub), PrintsAs(u8"'~0 list"));
+  EXPECT_THAT(apply_substitutions(list_list_ut3, sub),
               PrintsAs(u8"'~0 list list"));
-  EXPECT_THAT(apply_substitutions(pair_list_ut2_and_int, sub_ut1_is_b),
+  EXPECT_THAT(apply_substitutions(pair_list_ut2_and_int, sub),
               PrintsAs(u8"('~0 list, int) pair"));
-  EXPECT_THAT(apply_substitutions(pair_list_list_ut3_and_int, sub_ut1_is_b),
+  EXPECT_THAT(apply_substitutions(pair_list_list_ut3_and_int, sub),
               PrintsAs(u8"('~0 list list, int) pair"));
-  EXPECT_THAT(apply_substitutions(pair_pair_list_list_ut3_and_int_and_list_int,
-                                  sub_ut1_is_b),
-              PrintsAs(u8"(('~0 list list, int) pair, int list) pair"));
-  EXPECT_THAT(apply_substitutions(tuple0, sub_ut1_is_b), PrintsAs(u8"()"));
-  EXPECT_THAT(apply_substitutions(tuple_pair_list_ut2_and_int_with_tuple0,
-                                  sub_ut1_is_b),
+  EXPECT_THAT(
+      apply_substitutions(pair_pair_list_list_ut3_and_int_and_list_int, sub),
+      PrintsAs(u8"(('~0 list list, int) pair, int list) pair"));
+  EXPECT_THAT(apply_substitutions(tuple0, sub), PrintsAs(u8"()"));
+  EXPECT_THAT(apply_substitutions(tuple_pair_list_ut2_and_int_with_tuple0, sub),
               PrintsAs(u8"(('~0 list, int) pair * ())"));
-  EXPECT_THAT(apply_substitutions(tuple_list_list_ut3_and_int, sub_ut1_is_b),
+  EXPECT_THAT(apply_substitutions(tuple_list_list_ut3_and_int, sub),
               PrintsAs(u8"('~0 list list * int)"));
-  EXPECT_THAT(apply_substitutions(record0, sub_ut1_is_b), PrintsAs(u8"{}"));
-  EXPECT_THAT(apply_substitutions(record0w, sub_ut1_is_b), PrintsAs(u8"{...}"));
-  EXPECT_THAT(apply_substitutions(record_ut2, sub_ut1_is_b),
-              PrintsAs(u8"{k0: '~0}"));
-  EXPECT_THAT(apply_substitutions(record_ut2w, sub_ut1_is_b),
+  EXPECT_THAT(apply_substitutions(record0, sub), PrintsAs(u8"{}"));
+  EXPECT_THAT(apply_substitutions(record0w, sub), PrintsAs(u8"{...}"));
+  EXPECT_THAT(apply_substitutions(record_ut2, sub), PrintsAs(u8"{k0: '~0}"));
+  EXPECT_THAT(apply_substitutions(record_ut2w, sub),
               PrintsAs(u8"{k0: '~0, ...}"));
   EXPECT_THAT(
       apply_substitutions(
-          record_ut2_plus_tuple_list_list_ut3_and_int_plus_list_list_ut3,
-          sub_ut1_is_b),
+          record_ut2_plus_tuple_list_list_ut3_and_int_plus_list_list_ut3, sub),
       PrintsAs(u8"{k0: '~0, k1: ('~1 list list * int), k2: '~1 list list}"));
-  EXPECT_THAT(apply_substitutions(fun_ut3_to_ut1, sub_ut1_is_b),
+  EXPECT_THAT(apply_substitutions(fun_ut3_to_ut1, sub),
               PrintsAs(u8"'~0 -> 'b"));
-  EXPECT_THAT(apply_substitutions(fun_b_to_record_ut2w, sub_ut1_is_b),
+  EXPECT_THAT(apply_substitutions(fun_b_to_record_ut2w, sub),
               PrintsAs(u8"'b -> {k0: '~0, ...}"));
   EXPECT_THAT(
       apply_substitutions(
           fun_list_list_ut3_to_pair_pair_list_list_ut3_and_int_and_list_int,
-          sub_ut1_is_b),
+          sub),
       PrintsAs(
           u8"'~0 list list -> (('~0 list list, int) pair, int list) pair"));
+}
 
-  EXPECT_THAT(apply_substitutions(a, sub_ut3_is_int), PrintsAs(u8"'a"));
-  EXPECT_THAT(apply_substitutions(b, sub_ut3_is_int), PrintsAs(u8"'b"));
-  EXPECT_THAT(apply_substitutions(int_type, sub_ut3_is_int), PrintsAs(u8"int"));
-  EXPECT_THAT(apply_substitutions(list_int, sub_ut3_is_int),
-              PrintsAs(u8"int list"));
-  EXPECT_THAT(apply_substitutions(list_ut2, sub_ut3_is_int),
-              PrintsAs(u8"'~0 list"));
-  EXPECT_THAT(apply_substitutions(list_ut3, sub_ut3_is_int),
-              PrintsAs(u8"int list"));
-  EXPECT_THAT(apply_substitutions(list_list_ut3, sub_ut3_is_int),
+TEST_F(ApplySubstitutionsTest, NewVar) {
+  auto sub = managed_map<Stamp, Type>({{ut3->stamp(), int_type}});
+  EXPECT_THAT(apply_substitutions(a, sub), PrintsAs(u8"'a"));
+  EXPECT_THAT(apply_substitutions(b, sub), PrintsAs(u8"'b"));
+  EXPECT_THAT(apply_substitutions(int_type, sub), PrintsAs(u8"int"));
+  EXPECT_THAT(apply_substitutions(list_int, sub), PrintsAs(u8"int list"));
+  EXPECT_THAT(apply_substitutions(list_ut2, sub), PrintsAs(u8"'~0 list"));
+  EXPECT_THAT(apply_substitutions(list_ut3, sub), PrintsAs(u8"int list"));
+  EXPECT_THAT(apply_substitutions(list_list_ut3, sub),
               PrintsAs(u8"int list list"));
-  EXPECT_THAT(apply_substitutions(pair_list_ut2_and_int, sub_ut3_is_int),
+  EXPECT_THAT(apply_substitutions(pair_list_ut2_and_int, sub),
               PrintsAs(u8"('~0 list, int) pair"));
-  EXPECT_THAT(apply_substitutions(pair_list_list_ut3_and_int, sub_ut3_is_int),
+  EXPECT_THAT(apply_substitutions(pair_list_list_ut3_and_int, sub),
               PrintsAs(u8"(int list list, int) pair"));
-  EXPECT_THAT(apply_substitutions(pair_pair_list_list_ut3_and_int_and_list_int,
-                                  sub_ut3_is_int),
-              PrintsAs(u8"((int list list, int) pair, int list) pair"));
-  EXPECT_THAT(apply_substitutions(tuple0, sub_ut3_is_int), PrintsAs(u8"()"));
-  EXPECT_THAT(apply_substitutions(tuple_pair_list_ut2_and_int_with_tuple0,
-                                  sub_ut3_is_int),
+  EXPECT_THAT(
+      apply_substitutions(pair_pair_list_list_ut3_and_int_and_list_int, sub),
+      PrintsAs(u8"((int list list, int) pair, int list) pair"));
+  EXPECT_THAT(apply_substitutions(tuple0, sub), PrintsAs(u8"()"));
+  EXPECT_THAT(apply_substitutions(tuple_pair_list_ut2_and_int_with_tuple0, sub),
               PrintsAs(u8"(('~0 list, int) pair * ())"));
-  EXPECT_THAT(apply_substitutions(tuple_list_list_ut3_and_int, sub_ut3_is_int),
+  EXPECT_THAT(apply_substitutions(tuple_list_list_ut3_and_int, sub),
               PrintsAs(u8"(int list list * int)"));
-  EXPECT_THAT(apply_substitutions(record0, sub_ut3_is_int), PrintsAs(u8"{}"));
-  EXPECT_THAT(apply_substitutions(record0w, sub_ut3_is_int),
-              PrintsAs(u8"{...}"));
-  EXPECT_THAT(apply_substitutions(record_ut2, sub_ut3_is_int),
-              PrintsAs(u8"{k0: '~0}"));
-  EXPECT_THAT(apply_substitutions(record_ut2w, sub_ut3_is_int),
+  EXPECT_THAT(apply_substitutions(record0, sub), PrintsAs(u8"{}"));
+  EXPECT_THAT(apply_substitutions(record0w, sub), PrintsAs(u8"{...}"));
+  EXPECT_THAT(apply_substitutions(record_ut2, sub), PrintsAs(u8"{k0: '~0}"));
+  EXPECT_THAT(apply_substitutions(record_ut2w, sub),
               PrintsAs(u8"{k0: '~0, ...}"));
   EXPECT_THAT(
       apply_substitutions(
-          record_ut2_plus_tuple_list_list_ut3_and_int_plus_list_list_ut3,
-          sub_ut3_is_int),
+          record_ut2_plus_tuple_list_list_ut3_and_int_plus_list_list_ut3, sub),
       PrintsAs(u8"{k0: '~0, k1: (int list list * int), k2: int list list}"));
-  EXPECT_THAT(apply_substitutions(fun_ut3_to_ut1, sub_ut3_is_int),
+  EXPECT_THAT(apply_substitutions(fun_ut3_to_ut1, sub),
               PrintsAs(u8"int -> '~0"));
-  EXPECT_THAT(apply_substitutions(fun_b_to_record_ut2w, sub_ut3_is_int),
+  EXPECT_THAT(apply_substitutions(fun_b_to_record_ut2w, sub),
               PrintsAs(u8"'b -> {k0: '~0, ...}"));
   EXPECT_THAT(
       apply_substitutions(
           fun_list_list_ut3_to_pair_pair_list_list_ut3_and_int_and_list_int,
-          sub_ut3_is_int),
+          sub),
       PrintsAs(
           u8"int list list -> ((int list list, int) pair, int list) pair"));
+}
 
+TEST_F(ApplySubstitutionsTest, ChainSubs) {
+  auto sub_ut1_is_ut3 = managed_map<Stamp, Type>({{ut1->stamp(), ut3}});
+  auto sub_ut3_is_int = managed_map<Stamp, Type>({{ut3->stamp(), int_type}});
   EXPECT_THAT(apply_two_substitutions(a, sub_ut1_is_ut3, sub_ut3_is_int),
               PrintsAs(u8"'a"));
   EXPECT_THAT(apply_two_substitutions(b, sub_ut1_is_ut3, sub_ut3_is_int),
@@ -815,7 +675,12 @@ TEST(ApplySubstitutionsTest, BasicOperation) {
           sub_ut1_is_ut3, sub_ut3_is_int),
       PrintsAs(
           u8"int list list -> ((int list list, int) pair, int list) pair"));
+}
 
+TEST_F(ApplySubstitutionsTest, ChainWithYoungTypeName) {
+  auto sub_ut1_is_ut3 = managed_map<Stamp, Type>({{ut1->stamp(), ut3}});
+  auto sub_ut3_is_pair_list_ut2_and_int =
+      managed_map<Stamp, Type>({{ut3->stamp(), pair_list_ut2_and_int}});
   EXPECT_THAT(apply_two_substitutions(a, sub_ut1_is_ut3,
                                       sub_ut3_is_pair_list_ut2_and_int),
               PrintsAs(u8"'a"));
@@ -900,99 +765,27 @@ TypePtr unify(TypePtr l, TypePtr r) {
       .unified_type;
 }
 
-class UnifyTest : public ::testing::Test {
+class UnifyTest : public TypesTestBase {
  protected:
-  TestContext tc;
-  StampGenerator stamper;
-
-  TypePtr int_type;
-  TypePtr float_type;
-  managed_ptr<TypeName> list_name;
-
   // "Early" undetermined types -- older than `pair`.
-  managed_ptr<UndeterminedType> ute1;
-  managed_ptr<UndeterminedType> ute2;
-  managed_ptr<UndeterminedType> ute3;
-  managed_ptr<UndeterminedType> ute4;
+  managed_ptr<UndeterminedType> ute1 = undetermined_type();
+  managed_ptr<UndeterminedType> ute2 = undetermined_type();
+  managed_ptr<UndeterminedType> ute3 = undetermined_type();
+  managed_ptr<UndeterminedType> ute4 = undetermined_type();
 
-  managed_ptr<TypeName> pair_name;
+  managed_ptr<TypeName> pair_name = type_name(u8"pair", 2);
 
   // "Late" undetermined types -- newer than `pair`.
-  managed_ptr<UndeterminedType> utl1;
-  managed_ptr<UndeterminedType> utl2;
-  managed_ptr<UndeterminedType> utl3;
-  managed_ptr<UndeterminedType> utl4;
+  managed_ptr<UndeterminedType> utl1 = undetermined_type();
+  managed_ptr<UndeterminedType> utl2 = undetermined_type();
+  managed_ptr<UndeterminedType> utl3 = undetermined_type();
+  managed_ptr<UndeterminedType> utl4 = undetermined_type();
 
-  TypePtr a;  // type variable
-  TypePtr b;  // type variable
-
-  TypePtr type_variable(std::u8string_view name) {
-    return tc.root.add_root(make_managed<TypeVar>(name));
-  }
-
-  TypePtr tuple_type(std::initializer_list<TypePtr> types) {
-    auto hold = tc.mgr.acquire_hold();
-    return tc.root.add_root(
-        make_managed<TupleType>(collections::make_array(types)));
-  }
-
-  TypePtr record_type(
-      std::initializer_list<std::pair<std::u8string_view, TypePtr>> rows,
-      bool has_wildcard = false) {
-    auto hold = tc.mgr.acquire_hold();
-    auto m = collections::managed_map<ManagedString, Type>({});
-    for (const auto& r : rows) {
-      m = m->insert(make_string(r.first), r.second).first;
-    }
-    return tc.root.add_root(make_managed<RecordType>(m, has_wildcard));
-  }
-
-  TypePtr function_type(TypePtr param, TypePtr result) {
-    return tc.root.add_root(make_managed<FunctionType>(param, result));
-  }
-
-  managed_ptr<TypeName> type_name(std::u8string_view name, std::size_t arity) {
-    return tc.root.add_root(make_managed<TypeName>(name, stamper, arity));
-  }
-
-  TypePtr constructed_type(managed_ptr<TypeName> name,
-                           std::initializer_list<TypePtr> types) {
-    auto hold = tc.mgr.acquire_hold();
-    return tc.root.add_root(
-        make_managed<ConstructedType>(name, make_array(types)));
-  }
-
-  /** Creates a constructed type with a fresh name. */
-  TypePtr constructed_type(std::u8string_view name,
-                           std::initializer_list<TypePtr> types) {
-    auto hold = tc.mgr.acquire_hold();
-    return tc.root.add_root(make_managed<ConstructedType>(
-        type_name(name, types.size()), make_array(types)));
-  }
-
-  TypePtr list_type(TypePtr el_type) {
-    return constructed_type(list_name, {el_type});
-  }
+  TypePtr a = type_variable(u8"'a");
+  TypePtr b = type_variable(u8"'b");
 
   TypePtr pair_type(TypePtr first, TypePtr second) {
     return constructed_type(pair_name, {first, second});
-  }
-
-  void SetUp() override {
-    int_type = constructed_type(u8"int", {});
-    float_type = constructed_type(u8"float", {});
-    list_name = type_name(u8"list", 1);
-    ute1 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
-    ute2 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
-    ute3 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
-    ute4 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
-    pair_name = type_name(u8"pair", 2);
-    utl1 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
-    utl2 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
-    utl3 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
-    utl4 = tc.root.add_root(make_managed<UndeterminedType>(stamper));
-    a = type_variable(u8"'a");
-    b = type_variable(u8"'b");
   }
 };
 
