@@ -395,6 +395,9 @@ class BuiltinTypes : public TypeObj {
   // cppcheck-suppress functionStatic
   TypePtr tuple_type(TypeList types) const;
   TypePtr list_type(TypePtr type) const;
+  managed_ptr<TypeName> list_name() const { return l_; }
+  TypePtr ref_type(TypePtr type) const;
+  managed_ptr<TypeName> ref_name() const { return r_; }
   // cppcheck-suppress functionStatic
   TypePtr record_type(StringMap<Type> rows) const;
 
@@ -407,11 +410,13 @@ class BuiltinTypes : public TypeObj {
   const TypePtr c_;
   const TypePtr s_;
   const managed_ptr<TypeName> l_;
+  const managed_ptr<TypeName> r_;
 
   BuiltinTypes(managed_ptr<Stamp> bi, managed_ptr<Stamp> i,
                managed_ptr<Stamp> by, managed_ptr<Stamp> fl,
                managed_ptr<Stamp> bo, managed_ptr<Stamp> c,
-               managed_ptr<Stamp> s, managed_ptr<Stamp> l);
+               managed_ptr<Stamp> s, managed_ptr<Stamp> l,
+               managed_ptr<Stamp> r);
 
   void visit_additional_subobjects(const ManagedVisitor&) override;
   std::size_t managed_size() const noexcept override {
