@@ -465,6 +465,14 @@ class TypeScheme : public TypeObj {
   TypePtr t() const { return t_; }
   const collections::ArrayPtr<TypeVar>& bound() const { return bound_; }
 
+  /**
+   * Instantiates this type scheme.
+   *
+   * Returns a fresh type with bound variables mapped to undetermined
+   * types.
+   */
+  TypePtr instantiate(StampGenerator& stamper) const;
+
  private:
   const TypePtr t_;
   const collections::ArrayPtr<TypeVar> bound_;

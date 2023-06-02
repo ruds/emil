@@ -345,6 +345,87 @@ TypeScheme::TypeScheme(TypePtr t, collections::ArrayPtr<TypeVar> bound)
       t_(std::move(t)),
       bound_(std::move(bound)) {}
 
+namespace {
+
+class SchemeInstantiator : public TypeVisitor {
+ public:
+  TypePtr type;
+
+  SchemeInstantiator(StampGenerator& stamper,
+                     collections::ArrayPtr<TypeVar> bound)
+      : stamper_(stamper), bound_(bound) {
+    for (const auto& v : *bound_) {
+      mapping_ =
+          mapping_
+              ->insert(v->name_ptr(), make_managed<UndeterminedType>(stamper_))
+              .first;
+    }
+  }
+
+  void visit(const TypeWithAgeRestriction& t) override {
+    t.type()->accept(*this);
+    type = make_managed<TypeWithAgeRestriction>(type, t.birthdate());
+  }
+
+  void visit(const TypeVar& t) override {
+    const auto it = mapping_->find(t.name());
+    type = it == mapping_->cend() ? make_managed<TypeVar>(t.name_ptr())
+                                  : it->second;
+  }
+
+  void visit(const UndeterminedType& t) override {
+    type = make_managed<UndeterminedType>(t.stamp());
+  }
+
+  void visit(const TupleType& t) override {
+    auto types = make_managed<collections::ManagedArray<Type>>(
+        t.types()->size(), [&](std::size_t i) {
+          (*t.types())[i]->accept(*this);
+          return type;
+        });
+    type = make_managed<TupleType>(std::move(types));
+  }
+
+  void visit(const RecordType& t) override {
+    auto rows = collections::managed_map<ManagedString, Type>({});
+    for (const auto& r : *t.rows()) {
+      r.second->accept(*this);
+      rows = rows->insert(r.first, type).first;
+    }
+    type = make_managed<RecordType>(std::move(rows), t.has_wildcard());
+  }
+
+  void visit(const FunctionType& t) override {
+    t.param()->accept(*this);
+    auto param = type;
+    t.result()->accept(*this);
+    type = make_managed<FunctionType>(param, type);
+  }
+
+  void visit(const ConstructedType& t) override {
+    auto types = make_managed<collections::ManagedArray<Type>>(
+        t.types()->size(), [&](std::size_t i) {
+          (*t.types())[i]->accept(*this);
+          return type;
+        });
+    type = make_managed<ConstructedType>(t.name(), std::move(types));
+  }
+
+ private:
+  StampGenerator& stamper_;
+  collections::ArrayPtr<TypeVar> bound_;
+  StringMap<Type> mapping_ = collections::managed_map<ManagedString, Type>({});
+};
+
+}  // namespace
+
+TypePtr TypeScheme::instantiate(StampGenerator& stamper) const {
+  auto hold = ctx().mgr->acquire_hold();
+  SchemeInstantiator s{stamper, bound_};
+  t_->accept(s);
+  return s.type;
+}
+
 void TypeScheme::visit_additional_subobjects(const ManagedVisitor& visitor) {
   t_.accept(visitor);
   bound_.accept(visitor);

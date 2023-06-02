@@ -24,6 +24,7 @@
 
 #include "emil/collections.h"
 #include "emil/gc.h"
+#include "emil/runtime.h"
 #include "emil/string.h"
 #include "testing/test_util.h"
 
@@ -56,6 +57,7 @@ MATCHER_P3(PrintsCorrectly, tc, no, yes,
 }
 
 MATCHER_P(PrintsAs, expected, "") {
+  auto hold = ctx().mgr->acquire_hold();
   auto s = print_type(arg, CanonicalizeUndeterminedTypes::YES);
   *result_listener << "prints as " << PrintToString(s);
   return ExplainMatchResult(Eq(expected), s, result_listener);
@@ -70,7 +72,7 @@ class TypesTestBase : public ::testing::Test {
   TypePtr float_type = constructed_type(u8"float", {});
   managed_ptr<TypeName> list_name = type_name(u8"list", 1);
 
-  TypePtr type_variable(std::u8string_view name) {
+  managed_ptr<TypeVar> type_variable(std::u8string_view name) {
     return tc.root.add_root(make_managed<TypeVar>(name));
   }
 
@@ -122,6 +124,50 @@ class TypesTestBase : public ::testing::Test {
     return constructed_type(list_name, {el_type});
   }
 };
+
+using InstantiateSchemeTest = TypesTestBase;
+
+TEST_F(InstantiateSchemeTest, BasicOperation) {
+  // {k0: 'a,
+  //  k1: ('b * 'c),
+  //  k2: {bar: '~0, foo: 'a, ...} list -> ('b * '~1 * '~2)}
+  //
+  // with 'a and 'b bound becomes
+  // {k0: '~0,
+  //  k1: ('~1 * 'c),
+  //  k2: {bar: '~2, foo: '~0, ...} list -> ('~1 * '~3 * '~4)}
+  auto hold = tc.mgr.acquire_hold();
+  auto a = type_variable(u8"'a");
+  auto b = type_variable(u8"'b");
+  auto c = type_variable(u8"'c");
+  auto ut0 = undetermined_type();
+  auto contype = constructed_type(u8"contype", {});
+  auto ut1var = undetermined_type();
+  auto ut1 = make_managed<TypeWithAgeRestriction>(ut1var, ut0->stamp()->id());
+  auto ut2 = undetermined_type();
+
+  auto scheme = make_managed<TypeScheme>(
+      record_type(
+          {{u8"k0", a},
+           {u8"k1", tuple_type({b, c})},
+           {u8"k2", function_type(list_type(record_type(
+                                      {{u8"bar", ut0}, {u8"foo", a}}, true)),
+                                  tuple_type({b, ut1, ut2}))}}),
+      make_array({a, b}));
+  auto instance = scheme->instantiate(stamper);
+
+  EXPECT_THAT(instance,
+              PrintsAs(u8"{k0: '~0, k1: ('~1 * 'c), k2: {bar: '~2, foo: '~0, "
+                       u8"...} list -> ('~1 * '~3 * '~4)}"));
+  EXPECT_THROW(apply_substitutions(instance, managed_map<Stamp, Type>(
+                                                 {{ut0->stamp(), contype}})),
+               UnificationError);
+  EXPECT_THROW(apply_substitutions(instance, managed_map<Stamp, Type>(
+                                                 {{ut1var->stamp(), contype}})),
+               UnificationError);
+  EXPECT_NO_THROW(apply_substitutions(
+      instance, managed_map<Stamp, Type>({{ut2->stamp(), contype}})));
+}
 
 using PrintTypeTest = TypesTestBase;
 
