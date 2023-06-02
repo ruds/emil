@@ -432,6 +432,9 @@ enum class IdStatus {
  * A `TypeFunction` binds its variables (which must be distinct). That
  * is, the free variables of a type function are the free variables of
  * the resulting type expression *excluding the bound variables*.
+ *
+ * Notationally, this can be written θ = Λα.τ, where each of the
+ * variables of α is distinct from the others and free in τ.
  */
 class TypeFunction : public TypeObj {
  public:
@@ -489,7 +492,7 @@ class ValEnv;
  * @brief The type structure that a type constructor is bound to.
  *
  * A type structure is only well-formed if `env` is empty or `fn` is
- * (∀ɑ1,ɑ2,...,ɑk t) for some TypeName t.
+ * (Λɑ1,ɑ2,...,ɑk.t) for some TypeName t with arity k.
  */
 class TypeStructure : public TypeObj {
  public:
