@@ -104,6 +104,7 @@ class Typer {
                                                 const TypeExpr& ty);
 
   managed_ptr<typing::Stamp> new_stamp();
+  typing::StampGenerator& stamper() { return stamp_generator_; }
   const typing::BuiltinTypes& builtins() const;
 
  private:
