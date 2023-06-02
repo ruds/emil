@@ -18,7 +18,6 @@
 #include <exception>
 #include <memory>
 #include <string>
-#include <utility>
 
 #include "emil/ast.h"  // IWYU pragma: keep
 #include "emil/gc.h"
