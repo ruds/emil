@@ -45,6 +45,10 @@ ElaborationError::ElaborationError(std::string msg, const Location &location)
       full_msg(fmt::format("{}:{}: error: {}", this->location.filename,
                            this->location.line, this->msg)) {}
 
+Typer::Typer()
+    : stamp_generator_(),
+      builtins_(typing::BuiltinTypes::create(stamp_generator_)) {}
+
 namespace {
 
 collections::ConsPtr<ManagedString> consify(
@@ -69,6 +73,36 @@ class TopDeclElaborator : public TopDecl::Visitor {
  private:
   Typer &typer_;
 };
+
+void TopDeclElaborator::visitEmptyTopDecl(const EmptyTopDecl &node) {
+  typed = std::make_unique<TEmptyTopDecl>(node.location);
+}
+
+void TopDeclElaborator::visitEndOfFileTopDecl(const EndOfFileTopDecl &node) {
+  typed = std::make_unique<TEndOfFileTopDecl>(node.location);
+}
+
+void TopDeclElaborator::visitExprTopDecl(const ExprTopDecl &node) {
+  typed = std::make_unique<TExprTopDecl>(
+      node.location, typer_.elaborate(B->as_context(), *node.expr));
+}
+
+void TopDeclElaborator::visitDeclTopDecl(const DeclTopDecl &node) {
+  auto r = typer_.elaborate(B->as_context(), *node.decl);
+  B = B + r.env;
+  typed = std::make_unique<TDeclTopDecl>(node.location, std::move(r.decl));
+}
+
+}  // namespace
+
+Typer::elaborate_topdecl_t Typer::elaborate(managed_ptr<typing::Basis> B,
+                                            const TopDecl &topdec) {
+  TopDeclElaborator v(*this, std::move(B));
+  topdec.accept(v);
+  return {std::move(v.B), std::move(v.typed)};
+}
+
+namespace {
 
 class ExprElaborator : public Expr::Visitor {
  public:
@@ -111,25 +145,6 @@ class ExprElaborator : public Expr::Visitor {
     throw std::logic_error("Not implemented!");
   }
 };
-
-void TopDeclElaborator::visitEmptyTopDecl(const EmptyTopDecl &node) {
-  typed = std::make_unique<TEmptyTopDecl>(node.location);
-}
-
-void TopDeclElaborator::visitEndOfFileTopDecl(const EndOfFileTopDecl &node) {
-  typed = std::make_unique<TEndOfFileTopDecl>(node.location);
-}
-
-void TopDeclElaborator::visitExprTopDecl(const ExprTopDecl &node) {
-  typed = std::make_unique<TExprTopDecl>(
-      node.location, typer_.elaborate(B->as_context(), *node.expr));
-}
-
-void TopDeclElaborator::visitDeclTopDecl(const DeclTopDecl &node) {
-  auto r = typer_.elaborate(B->as_context(), *node.decl);
-  B = B + r.env;
-  typed = std::make_unique<TDeclTopDecl>(node.location, std::move(r.decl));
-}
 
 void ExprElaborator::visitBigintLiteralExpr(const BigintLiteralExpr &node) {
   managed_ptr<bigint> val;
@@ -612,17 +627,6 @@ void ExprElaborator::visitTypedExpr(const TypedExpr &node) {
 }
 
 }  // namespace
-
-Typer::Typer()
-    : stamp_generator_(),
-      builtins_(typing::BuiltinTypes::create(stamp_generator_)) {}
-
-Typer::elaborate_topdecl_t Typer::elaborate(managed_ptr<typing::Basis> B,
-                                            const TopDecl &topdec) {
-  TopDeclElaborator v(*this, std::move(B));
-  topdec.accept(v);
-  return {std::move(v.B), std::move(v.typed)};
-}
 
 managed_ptr<typing::Stamp> Typer::new_stamp() { return stamp_generator_(); }
 
