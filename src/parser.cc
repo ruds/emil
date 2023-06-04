@@ -585,7 +585,6 @@ PatternPtr Parser::match_atomic_pattern(Token& first) {
 
     case TokenType::ILITERAL:
     case TokenType::STRING:
-    case TokenType::FSTRING:
       return std::make_unique<LiteralPattern>(first.location,
                                               match_atomic_expr(first));
 

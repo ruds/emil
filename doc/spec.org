@@ -573,11 +573,11 @@ parses.
 
   literal -> matchable-literal
            | fpliteral
+           | fstring-literal
 
   matchable-literal -> iliteral
                      | string
                      | char
-                     | fstring-literal
 
   fstring-literal -> fstring-start (fstring-subs fstring-cont)*
 
