@@ -94,7 +94,7 @@ bigint::bigint(token, PrivateBuffer buf, std::int32_t size) noexcept
 
 bigint::~bigint() { free_buffer(); }
 
-std::string bigint::to_string() const {
+std::string bigint::to_std_string() const {
   if (!size_) return "0";
   std::ostringstream os;
   if (size_ < 0) os << "-";
@@ -110,6 +110,47 @@ std::string bigint::to_string() const {
     os << std::setw(16) << s_.data[i - 1];
   }
   return os.str();
+}
+
+namespace {
+
+char8_t to_hex_digit(std::uint64_t n) {
+  if (n < 10) return static_cast<char8_t>(n) + u8'0';
+  return static_cast<char8_t>(n) - 10 + u8'A';
+}
+
+void print_hex16(std::u8string& out, std::uint64_t n) {
+  for (auto i = 0u; i < 16; ++i) {
+    out += to_hex_digit((n >> (60 - i * 4)) & 0xFu);
+  }
+}
+
+void print_hex(std::u8string& out, std::uint64_t n) {
+  auto nonzero = false;
+  for (auto i = 0u; i < 16; ++i) {
+    auto val = (n >> (60 - i * 4)) & 0xFu;
+    if (val) nonzero = true;
+    if (nonzero) out += to_hex_digit(val);
+  }
+}
+
+}  // namespace
+
+std::u8string bigint::to_string() const {
+  if (!size_) return u8"0";
+  std::u8string out;
+  auto len = uabs(size_);
+  out.reserve(len * 16 + (size_ < 0));
+  if (size_ < 0) out += u8"-";
+  if (!capacity_) {
+    print_hex(out, s_.value);
+    return out;
+  }
+  print_hex(out, s_.data[len - 1]);
+  for (std::uint_fast32_t i = len - 1; i > 0; --i) {
+    print_hex16(out, s_.data[i - 1]);
+  }
+  return out;
 }
 
 bool operator==(const bigint& l, const bigint& r) noexcept {
@@ -170,11 +211,11 @@ std::strong_ordering operator<=>(const bigint& l, std::int64_t r) noexcept {
 }
 
 std::ostream& operator<<(std::ostream& os, const bigint& b) {
-  return os << b.to_string();
+  return os << b.to_std_string();
 }
 
 std::ostream& operator<<(std::ostream& os, const managed_ptr<bigint>& b) {
-  return os << b->to_string();
+  return os << b->to_std_string();
 }
 
 namespace {

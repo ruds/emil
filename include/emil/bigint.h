@@ -79,7 +79,8 @@ class bigint : public Managed {
   ~bigint();
 
   /** Produces the value of this bigint in hex. */
-  std::string to_string() const;
+  std::string to_std_string() const;
+  std::u8string to_string() const;
 
   friend bool operator==(const bigint& l, const bigint& r) noexcept;
   friend bool operator==(std::int64_t l, const bigint& r) noexcept;
