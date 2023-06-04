@@ -60,6 +60,21 @@ collections::ConsPtr<ManagedString> consify(
   return l;
 }
 
+managed_ptr<bigint> parse_bigint_data(const BigintLiteralData &data) {
+  switch (data.base) {
+    case 2:
+      return parse_bigint_binary(data.number);
+    case 8:
+      return parse_bigint_octal(data.number);
+    case 10:
+      return parse_bigint_decimal(data.number);
+    case 16:
+      return parse_bigint_hex(data.number);
+    default:
+      throw std::logic_error(fmt::format("Bad bigint base: {}", data.base));
+  }
+}
+
 class TopDeclElaborator : public TopDecl::Visitor {
  public:
   managed_ptr<typing::Basis> B;
@@ -147,25 +162,9 @@ class ExprElaborator : public Expr::Visitor {
 };
 
 void ExprElaborator::visitBigintLiteralExpr(const BigintLiteralExpr &node) {
-  managed_ptr<bigint> val;
-  switch (node.val.base) {
-    case 2:
-      val = parse_bigint_binary(node.val.number);
-      break;
-    case 8:
-      val = parse_bigint_octal(node.val.number);
-      break;
-    case 10:
-      val = parse_bigint_decimal(node.val.number);
-      break;
-    case 16:
-      val = parse_bigint_hex(node.val.number);
-      break;
-    default:
-      throw std::logic_error(fmt::format("Bad bigint base: {}", node.val.base));
-  }
-  typed = std::make_unique<TBigintLiteralExpr>(
-      node.location, typer_.builtins().bigint_type(), std::move(val));
+  typed = std::make_unique<TBigintLiteralExpr>(node.location,
+                                               typer_.builtins().bigint_type(),
+                                               parse_bigint_data(node.val));
 }
 
 void ExprElaborator::visitIntLiteralExpr(const IntLiteralExpr &node) {
