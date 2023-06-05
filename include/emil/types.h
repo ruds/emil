@@ -599,6 +599,9 @@ class ValEnv : public TypeObj {
                                   managed_ptr<TypeScheme> scheme,
                                   IdStatus status, bool allow_rebinding) const;
 
+  /** Apply the given substitutions to each binding's type scheme. */
+  managed_ptr<ValEnv> apply_substitutions(Substitutions subs) const;
+
   const StringMap<ValueBinding>& env() const { return env_; }
 
  private:

@@ -512,6 +512,24 @@ managed_ptr<ValEnv> ValEnv::add_binding(std::u8string_view id,
   return make_managed<ValEnv>(e.first);
 }
 
+managed_ptr<ValEnv> ValEnv::apply_substitutions(
+    Substitutions substitutions) const {
+  StringMap<ValueBinding> e =
+      collections::managed_map<ManagedString, ValueBinding>({});
+  for (const auto& binding : *env_) {
+    auto scheme = binding.second->scheme();
+    auto t = scheme->t();
+    e = e->insert(binding.first,
+                  make_managed<ValueBinding>(
+                      make_managed<TypeScheme>(
+                          typing::apply_substitutions(t, substitutions),
+                          scheme->bound()),
+                      binding.second->status()))
+            .first;
+  }
+  return make_managed<ValEnv>(e);
+}
+
 void ValEnv::visit_additional_subobjects(const ManagedVisitor& visitor) {
   env_.accept(visitor);
 }
