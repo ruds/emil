@@ -103,6 +103,9 @@ class Typer {
   managed_ptr<typing::Type> elaborate_type_expr(managed_ptr<typing::Context> C,
                                                 const TypeExpr& ty);
 
+  std::unique_ptr<TPattern> elaborate_pattern(managed_ptr<typing::Context> C,
+                                              const Pattern& pat);
+
   managed_ptr<typing::Stamp> new_stamp();
   typing::StampGenerator& stamper() { return stamp_generator_; }
   const typing::BuiltinTypes& builtins() const;

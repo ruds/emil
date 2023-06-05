@@ -26,6 +26,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "emil/ast.h"
@@ -75,6 +76,76 @@ managed_ptr<bigint> parse_bigint_data(const BigintLiteralData &data) {
   }
 }
 
+/** Print a qualified id to string. */
+std::string id_to_string(const std::vector<std::u8string> &qualifiers,
+                         std::u8string_view id) {
+  if (qualifiers.empty()) return to_std_string(id);
+  std::string out;
+  const auto size = std::accumulate(
+      cbegin(qualifiers), cend(qualifiers), id.size() + qualifiers.size(),
+      [](auto acc, const auto &q) { return acc + q.size(); });
+  out.reserve(size);
+  for (const auto &q : qualifiers) {
+    out += to_std_string(q);
+    out += '.';
+  }
+  out += to_std_string(id);
+  return out;
+}
+
+class GetFunctionVisitor : public typing::TypeVisitor {
+ public:
+  const typing::FunctionType *fn = nullptr;
+  typing::Substitutions new_substitutions =
+      collections::managed_map<typing::Stamp, typing::Type>({});
+
+  explicit GetFunctionVisitor(Typer &typer) : typer_(typer) {}
+
+  void visit(const typing::TypeWithAgeRestriction &t) override {
+    t.type()->accept(*this);
+  }
+
+  void visit(const typing::UndeterminedType &t) override {
+    auto p = make_managed<typing::UndeterminedType>(typer_.new_stamp());
+    auto r = make_managed<typing::UndeterminedType>(typer_.new_stamp());
+    auto fnptr = make_managed<typing::FunctionType>(p, r);
+    new_substitutions =
+        new_substitutions
+            ->insert(t.stamp(), make_managed<typing::TypeWithAgeRestriction>(
+                                    fnptr, t.stamp()->id()))
+            .first;
+    fn = &*fnptr;
+  }
+
+  void visit(const typing::FunctionType &t) override { fn = &t; }
+
+  void visit(const typing::TypeVar &) override {}
+  void visit(const typing::TupleType &) override {}
+  void visit(const typing::RecordType &) override {}
+  void visit(const typing::ConstructedType &) override {}
+
+ private:
+  Typer &typer_;
+};
+
+struct get_function_t {
+  const typing::FunctionType *fn;
+  typing::Substitutions new_substitutions;
+};
+
+/**
+ * Gets a pointer to a function type from t.
+ *
+ * If t is an undetermined type, introduces a substitution. If t
+ * cannot be unified with a function type, the result's fn field will
+ * be null.
+ */
+get_function_t get_function(typing::TypePtr t, Typer &typer) {
+  GetFunctionVisitor v{typer};
+  t->accept(v);
+  return {v.fn, v.new_substitutions};
+}
+
 class TopDeclElaborator : public TopDecl::Visitor {
  public:
   managed_ptr<typing::Basis> B;
@@ -115,6 +186,315 @@ Typer::elaborate_topdecl_t Typer::elaborate(managed_ptr<typing::Basis> B,
   TopDeclElaborator v(*this, std::move(B));
   topdec.accept(v);
   return {std::move(v.B), std::move(v.typed)};
+}
+
+namespace {
+
+class PatternElaborator : public Pattern::Visitor {
+ public:
+  managed_ptr<typing::Context> C;
+  typing::TypePtr type;
+  TPattern::pattern pattern = TPattern::pattern::wildcard();
+  managed_ptr<typing::ValEnv> bindings = make_managed<typing::ValEnv>(
+      collections::managed_map<ManagedString, typing::ValueBinding>({}));
+  bind_rule_t bind_rule;
+
+  PatternElaborator(managed_ptr<typing::Context> C, Typer &typer)
+      : C(C), typer_(typer) {}
+
+  DECLARE_PATTERN_V_FUNCS;
+
+ private:
+  Typer &typer_;
+
+  std::pair<std::u8string, std::optional<managed_ptr<typing::ValueBinding>>>
+  lookup_val(const IdentifierPattern &pat) const;
+};
+
+void PatternElaborator::visitWildcardPattern(const WildcardPattern &) {
+  type = make_managed<typing::UndeterminedType>(typer_.new_stamp());
+  pattern = TPattern::pattern::wildcard();
+}
+
+class LiteralExtractor : public Expr::Visitor {
+ public:
+  typing::TypePtr type;
+  std::u8string value;
+
+  explicit LiteralExtractor(Typer &typer) : typer_(typer) {}
+
+  void visitBigintLiteralExpr(const BigintLiteralExpr &e) override {
+    type = typer_.builtins().bigint_type();
+    value = parse_bigint_data(e.val)->to_string();
+  }
+
+  void visitIntLiteralExpr(const IntLiteralExpr &e) override {
+    type = typer_.builtins().int_type();
+    value = to_u8string(std::to_string(e.val));
+  }
+
+  void visitFpLiteralExpr(const FpLiteralExpr &e) override {
+    type = typer_.builtins().float_type();
+    value = to_u8string(std::to_string(e.val));
+  }
+
+  void visitStringLiteralExpr(const StringLiteralExpr &e) override {
+    type = typer_.builtins().string_type();
+    value = e.val;
+  }
+
+  void visitCharLiteralExpr(const CharLiteralExpr &e) override {
+    type = typer_.builtins().char_type();
+    value = u8"#\"";
+    value += to_u8string(to_std_string(e.val));
+    value += u8"\"";
+  }
+  void visitFstringLiteralExpr(const FstringLiteralExpr &) override {
+    throw std::logic_error("Illegal expression in literal pattern.");
+  }
+  void visitIdentifierExpr(const IdentifierExpr &) override {
+    throw std::logic_error("Illegal expression in literal pattern.");
+  }
+  void visitRecRowExpr(const RecRowExpr &) override {
+    throw std::logic_error("Illegal expression in literal pattern.");
+  }
+  void visitRecordExpr(const RecordExpr &) override {
+    throw std::logic_error("Illegal expression in literal pattern.");
+  }
+  void visitUnitExpr(const UnitExpr &) override {
+    throw std::logic_error("Illegal expression in literal pattern.");
+  }
+  void visitTupleExpr(const TupleExpr &) override {
+    throw std::logic_error("Illegal expression in literal pattern.");
+  }
+  void visitSequencedExpr(const SequencedExpr &) override {
+    throw std::logic_error("Illegal expression in literal pattern.");
+  }
+  void visitListExpr(const ListExpr &) override {
+    throw std::logic_error("Illegal expression in literal pattern.");
+  }
+  void visitLetExpr(const LetExpr &) override {
+    throw std::logic_error("Illegal expression in literal pattern.");
+  }
+  void visitApplicationExpr(const ApplicationExpr &) override {
+    throw std::logic_error("Illegal expression in literal pattern.");
+  }
+  void visitCaseExpr(const CaseExpr &) override {
+    throw std::logic_error("Illegal expression in literal pattern.");
+  }
+  void visitFnExpr(const FnExpr &) override {
+    throw std::logic_error("Illegal expression in literal pattern.");
+  }
+  void visitTypedExpr(const TypedExpr &) override {
+    throw std::logic_error("Illegal expression in literal pattern.");
+  }
+
+ private:
+  Typer &typer_;
+};
+
+void PatternElaborator::visitLiteralPattern(const LiteralPattern &node) {
+  LiteralExtractor v{typer_};
+  node.val->accept(v);
+  type = v.type;
+  pattern = TPattern::pattern::constructed(std::move(v.value), {});
+}
+
+void PatternElaborator::visitIdentifierPattern(const IdentifierPattern &node) {
+  const auto [id, binding] = lookup_val(node);
+  if (!binding || (*binding)->status() == typing::IdStatus::Variable) {
+    if (!node.qualifiers.empty()) {
+      throw ElaborationError(
+          fmt::format(
+              "Variable bindings in patterns may not have qualifiers: {}",
+              id_to_string(node.qualifiers, id)),
+          node.location);
+    }
+    type = make_managed<typing::UndeterminedType>(typer_.new_stamp());
+    pattern = TPattern::pattern::wildcard();
+    bindings = bindings->add_binding(
+        id,
+        make_managed<typing::TypeScheme>(
+            type, collections::make_array<typing::TypeVar>({})),
+        typing::IdStatus::Variable, false);
+    bind_rule.names.push_back(id);
+  } else {
+    type = (*binding)->scheme()->instantiate(typer_.stamper());
+    pattern = TPattern::pattern::constructed(id, {});
+  }
+}
+
+void PatternElaborator::visitRecRowPattern(const RecRowPattern &) {
+  throw std::logic_error("Unreachable");
+}
+
+void PatternElaborator::visitRecordPattern(const RecordPattern &node) {
+  typing::StringMap<typing::Type> row_types =
+      collections::managed_map<ManagedString, typing::Type>({});
+  std::vector<TPattern::pattern> row_patterns;
+  row_patterns.reserve(node.rows.size());
+  std::vector<bind_rule_t::record_field_access_t> row_bindings;
+
+  for (const auto &row : node.rows) {
+    row->pattern->accept(*this);
+    row_types = row_types->insert(make_string(row->label), type).first;
+    pattern.field = row->label;
+    row_patterns.push_back(std::move(pattern));
+    if (!bind_rule.empty()) {
+      row_bindings.emplace_back(row->label, std::move(bind_rule));
+    }
+  }
+
+  type = make_managed<typing::RecordType>(row_types, node.has_wildcard);
+  pattern = TPattern::pattern::record(std::move(row_patterns));
+  if (!row_bindings.empty()) {
+    bind_rule.subtype_bindings = std::move(row_bindings);
+  }
+}
+
+void PatternElaborator::visitListPattern(const ListPattern &node) {
+  typing::TypePtr el_type =
+      make_managed<typing::UndeterminedType>(typer_.new_stamp());
+  typing::Substitutions subs =
+      collections::managed_map<typing::Stamp, typing::Type>({});
+  TPattern::pattern cons_pattern = TPattern::pattern::constructed(
+      std::u8string(typing::BuiltinTypes::NIL), {});
+  bind_rule_t cons_bind_rule;
+
+  for (const auto &pat : node.patterns | std::views::reverse) {
+    pat->accept(*this);
+    auto u = typing::unify(el_type, type, subs,
+                           typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                           typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
+    if (!u.new_substitutions->empty()) {
+      bindings = bindings->apply_substitutions(u.new_substitutions);
+    }
+    el_type = u.unified_type;
+    std::vector<TPattern::pattern> subpatterns;
+    subpatterns.push_back(std::move(pattern));
+    subpatterns.push_back(std::move(cons_pattern));
+    std::vector<TPattern::pattern> s;
+    s.push_back(TPattern::pattern::tuple(std::move(subpatterns)));
+    cons_pattern = TPattern::pattern::constructed(
+        std::u8string(typing::BuiltinTypes::CONS), std::move(s));
+    if (!cons_bind_rule.empty() || !bind_rule.empty()) {
+      std::vector<bind_rule_t::tuple_access_t> subtype_bindings;
+      if (!bind_rule.empty()) {
+        subtype_bindings.emplace_back(0, std::move(bind_rule));
+      }
+      if (!cons_bind_rule.empty()) {
+        subtype_bindings.emplace_back(1, std::move(cons_bind_rule));
+      }
+      cons_bind_rule.names.clear();
+      cons_bind_rule.subtype_bindings = std::move(subtype_bindings);
+    }
+  }
+
+  type = typer_.builtins().list_type(el_type);
+  pattern = std::move(cons_pattern);
+  bind_rule = std::move(cons_bind_rule);
+}
+
+void PatternElaborator::visitTuplePattern(const TuplePattern &node) {
+  std::vector<typing::TypePtr> types;
+  types.reserve(node.patterns.size());
+  std::vector<TPattern::pattern> subpatterns;
+  subpatterns.reserve(node.patterns.size());
+  std::vector<bind_rule_t::tuple_access_t> subrules;
+
+  for (std::size_t i = 0; i < node.patterns.size(); ++i) {
+    node.patterns[i]->accept(*this);
+    types.push_back(type);
+    subpatterns.push_back(std::move(pattern));
+    if (!bind_rule.empty()) {
+      subrules.emplace_back(i, std::move(bind_rule));
+    }
+  }
+
+  type = typer_.builtins().tuple_type(collections::to_array(types));
+  pattern = TPattern::pattern::tuple(std::move(subpatterns));
+  if (!subrules.empty()) {
+    bind_rule.subtype_bindings = std::move(subrules);
+  }
+}
+
+void PatternElaborator::visitDatatypePattern(const DatatypePattern &node) {
+  const auto [con_id, binding] = lookup_val(*node.constructor);
+  if (!binding || (*binding)->status() == typing::IdStatus::Variable) {
+    throw ElaborationError(
+        fmt::format("Type constructor required but {} found instead",
+                    id_to_string(node.constructor->qualifiers, con_id)),
+        node.constructor->location);
+  }
+  auto gf =
+      get_function((*binding)->scheme()->instantiate(typer_.stamper()), typer_);
+  if (!gf.fn) {
+    throw ElaborationError(
+        fmt::format("Expected type constructor to take an argument: {}",
+                    id_to_string(node.constructor->qualifiers, con_id)),
+        node.constructor->location);
+  }
+  assert(gf.new_substitutions->empty());
+
+  node.arg->accept(*this);
+
+  typing::Substitutions subs =
+      collections::managed_map<typing::Stamp, typing::Type>({});
+  auto u = typing::unify(gf.fn->param(), type, subs,
+                         typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                         typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
+  type = gf.fn->result();
+  if (!u.new_substitutions->empty()) {
+    type = typing::apply_substitutions(type, u.new_substitutions);
+  }
+
+  std::vector<TPattern::pattern> s;
+  s.push_back(std::move(pattern));
+  pattern = TPattern::pattern::constructed(con_id, std::move(s));
+
+  if (!bind_rule.empty()) {
+    std::vector<bind_rule_t::tuple_access_t> r;
+    r.emplace_back(0, std::move(bind_rule));
+    bind_rule.subtype_bindings = std::move(r);
+  }
+}
+
+void PatternElaborator::visitLayeredPattern(const LayeredPattern &node) {
+  auto binding = C->env()->lookup_val({}, node.identifier);
+  if (binding && (*binding)->status() != typing::IdStatus::Variable) {
+    throw ElaborationError(
+        fmt::format("Cannot replace binding of non-variable {} in pattern",
+                    to_std_string(node.identifier)),
+        node.location);
+  }
+
+  node.pattern->accept(*this);
+
+  bindings = bindings->add_binding(
+      node.identifier,
+      make_managed<typing::TypeScheme>(
+          type, collections::make_array<typing::TypeVar>({})),
+      typing::IdStatus::Variable, false);
+
+  bind_rule.names.push_back(node.identifier);
+}
+
+std::pair<std::u8string, std::optional<managed_ptr<typing::ValueBinding>>>
+PatternElaborator::lookup_val(const IdentifierPattern &pat) const {
+  auto id =
+      typing::canonicalize_val_id(pat.identifier, pat.is_op, pat.is_prefix_op);
+  auto binding = C->env()->lookup_val(pat.qualifiers, id);
+  return std::make_pair(std::move(id), std::move(binding));
+}
+
+}  // namespace
+
+std::unique_ptr<TPattern> Typer::elaborate_pattern(
+    managed_ptr<typing::Context> C, const Pattern &pat) {
+  PatternElaborator v{C, *this};
+  pat.accept(v);
+  return std::make_unique<TPattern>(pat.location, v.type, std::move(v.pattern),
+                                    v.bindings, std::move(v.bind_rule));
 }
 
 namespace {
@@ -208,22 +588,6 @@ void ExprElaborator::visitFstringLiteralExpr(const FstringLiteralExpr &node) {
   typed = std::make_unique<TFstringLiteralExpr>(
       node.location, typer_.builtins().string_type(), std::move(segments),
       std::move(str_substitutions));
-}
-
-std::string id_to_string(const std::vector<std::u8string> &qualifiers,
-                         std::u8string id) {
-  if (qualifiers.empty()) return to_std_string(id);
-  std::string out;
-  const auto size = std::accumulate(
-      cbegin(qualifiers), cend(qualifiers), id.size() + qualifiers.size(),
-      [](auto acc, const auto &q) { return acc + q.size(); });
-  out.reserve(size);
-  for (const auto &q : qualifiers) {
-    out += to_std_string(q);
-    out += '.';
-  }
-  out += to_std_string(id);
-  return out;
 }
 
 void ExprElaborator::visitIdentifierExpr(const IdentifierExpr &node) {
@@ -391,59 +755,6 @@ void ExprElaborator::visitLetExpr(const LetExpr &node) {
 
   typed = std::make_unique<TLetExpr>(node.location, type, std::move(decls),
                                      std::move(exprs));
-}
-
-class GetFunctionVisitor : public typing::TypeVisitor {
- public:
-  const typing::FunctionType *fn = nullptr;
-  typing::Substitutions new_substitutions =
-      collections::managed_map<typing::Stamp, typing::Type>({});
-
-  explicit GetFunctionVisitor(Typer &typer) : typer_(typer) {}
-
-  void visit(const typing::TypeWithAgeRestriction &t) override {
-    t.type()->accept(*this);
-  }
-
-  void visit(const typing::UndeterminedType &t) override {
-    auto p = make_managed<typing::UndeterminedType>(typer_.new_stamp());
-    auto r = make_managed<typing::UndeterminedType>(typer_.new_stamp());
-    auto fnptr = make_managed<typing::FunctionType>(p, r);
-    new_substitutions =
-        new_substitutions
-            ->insert(t.stamp(), make_managed<typing::TypeWithAgeRestriction>(
-                                    fnptr, t.stamp()->id()))
-            .first;
-    fn = &*fnptr;
-  }
-
-  void visit(const typing::FunctionType &t) override { fn = &t; }
-
-  void visit(const typing::TypeVar &) override {}
-  void visit(const typing::TupleType &) override {}
-  void visit(const typing::RecordType &) override {}
-  void visit(const typing::ConstructedType &) override {}
-
- private:
-  Typer &typer_;
-};
-
-struct get_function_t {
-  const typing::FunctionType *fn;
-  typing::Substitutions new_substitutions;
-};
-
-/**
- * Gets a pointer to a function type from t.
- *
- * If t is an undetermined type, introduces a substitution. If t
- * cannot be unified with a function type, the result's fn field will
- * be null.
- */
-get_function_t get_function(typing::TypePtr t, Typer &typer) {
-  GetFunctionVisitor v{typer};
-  t->accept(v);
-  return {v.fn, v.new_substitutions};
 }
 
 class GetIdentifierVisitor : public TExpr::Visitor {
