@@ -177,6 +177,8 @@ class managed_ptr : public managed_ptr_base {
   // cppcheck-suppress noExplicitConstructor
   managed_ptr(managed_ptr<U>&& o) noexcept : managed_ptr_base(o.val_) {}
 
+  ~managed_ptr() { static_assert(ManagedType<T>); }
+
   template <BaseManagedType<T> U>
   managed_ptr& operator=(managed_ptr<U>&& o) noexcept {
     val_ = o.val_;
