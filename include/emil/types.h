@@ -386,6 +386,13 @@ class BuiltinTypes : public TypeObj {
  public:
   static BuiltinTypes create(StampGenerator& g);
 
+  /** Type constructors from the initial basis. */
+  static constexpr std::u8string_view TRUE = u8"true";
+  static constexpr std::u8string_view FALSE = u8"false";
+  static constexpr std::u8string_view NIL = u8"nil";
+  static constexpr std::u8string_view CONS = u8"(::)";
+  static constexpr std::u8string_view REF = u8"ref";
+
   TypePtr bigint_type() const { return bi_; }
   TypePtr int_type() const { return i_; }
   TypePtr byte_type() const { return by_; }
