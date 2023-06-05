@@ -24,6 +24,7 @@
 #include <stdexcept>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #include "emil/cons.h"  // IWYU pragma: export
 #include "emil/gc.h"
@@ -200,6 +201,12 @@ ArrayPtr<T> to_array(ConsPtr<T> list, bool reverse_list = false) {
       return p;
     });
   }
+}
+
+template <ManagedType T>
+ArrayPtr<T> to_array(const std::vector<managed_ptr<T>>& vec) {
+  return make_managed<ManagedArray<T>>(
+      vec.size(), [&vec](std::size_t i) { return vec[i]; });
 }
 
 namespace testing {
