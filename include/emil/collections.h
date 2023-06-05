@@ -39,7 +39,12 @@
 namespace emil::collections {
 
 /** A fixed-size (mutable) array. */
-template <ManagedType T>
+// TODO: This might be horribly broken. The constructor is allocating
+// space for the underlying type but new'ing managed_ptr into that
+// memory. Also, managed_ptrs to elements can escape (e.g. through
+// operator[]) without placing a reference on the array as a whole, so
+// it can be deallocated out from under.
+template <typename T>
 class ManagedArray : public Managed {
  public:
   using iterator = managed_ptr<T>*;
@@ -61,6 +66,8 @@ class ManagedArray : public Managed {
   ManagedArray(std::initializer_list<managed_ptr<T>> els)
       : ManagedArray(els.size(),
                      [&els](std::size_t i) { return std::data(els)[i]; }) {}
+
+  ~ManagedArray() { static_assert(ManagedType<T>); }
 
   /**
    * Initialize the `len` elements of the array with `initializer`.
@@ -142,7 +149,7 @@ class ManagedArray : public Managed {
   }
 };
 
-template <ManagedType T>
+template <typename T>
 using ArrayPtr = managed_ptr<ManagedArray<T>>;
 
 template <ManagedType T>
