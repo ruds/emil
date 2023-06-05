@@ -644,11 +644,8 @@ PatternPtr Parser::match_record_pattern(const Location& location) {
     } while (match(TokenType::COMMA));
     consume(TokenType::RBRACE, "record pattern");
   }
-  if (has_wildcard) {
-    return std::make_unique<PolyRecordPattern>(location, std::move(rows));
-  } else {
-    return std::make_unique<RecordPattern>(location, std::move(rows));
-  }
+  return std::make_unique<RecordPattern>(location, std::move(rows),
+                                         has_wildcard);
 }
 
 PatternPtr Parser::match_list_pattern(const Location& location) {

@@ -208,7 +208,7 @@
          :decl
          (ValDecl
              :bindings
-             (((PolyRecordPattern
+             (((RecordPattern
                  :rows
                  (
                      (RecRowPattern
@@ -263,7 +263,9 @@
                              (BigintLiteralExpr
                                  :val
                                  2)))
-                 ))
+                 )
+                 :has_wildcard
+                 true)
                . (IdentifierExpr
                      :qualifiers
                      ()
@@ -444,7 +446,9 @@
                                              :is_prefix_op
                                              false)
                                      )))
-                         ))
+                         )
+                         :has_wildcard
+                         false)
                      (WildcardPattern)
                  ))
                . (IdentifierExpr

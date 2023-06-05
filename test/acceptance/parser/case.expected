@@ -72,11 +72,13 @@
                                  (BigintLiteralExpr
                                      :val
                                      5)))
-                     ))
+                     )
+                     :has_wildcard
+                     false)
                    . (BigintLiteralExpr
                          :val
                          23))
-                 ((PolyRecordPattern
+                 ((RecordPattern
                      :rows
                      ((RecRowPattern
                          :label
@@ -86,7 +88,9 @@
                              :val
                              (BigintLiteralExpr
                                  :val
-                                 3)))))
+                                 3))))
+                     :has_wildcard
+                     true)
                    . (ApplicationExpr
                          :exprs
                          (
