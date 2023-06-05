@@ -33,13 +33,15 @@ namespace emil::collections {
 
 /** A good old-fashioned LISPy list, with a car and a cons and
  * everything. */
-template <ManagedType T>
+template <typename T>
 struct ManagedCons : Managed {
   managed_ptr<T> car;
   managed_ptr<ManagedCons> cdr;
 
   ManagedCons(managed_ptr<T> car, managed_ptr<ManagedCons> cdr)
       : car(std::move(car)), cdr(std::move(cdr)) {}
+
+  ~ManagedCons() { static_assert(ManagedType<T>); }
 
   void visit_subobjects(const ManagedVisitor& visitor) override {
     if (car) car.accept(visitor);
@@ -51,7 +53,7 @@ struct ManagedCons : Managed {
   }
 };
 
-template <ManagedType T>
+template <typename T>
 using ConsPtr = managed_ptr<ManagedCons<T>>;
 
 /**
