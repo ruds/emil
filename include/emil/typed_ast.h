@@ -14,10 +14,14 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <stdexcept>
+#include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "emil/bigint.h"  // IWYU pragma: keep
@@ -31,22 +35,68 @@ namespace emil {
 
 class TDecl;
 
+/** Describes how to access parts of a value to bind to identifiers. */
+struct bind_rule_t {
+  std::vector<std::u8string> names;  // bind the current value to these names
+  using record_field_access_t = std::pair<std::u8string, bind_rule_t>;
+  using tuple_access_t = std::pair<std::size_t, bind_rule_t>;
+  std::variant<std::vector<record_field_access_t>, std::vector<tuple_access_t>>
+      subtype_bindings;
+
+  bool empty() const {
+    return names.empty() &&
+           visit([](const auto& l) { return l.empty(); }, subtype_bindings);
+  }
+
+  bool is_tuple() const {
+    return subtype_bindings.index() == 1 && !get<1>(subtype_bindings).empty();
+  }
+
+  bool is_record() const {
+    return subtype_bindings.index() == 0 && !get<0>(subtype_bindings).empty();
+  }
+
+  void clear() {
+    names.clear();
+    visit([](auto& l) { l.clear(); }, subtype_bindings);
+  }
+};
+
 /** A typed pattern. */
 class TPattern {
  public:
-  const Location location;
+  /** A simplified pattern for destructured matching. */
+  struct pattern {
+    std::optional<std::u8string> constructor;
+    std::vector<pattern> subpatterns;
+    std::u8string field;  // Used for matching records
 
-  explicit TPattern(const Location& location);
-  virtual ~TPattern();
+    pattern(std::optional<std::u8string> constructor,
+            std::vector<pattern> subpatterns, std::u8string field);
 
-  class Visitor {
-   public:
-    virtual ~Visitor();
+    static pattern wildcard();
+    static pattern constructed(std::u8string constructor,
+                               std::vector<pattern> subpatterns);
+    static pattern tuple(std::vector<pattern> subpatterns);
+    // field must be set on each subpattern.
+    static pattern record(std::vector<pattern> subpatterns);
+
+    bool is_wildcard() const;
+    bool is_tuple() const;
+    bool is_record() const;
   };
 
-  virtual void accept(Visitor& visitor) const = 0;
-  virtual std::unique_ptr<TPattern> apply_substitutions(
-      typing::Substitutions substitutions) const = 0;
+  const Location location;
+  const typing::TypePtr type;
+  const pattern pat;
+  const managed_ptr<typing::ValEnv> bindings;
+  const bind_rule_t bind_rule;
+
+  TPattern(const Location& location, typing::TypePtr type, pattern pat,
+           managed_ptr<typing::ValEnv> bindings, bind_rule_t bind_rule);
+
+  std::unique_ptr<TPattern> apply_substitutions(
+      typing::Substitutions substitutions) const;
 };
 
 class TBigintLiteralExpr;

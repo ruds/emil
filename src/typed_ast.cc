@@ -16,13 +16,59 @@
 
 #include <algorithm>
 #include <iterator>
+#include <string_view>
 
 #include "emil/types.h"
 
 namespace emil {
 
-TPattern::~TPattern() = default;
-TPattern::Visitor::~Visitor() = default;
+TPattern::pattern::pattern(std::optional<std::u8string> constructor,
+                           std::vector<pattern> subpatterns,
+                           std::u8string field)
+    : constructor(std::move(constructor)),
+      subpatterns(std::move(subpatterns)),
+      field(std::move(field)) {}
+
+TPattern::pattern TPattern::pattern::wildcard() {
+  return {std::nullopt, {}, u8""};
+}
+
+TPattern::pattern TPattern::pattern::constructed(
+    std::u8string constructor, std::vector<pattern> subpatterns) {
+  return {{std::move(constructor)}, std::move(subpatterns), u8""};
+}
+
+inline constexpr std::u8string_view TUPLE_CON = u8"@@t@@";
+inline constexpr std::u8string_view RECORD_CON = u8"@@r@@";
+
+TPattern::pattern TPattern::pattern::tuple(std::vector<pattern> subpatterns) {
+  return {{std::u8string(TUPLE_CON)}, std::move(subpatterns), u8""};
+}
+
+TPattern::pattern TPattern::pattern::record(std::vector<pattern> subpatterns) {
+  return {{std::u8string(RECORD_CON)}, std::move(subpatterns), u8""};
+}
+
+bool TPattern::pattern::is_wildcard() const { return !constructor; }
+
+bool TPattern::pattern::is_tuple() const { return constructor == TUPLE_CON; }
+
+bool TPattern::pattern::is_record() const { return constructor == RECORD_CON; }
+
+TPattern::TPattern(const Location& location, typing::TypePtr type, pattern pat,
+                   managed_ptr<typing::ValEnv> bindings, bind_rule_t bind_rule)
+    : location(location),
+      type(type),
+      pat(std::move(pat)),
+      bindings(bindings),
+      bind_rule(std::move(bind_rule)) {}
+
+std::unique_ptr<TPattern> TPattern::apply_substitutions(
+    typing::Substitutions substitutions) const {
+  return std::make_unique<TPattern>(
+      location, typing::apply_substitutions(type, substitutions), pat,
+      bindings->apply_substitutions(substitutions), bind_rule);
+}
 
 TExpr::~TExpr() = default;
 TExpr::Visitor::~Visitor() = default;
