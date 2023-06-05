@@ -211,6 +211,7 @@ PatternPtr Parser::match_pattern(Token& first) {
   if (first.type == TokenType::ID_WORD) {
     // match type annotation
     if (match(TokenType::KW_AS)) {
+      // TODO: support type annotation
       return std::make_unique<LayeredPattern>(
           first.location, move_string(first),
           match_pattern(advance_safe("layered pattern")));
