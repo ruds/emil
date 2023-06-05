@@ -487,6 +487,10 @@ std::u8string canonicalize_val_id(std::u8string_view id, bool is_op,
   return out;
 }
 
+BindingError::BindingError(std::u8string_view id)
+    : id(id),
+      full_msg_(fmt::format("Could not rebind {}.", to_std_string(id))) {}
+
 ValEnv::ValEnv(StringMap<ValueBinding> env)
     : TypeObj(merge_free_variables(env), merge_type_names(env)),
       env_(std::move(env)) {}
@@ -494,6 +498,18 @@ ValEnv::ValEnv(StringMap<ValueBinding> env)
 std::optional<managed_ptr<ValueBinding>> ValEnv::get(
     std::u8string_view key) const {
   return env_->get(key);
+}
+
+managed_ptr<ValEnv> ValEnv::add_binding(std::u8string_view id,
+                                        managed_ptr<TypeScheme> scheme,
+                                        IdStatus status,
+                                        bool allow_rebinding) const {
+  auto e =
+      env_->insert(make_string(id), make_managed<ValueBinding>(scheme, status));
+  if (!allow_rebinding && e.second) {
+    throw BindingError(id);
+  }
+  return make_managed<ValEnv>(e.first);
 }
 
 void ValEnv::visit_additional_subobjects(const ManagedVisitor& visitor) {

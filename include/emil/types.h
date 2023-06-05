@@ -203,6 +203,7 @@ class Type : public TypeObj {
 };
 using TypePtr = managed_ptr<Type>;
 using TypeList = collections::ArrayPtr<Type>;
+using Substitutions = collections::MapPtr<Stamp, Type>;
 
 /**
  * A wrapper for a type that is used to propagate age restrictions into
@@ -562,12 +563,34 @@ class ValueBinding : public TypeObj {
 std::u8string canonicalize_val_id(std::u8string_view id, bool is_op,
                                   bool is_prefix_op);
 
+class BindingError : public std::exception {
+ public:
+  std::u8string id;
+
+  explicit BindingError(std::u8string_view id);
+
+  const char* what() const noexcept override { return full_msg_.c_str(); }
+
+ private:
+  std::string full_msg_;
+};
+
 /** The mapping from value variable identifiers to their value bindings. */
 class ValEnv : public TypeObj {
  public:
   explicit ValEnv(StringMap<ValueBinding> env);
 
   std::optional<managed_ptr<ValueBinding>> get(std::u8string_view key) const;
+
+  /**
+   * Binds `id` with the given type scheme and status.
+   *
+   * If allow_rebinding is false, throw BindingError if id was already bound in
+   * this environment.
+   */
+  managed_ptr<ValEnv> add_binding(std::u8string_view id,
+                                  managed_ptr<TypeScheme> scheme,
+                                  IdStatus status, bool allow_rebinding) const;
 
   const StringMap<ValueBinding>& env() const { return env_; }
 
@@ -705,8 +728,6 @@ class UnificationError : public std::exception {
   std::vector<std::pair<TypePtr, TypePtr>> context_;
   std::string full_msg_;
 };
-
-using Substitutions = collections::MapPtr<Stamp, Type>;
 
 inline constexpr std::uint64_t NO_ADDITIONAL_TYPE_NAME_RESTRICTION =
     std::numeric_limits<std::uint64_t>::max();
