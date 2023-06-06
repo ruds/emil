@@ -83,7 +83,8 @@ struct pattern_t {
   static pattern_t constructed(std::u8string constructor,
                                std::vector<pattern_t> subpatterns);
   static pattern_t tuple(std::vector<pattern_t> subpatterns);
-  // field must be set on each subpattern.
+  // field must be set on each subpattern; subpatterns must be sorted
+  // by field name.
   static pattern_t record(std::vector<pattern_t> subpatterns);
 
   bool is_wildcard() const;
@@ -101,6 +102,28 @@ struct pattern_t {
 
   /** Convert this to a record field matcher. */
   void set_field(std::u8string field);
+
+  /**
+   * Expand this pattern based on match_type.
+   *
+   * Expansion rules:
+   * - When match_type is an n-tuple:
+   *   o if is_wildcard(), expand n wildcard patterns based on the
+   *     the subtypes of match_type.
+   *   o Otherwise, expand the subpatterns based on the subtypes of
+   *     match_type.
+   * - When match_type is a record:
+   *   o if is_wildcard(), expand a wildcard pattern for each field
+   *     in match_type based on each field's type.
+   *   o Otherwise, for each field in match_type, if the field is
+   *     present in subpatterns, expand it based on the field's type;
+   *     if it's not, expand a wildcard pattern based on the field's
+   *     type.
+   * - When match_type is a constructed type, put pattern into out.
+   * - Otherwise, do not modify out.
+   */
+  void expand(std::vector<const pattern_t*>& out,
+              typing::TypePtr match_type) const;
 
  private:
   std::optional<std::u8string> constructor_;

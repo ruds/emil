@@ -15,9 +15,13 @@
 #include "emil/typed_ast.h"
 
 #include <algorithm>
+#include <cassert>
+#include <compare>
 #include <iterator>
 #include <string_view>
 
+#include "emil/collections.h"
+#include "emil/tree.h"
 #include "emil/types.h"
 
 namespace emil {
@@ -43,6 +47,9 @@ pattern_t pattern_t::tuple(std::vector<pattern_t> subpatterns) {
 }
 
 pattern_t pattern_t::record(std::vector<pattern_t> subpatterns) {
+  assert(std::is_sorted(
+      subpatterns.begin(), subpatterns.end(),
+      [](const auto& l, const auto& r) { return l.field() < r.field(); }));
   return {{std::u8string(RECORD_CON)}, std::move(subpatterns), u8""};
 }
 
@@ -67,6 +74,75 @@ const std::vector<pattern_t>& pattern_t::subpatterns() const {
 std::u8string_view pattern_t::field() const {
   assert(is_record_field());
   return field_;
+}
+
+const pattern_t WILDCARD_PATTERN = pattern_t::wildcard();
+
+class PatternExpander : public typing::TypeVisitor {
+ public:
+  PatternExpander(const pattern_t* pat, std::vector<const pattern_t*>& out)
+      : pat_(pat), out_(out) {}
+
+  void visit(const typing::TypeWithAgeRestriction& t) override {
+    t.accept(*this);
+  }
+
+  void visit(const typing::TypeVar&) override { assert(pat_->is_wildcard()); }
+
+  void visit(const typing::UndeterminedType&) override {
+    assert(pat_->is_wildcard());
+  }
+
+  void visit(const typing::TupleType& t) override {
+    if (pat_->is_wildcard()) {
+      for (const auto& subtype : *t.types()) {
+        subtype->accept(*this);
+      }
+    } else {
+      const auto& subpatterns = pat_->subpatterns();
+      assert(subpatterns.size() == t.types()->size());
+      for (std::size_t i = 0; i < subpatterns.size(); ++i) {
+        pat_ = &subpatterns[i];
+        (*t.types())[i]->accept(*this);
+      }
+    }
+  }
+
+  void visit(const typing::RecordType& t) override {
+    if (pat_->is_wildcard()) {
+      for (const auto& row : *t.rows()) {
+        row.second->accept(*this);
+      }
+    } else {
+      auto it = pat_->subpatterns().begin();
+      const auto end = pat_->subpatterns().end();
+      for (const auto& row : *t.rows()) {
+        if (it == end || *row.first < it->field()) {
+          pat_ = &WILDCARD_PATTERN;
+        } else {
+          assert(*row.first == it->field());
+          pat_ = &*it++;
+        }
+        row.second->accept(*this);
+      }
+    }
+  }
+
+  void visit(const typing::FunctionType&) override {
+    assert(pat_->is_wildcard());
+  }
+
+  void visit(const typing::ConstructedType&) override { out_.push_back(pat_); }
+
+ private:
+  const pattern_t* pat_;
+  std::vector<const pattern_t*>& out_;
+};
+
+void pattern_t::expand(std::vector<const pattern_t*>& out,
+                       typing::TypePtr match_type) const {
+  PatternExpander v{this, out};
+  match_type->accept(v);
 }
 
 TPattern::TPattern(const Location& location, typing::TypePtr type,
