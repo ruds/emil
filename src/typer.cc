@@ -194,7 +194,7 @@ class PatternElaborator : public Pattern::Visitor {
  public:
   managed_ptr<typing::Context> C;
   typing::TypePtr type;
-  TPattern::pattern pattern = TPattern::pattern::wildcard();
+  pattern_t pattern = pattern_t::wildcard();
   managed_ptr<typing::ValEnv> bindings = make_managed<typing::ValEnv>(
       collections::managed_map<ManagedString, typing::ValueBinding>({}));
   bind_rule_t bind_rule;
@@ -213,7 +213,7 @@ class PatternElaborator : public Pattern::Visitor {
 
 void PatternElaborator::visitWildcardPattern(const WildcardPattern &) {
   type = make_managed<typing::UndeterminedType>(typer_.new_stamp());
-  pattern = TPattern::pattern::wildcard();
+  pattern = pattern_t::wildcard();
 }
 
 class LiteralExtractor : public Expr::Visitor {
@@ -297,7 +297,7 @@ void PatternElaborator::visitLiteralPattern(const LiteralPattern &node) {
   LiteralExtractor v{typer_};
   node.val->accept(v);
   type = v.type;
-  pattern = TPattern::pattern::constructed(std::move(v.value), {});
+  pattern = pattern_t::constructed(std::move(v.value), {});
 }
 
 void PatternElaborator::visitIdentifierPattern(const IdentifierPattern &node) {
@@ -311,7 +311,7 @@ void PatternElaborator::visitIdentifierPattern(const IdentifierPattern &node) {
           node.location);
     }
     type = make_managed<typing::UndeterminedType>(typer_.new_stamp());
-    pattern = TPattern::pattern::wildcard();
+    pattern = pattern_t::wildcard();
     bindings = bindings->add_binding(
         id,
         make_managed<typing::TypeScheme>(
@@ -320,7 +320,7 @@ void PatternElaborator::visitIdentifierPattern(const IdentifierPattern &node) {
     bind_rule.names.push_back(id);
   } else {
     type = (*binding)->scheme()->instantiate(typer_.stamper());
-    pattern = TPattern::pattern::constructed(id, {});
+    pattern = pattern_t::constructed(id, {});
   }
 }
 
@@ -331,14 +331,14 @@ void PatternElaborator::visitRecRowPattern(const RecRowPattern &) {
 void PatternElaborator::visitRecordPattern(const RecordPattern &node) {
   typing::StringMap<typing::Type> row_types =
       collections::managed_map<ManagedString, typing::Type>({});
-  std::vector<TPattern::pattern> row_patterns;
+  std::vector<pattern_t> row_patterns;
   row_patterns.reserve(node.rows.size());
   std::vector<bind_rule_t::record_field_access_t> row_bindings;
 
   for (const auto &row : node.rows) {
     row->pattern->accept(*this);
     row_types = row_types->insert(make_string(row->label), type).first;
-    pattern.field = row->label;
+    pattern.set_field(row->label);
     row_patterns.push_back(std::move(pattern));
     if (!bind_rule.empty()) {
       row_bindings.emplace_back(row->label, std::move(bind_rule));
@@ -346,7 +346,7 @@ void PatternElaborator::visitRecordPattern(const RecordPattern &node) {
   }
 
   type = make_managed<typing::RecordType>(row_types, node.has_wildcard);
-  pattern = TPattern::pattern::record(std::move(row_patterns));
+  pattern = pattern_t::record(std::move(row_patterns));
   if (!row_bindings.empty()) {
     bind_rule.subtype_bindings = std::move(row_bindings);
   }
@@ -357,8 +357,8 @@ void PatternElaborator::visitListPattern(const ListPattern &node) {
       make_managed<typing::UndeterminedType>(typer_.new_stamp());
   typing::Substitutions subs =
       collections::managed_map<typing::Stamp, typing::Type>({});
-  TPattern::pattern cons_pattern = TPattern::pattern::constructed(
-      std::u8string(typing::BuiltinTypes::NIL), {});
+  pattern_t cons_pattern =
+      pattern_t::constructed(std::u8string(typing::BuiltinTypes::NIL), {});
   bind_rule_t cons_bind_rule;
 
   for (const auto &pat : node.patterns | std::views::reverse) {
@@ -370,12 +370,12 @@ void PatternElaborator::visitListPattern(const ListPattern &node) {
       bindings = bindings->apply_substitutions(u.new_substitutions);
     }
     el_type = u.unified_type;
-    std::vector<TPattern::pattern> subpatterns;
+    std::vector<pattern_t> subpatterns;
     subpatterns.push_back(std::move(pattern));
     subpatterns.push_back(std::move(cons_pattern));
-    std::vector<TPattern::pattern> s;
-    s.push_back(TPattern::pattern::tuple(std::move(subpatterns)));
-    cons_pattern = TPattern::pattern::constructed(
+    std::vector<pattern_t> s;
+    s.push_back(pattern_t::tuple(std::move(subpatterns)));
+    cons_pattern = pattern_t::constructed(
         std::u8string(typing::BuiltinTypes::CONS), std::move(s));
     if (!cons_bind_rule.empty() || !bind_rule.empty()) {
       std::vector<bind_rule_t::tuple_access_t> subtype_bindings;
@@ -398,7 +398,7 @@ void PatternElaborator::visitListPattern(const ListPattern &node) {
 void PatternElaborator::visitTuplePattern(const TuplePattern &node) {
   std::vector<typing::TypePtr> types;
   types.reserve(node.patterns.size());
-  std::vector<TPattern::pattern> subpatterns;
+  std::vector<pattern_t> subpatterns;
   subpatterns.reserve(node.patterns.size());
   std::vector<bind_rule_t::tuple_access_t> subrules;
 
@@ -412,7 +412,7 @@ void PatternElaborator::visitTuplePattern(const TuplePattern &node) {
   }
 
   type = typer_.builtins().tuple_type(collections::to_array(types));
-  pattern = TPattern::pattern::tuple(std::move(subpatterns));
+  pattern = pattern_t::tuple(std::move(subpatterns));
   if (!subrules.empty()) {
     bind_rule.subtype_bindings = std::move(subrules);
   }
@@ -448,9 +448,9 @@ void PatternElaborator::visitDatatypePattern(const DatatypePattern &node) {
     type = typing::apply_substitutions(type, u.new_substitutions);
   }
 
-  std::vector<TPattern::pattern> s;
+  std::vector<pattern_t> s;
   s.push_back(std::move(pattern));
-  pattern = TPattern::pattern::constructed(con_id, std::move(s));
+  pattern = pattern_t::constructed(con_id, std::move(s));
 
   if (!bind_rule.empty()) {
     std::vector<bind_rule_t::tuple_access_t> r;

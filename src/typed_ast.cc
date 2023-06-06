@@ -22,41 +22,56 @@
 
 namespace emil {
 
-TPattern::pattern::pattern(std::optional<std::u8string> constructor,
-                           std::vector<pattern> subpatterns,
-                           std::u8string field)
-    : constructor(std::move(constructor)),
-      subpatterns(std::move(subpatterns)),
-      field(std::move(field)) {}
+pattern_t::pattern_t(std::optional<std::u8string> constructor,
+                     std::vector<pattern_t> subpatterns, std::u8string field)
+    : constructor_(std::move(constructor)),
+      subpatterns_(std::move(subpatterns)),
+      field_(std::move(field)) {}
 
-TPattern::pattern TPattern::pattern::wildcard() {
-  return {std::nullopt, {}, u8""};
-}
+pattern_t pattern_t::wildcard() { return {std::nullopt, {}, u8""}; }
 
-TPattern::pattern TPattern::pattern::constructed(
-    std::u8string constructor, std::vector<pattern> subpatterns) {
+pattern_t pattern_t::constructed(std::u8string constructor,
+                                 std::vector<pattern_t> subpatterns) {
   return {{std::move(constructor)}, std::move(subpatterns), u8""};
 }
 
 inline constexpr std::u8string_view TUPLE_CON = u8"@@t@@";
 inline constexpr std::u8string_view RECORD_CON = u8"@@r@@";
 
-TPattern::pattern TPattern::pattern::tuple(std::vector<pattern> subpatterns) {
+pattern_t pattern_t::tuple(std::vector<pattern_t> subpatterns) {
   return {{std::u8string(TUPLE_CON)}, std::move(subpatterns), u8""};
 }
 
-TPattern::pattern TPattern::pattern::record(std::vector<pattern> subpatterns) {
+pattern_t pattern_t::record(std::vector<pattern_t> subpatterns) {
   return {{std::u8string(RECORD_CON)}, std::move(subpatterns), u8""};
 }
 
-bool TPattern::pattern::is_wildcard() const { return !constructor; }
+bool pattern_t::is_wildcard() const { return !constructor_; }
 
-bool TPattern::pattern::is_tuple() const { return constructor == TUPLE_CON; }
+bool pattern_t::is_tuple() const { return constructor_ == TUPLE_CON; }
 
-bool TPattern::pattern::is_record() const { return constructor == RECORD_CON; }
+bool pattern_t::is_record() const { return constructor_ == RECORD_CON; }
 
-TPattern::TPattern(const Location& location, typing::TypePtr type, pattern pat,
-                   managed_ptr<typing::ValEnv> bindings, bind_rule_t bind_rule)
+bool pattern_t::is_record_field() const { return !field_.empty(); }
+
+std::u8string_view pattern_t::constructor() const {
+  assert(!is_constructed());
+  return *constructor_;
+}
+
+const std::vector<pattern_t>& pattern_t::subpatterns() const {
+  assert(!is_wildcard());
+  return subpatterns_;
+}
+
+std::u8string_view pattern_t::field() const {
+  assert(is_record_field());
+  return field_;
+}
+
+TPattern::TPattern(const Location& location, typing::TypePtr type,
+                   pattern_t pat, managed_ptr<typing::ValEnv> bindings,
+                   bind_rule_t bind_rule)
     : location(location),
       type(type),
       pat(std::move(pat)),

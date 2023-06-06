@@ -20,6 +20,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -62,37 +63,64 @@ struct bind_rule_t {
   }
 };
 
+/**
+ * A simplified pattern for destructured matching.
+ *
+ * It is designed to be used in contexts where (a) type checking has
+ * already succeeded and (b) bindings are irrelevant, so there are
+ * only 4 types of patterns:
+ *  - '_': Matches all values of the correct type.
+ *  - 'c(p?)': Matches a value with constructor c and argument
+ *    matching p.
+ *  - '(p1, p2, ..., pn)': Matches a tuple with elements matching
+ *    p1, p2, ..., pn.
+ *  - '{f1: p1, f2: p2, ..., fn: pn}': Matches a record whose
+ *    field f1 matches p1, etc; the pattern need not be
+ *    exhaustive over all the record's fields.
+ */
+struct pattern_t {
+  static pattern_t wildcard();
+  static pattern_t constructed(std::u8string constructor,
+                               std::vector<pattern_t> subpatterns);
+  static pattern_t tuple(std::vector<pattern_t> subpatterns);
+  // field must be set on each subpattern.
+  static pattern_t record(std::vector<pattern_t> subpatterns);
+
+  bool is_wildcard() const;
+  bool is_tuple() const;
+  bool is_record() const;
+  bool is_record_field() const;
+  bool is_constructed() const;
+
+  // is_constructed() must be true.
+  std::u8string_view constructor() const;
+  // is_wildcard() must be false.
+  const std::vector<pattern_t>& subpatterns() const;
+  // is_record_field() must be true.
+  std::u8string_view field() const;
+
+  /** Convert this to a record field matcher. */
+  void set_field(std::u8string field);
+
+ private:
+  std::optional<std::u8string> constructor_;
+  std::vector<pattern_t> subpatterns_;
+  std::u8string field_;  // Used for matching records
+
+  pattern_t(std::optional<std::u8string> constructor,
+            std::vector<pattern_t> subpatterns, std::u8string field);
+};
+
 /** A typed pattern. */
 class TPattern {
  public:
-  /** A simplified pattern for destructured matching. */
-  struct pattern {
-    std::optional<std::u8string> constructor;
-    std::vector<pattern> subpatterns;
-    std::u8string field;  // Used for matching records
-
-    pattern(std::optional<std::u8string> constructor,
-            std::vector<pattern> subpatterns, std::u8string field);
-
-    static pattern wildcard();
-    static pattern constructed(std::u8string constructor,
-                               std::vector<pattern> subpatterns);
-    static pattern tuple(std::vector<pattern> subpatterns);
-    // field must be set on each subpattern.
-    static pattern record(std::vector<pattern> subpatterns);
-
-    bool is_wildcard() const;
-    bool is_tuple() const;
-    bool is_record() const;
-  };
-
   const Location location;
   const typing::TypePtr type;
-  const pattern pat;
+  const pattern_t pat;
   const managed_ptr<typing::ValEnv> bindings;
   const bind_rule_t bind_rule;
 
-  TPattern(const Location& location, typing::TypePtr type, pattern pat,
+  TPattern(const Location& location, typing::TypePtr type, pattern_t pat,
            managed_ptr<typing::ValEnv> bindings, bind_rule_t bind_rule);
 
   std::unique_ptr<TPattern> apply_substitutions(
