@@ -15,13 +15,16 @@
 #include "emil/typer.h"
 
 #include <fmt/core.h>
+#include <fmt/format.h>
 
 #include <cassert>
 #include <cstddef>
 #include <iterator>
+#include <map>
 #include <numeric>
 #include <optional>
 #include <ranges>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -32,11 +35,14 @@
 #include "emil/ast.h"
 #include "emil/bigint.h"
 #include "emil/collections.h"
+#include "emil/gc.h"
 #include "emil/strconvert.h"
 #include "emil/string.h"
 #include "emil/token.h"
 #include "emil/typed_ast.h"
 #include "emil/types.h"
+
+// IWYU pragma: no_include <__tree>
 
 namespace emil {
 
@@ -560,17 +566,10 @@ class ExprElaborator : public Expr::Visitor {
 
   elaborate_rec_row_t elaborate_rec_row(const RecRowExpr &node) const;
 
-  struct elaborate_match_t {
-    std::vector<std::pair<std::unique_ptr<TPattern>, std::unique_ptr<TExpr>>>
-        cases;
-    managed_ptr<typing::FunctionType> unified_type;
-  };
-
-  elaborate_match_t elaborate_match(
+  match_t elaborate_match(
+      const Location &location,
       const std::vector<
-          std::pair<std::unique_ptr<Pattern>, std::unique_ptr<Expr>>> &) {
-    throw std::logic_error("Not implemented!");
-  }
+          std::pair<std::unique_ptr<Pattern>, std::unique_ptr<Expr>>> &cases);
 };
 
 void ExprElaborator::visitBigintLiteralExpr(const BigintLiteralExpr &node) {
@@ -892,40 +891,36 @@ void ExprElaborator::visitApplicationExpr(const ApplicationExpr &node) {
 }
 
 void ExprElaborator::visitCaseExpr(const CaseExpr &node) {
-  auto m = elaborate_match(node.cases);
+  auto match = elaborate_match(node.location, node.cases);
   auto e = typer_.elaborate(C, *node.expr, substitutions_,
                             typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
   auto u = typing::unify(match.result_type, e.expr->type, substitutions_);
   if (!u.new_substitutions->empty()) {
+    match.result_type = u.unified_type;
     e.expr = e.expr->apply_substitutions(u.new_substitutions);
   }
-  auto new_subs = e.new_substitutions | u.new_substitutions;
-  auto type = m.unified_type->result();
-  if (!new_subs->empty()) {
-    for (auto &c : m.cases) {
-      c.first = c.first->apply_substitutions(new_subs);
-      c.second = c.second->apply_substitutions(new_subs);
-    }
-    type = typing::apply_substitutions(type, new_subs);
-    new_substitutions = new_substitutions | new_subs;
-  }
-  if (type->id_of_youngest_typename() > maximum_type_name_id_) {
+  new_substitutions =
+      new_substitutions | e.new_substitutions | u.new_substitutions;
+  if (match.result_type->id_of_youngest_typename() > maximum_type_name_id_) {
     throw ElaborationError(
         "Illegal substitution in case expression (type escape).",
         node.location);
   }
-  typed = std::make_unique<TCaseExpr>(node.location, type, std::move(e.expr),
-                                      std::move(m.cases));
+  typed = std::make_unique<TCaseExpr>(node.location, std::move(e.expr),
+                                      std::move(match));
 }
 
 void ExprElaborator::visitFnExpr(const FnExpr &node) {
-  auto m = elaborate_match(node.cases);
-  if (m.unified_type->id_of_youngest_typename() > maximum_type_name_id_) {
+  auto match = elaborate_match(node.location, node.cases);
+
+  if (match.result_type->id_of_youngest_typename() > maximum_type_name_id_ ||
+      match.match_type->id_of_youngest_typename() > maximum_type_name_id_) {
     throw ElaborationError(
         "Illegal substitution in fn expression (type escape).", node.location);
   }
-  typed = std::make_unique<TFnExpr>(node.location, m.unified_type,
-                                    std::move(m.cases));
+  auto type =
+      make_managed<typing::FunctionType>(match.match_type, match.result_type);
+  typed = std::make_unique<TFnExpr>(node.location, type, std::move(match));
 }
 
 void ExprElaborator::visitTypedExpr(const TypedExpr &node) {
@@ -940,6 +935,218 @@ void ExprElaborator::visitTypedExpr(const TypedExpr &node) {
     new_substitutions = new_substitutions | u.new_substitutions;
   }
   typed = std::move(e.expr);
+}
+
+/** A single clause of a match. */
+struct clause {
+  /** The not-yet-matched part of the pattern. */
+  std::vector<const pattern_t *> patterns;
+  /** The clause's index in the list of outcomes. */
+  std::size_t outcome;
+};
+
+/** The core data structure of the match compilation. */
+struct clause_matrix {
+  std::vector<clause> clauses;
+};
+
+/**
+ * Specialize P by constructor c (taking optional `arg_type`) at `column`.
+ *
+ * That is, retain the rows whose i'th pattern matches the given
+ * constructor, and expand the patterns matching the arguments to the
+ * constructor.
+ */
+clause_matrix specialize(const clause_matrix &P, std::u8string_view c,
+                         typing::TypePtr arg_type, std::size_t column) {
+  clause_matrix out;
+
+  for (const auto &clause : P.clauses) {
+    const auto *pat = clause.patterns[column];
+    if (pat->is_wildcard() || pat->constructor() == c) {
+      out.clauses.push_back(clause);
+      auto &patterns = out.clauses.back().patterns;
+      if (column != patterns.size() - 1) {
+        patterns[column] = patterns.back();
+      }
+      patterns.pop_back();
+      if (arg_type) {
+        assert(pat->is_wildcard() || pat->subpatterns().size() == 1);
+        (pat->is_wildcard() ? pat : &pat->subpatterns().front())
+            ->expand(patterns, *arg_type);
+      }
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Compute default matrix of P at `column`.
+ *
+ * That is, retain the rows whose i'th pattern is a wildcard,
+ * discarding the i'th column (actually, swapping the last with i and
+ * discarding the last column).
+ */
+clause_matrix compute_default_matrix(const clause_matrix &P,
+                                     std::size_t column) {
+  clause_matrix out;
+  for (const auto &clause : P.clauses) {
+    const auto *pat = clause.patterns[column];
+    if (pat->is_wildcard()) {
+      out.clauses.push_back(clause);
+      auto &patterns = out.clauses.back().patterns;
+      if (column != patterns.size() - 1) {
+        patterns[column] = patterns.back();
+      }
+      patterns.pop_back();
+    }
+  }
+  return out;
+}
+
+using TCase = std::pair<std::unique_ptr<TPattern>, std::unique_ptr<TExpr>>;
+
+decision_tree_t compile_tree(const clause_matrix &P, bool &failure_possible,
+                             std::set<std::size_t> &useful_clauses);
+
+dt_switch_t compile_switch(const clause_matrix &P, std::size_t i,
+                           bool &failure_possible,
+                           std::set<std::size_t> &useful_clauses) {
+  dt_switch_t result{.index = i};
+  managed_ptr<typing::TypeName> type_name;
+  for (const auto &clause : P.clauses) {
+    const auto *pat = clause.patterns[i];
+    if (pat->is_wildcard()) continue;
+    if (!type_name) type_name = pat->type_name();
+    const std::u8string &con = pat->constructor();
+    const auto it = result.cases.lower_bound(con);
+    if (it != result.cases.cend() && it->first == con) continue;
+    result.cases.emplace_hint(
+        it, con,
+        compile_tree(specialize(P, con, pat->arg_type(), i), failure_possible,
+                     useful_clauses));
+  }
+  if (result.cases.size() < type_name->span()) {
+    result.cases.emplace(dt_switch_t::DEFAULT_KEY,
+                         compile_tree(compute_default_matrix(P, i),
+                                      failure_possible, useful_clauses));
+  }
+  return result;
+}
+
+decision_tree_t compile_tree(const clause_matrix &P, bool &failure_possible,
+                             std::set<std::size_t> &useful_clauses) {
+  if (P.clauses.empty()) {
+    failure_possible = true;
+    return dt_fail_t{};
+  }
+  std::size_t i = 0;
+  const auto &first_row = P.clauses.front();
+  while (i < first_row.patterns.size() &&
+         first_row.patterns[i]->is_wildcard()) {
+    ++i;
+  }
+  if (i == first_row.patterns.size()) {
+    useful_clauses.insert(first_row.outcome);
+    return dt_leaf_t{first_row.outcome};
+  }
+  return compile_switch(P, i, failure_possible, useful_clauses);
+}
+
+/**
+ * Compiles a pattern match into a decision tree.
+ *
+ * Populates the outcomes, decision_tree, and nonexhaustive fields of
+ * `out`. Requires that out.location, out.match_type, and
+ * out.result_type have already been initialized.
+ *
+ * We follow the algorithm described in Luc Maranget's 2008 paper
+ * "Compiling pattern matching to good decision trees," presented at
+ * the 2008 ACM SIGPLAN workshop on ML.
+ */
+void compile_match(match_t &match, std::vector<TCase> cases) {
+  match.outcomes.reserve(cases.size());
+  clause_matrix P;
+  P.clauses.reserve(cases.size());
+  std::size_t i = 0;
+  for (auto &c : cases) {
+    match.outcomes.emplace_back(
+        c.first->bindings, std::move(c.first->bind_rule), std::move(c.second));
+    P.clauses.emplace_back();
+    c.first->pat.expand(P.clauses.back().patterns, *match.match_type);
+    P.clauses.back().outcome = i++;
+  }
+  std::set<std::size_t> useful_clauses;
+
+  match.decision_tree = compile_tree(P, match.nonexhaustive, useful_clauses);
+
+  if (useful_clauses.size() != cases.size()) {
+    std::size_t count = cases.size() - useful_clauses.size();
+    std::size_t expected = 0;
+    std::vector<std::size_t> redundant_clauses;
+    for (const std::size_t c : useful_clauses) {
+      while (expected++ != c) {
+        --count;
+        redundant_clauses.push_back(expected - 1);
+      }
+      if (!count) break;
+    }
+    throw ElaborationError(
+        fmt::format("match redundant{}. Redundant clauses: {}",
+                    match.nonexhaustive ? " and nonexhaustive" : "",
+                    fmt::join(redundant_clauses, ", ")),
+        match.location);
+  }
+}
+
+match_t ExprElaborator::elaborate_match(
+    const Location &location,
+    const std::vector<
+        std::pair<std::unique_ptr<Pattern>, std::unique_ptr<Expr>>> &cases) {
+  typing::TypePtr match_type =
+      make_managed<typing::UndeterminedType>(typer_.new_stamp());
+  typing::TypePtr result_type =
+      make_managed<typing::UndeterminedType>(typer_.new_stamp());
+  std::vector<TCase> tcases;
+  tcases.reserve(cases.size());
+  for (const auto &c : cases) {
+    tcases.emplace_back();
+    auto tpat = typer_.elaborate_pattern(C, *c.first);
+    auto mu = typing::unify(match_type, tpat->type, substitutions_);
+    match_type = mu.unified_type;
+
+    auto e =
+        typer_.elaborate(C, *c.second, substitutions_, maximum_type_name_id_);
+    auto ru = typing::unify(result_type, e.expr->type, substitutions_,
+                            maximum_type_name_id_, maximum_type_name_id_);
+
+    auto new_subs = e.new_substitutions | ru.new_substitutions;
+    if (!new_subs->empty()) {
+      match_type = typing::apply_substitutions(match_type, new_subs);
+      tpat = tpat->apply_substitutions(new_subs);
+    }
+
+    new_subs = mu.new_substitutions | new_subs;
+    if (!new_subs->empty()) {
+      for (auto &tc : tcases) {
+        tc.first = tc.first->apply_substitutions(mu.new_substitutions);
+        tc.second = tc.second->apply_substitutions(mu.new_substitutions);
+      }
+      new_substitutions = new_substitutions | new_subs;
+    }
+
+    tcases.emplace_back(std::move(tpat), std::move(e.expr));
+  }
+
+  match_t result{.location = location,
+                 .match_type = match_type,
+                 .result_type = result_type};
+  compile_match(result, std::move(tcases));
+  if (result.nonexhaustive) {
+    typer_.issue_warning(location, "match nonexhaustive");
+  }
+  return result;
 }
 
 }  // namespace

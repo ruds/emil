@@ -110,6 +110,8 @@ class Typer {
   typing::StampGenerator& stamper() { return stamp_generator_; }
   const typing::BuiltinTypes& builtins() const;
 
+  void issue_warning(const Location& location, std::string text);
+
  private:
   typing::StampGenerator stamp_generator_;
   typing::BuiltinTypes builtins_;

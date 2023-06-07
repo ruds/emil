@@ -16,11 +16,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
-#include <optional>
 #include <stdexcept>
 #include <string>
-#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -175,6 +174,36 @@ class TPattern {
       typing::Substitutions substitutions) const;
 };
 
+struct dt_leaf_t {
+  std::size_t outcome;
+};
+
+struct dt_fail_t {};
+
+struct dt_switch_t;
+
+/**
+ * A decision tree used to choose which pattern matches a value.
+ *
+ * Each decision is one of
+ * - Failure: This value does not match any pattern.
+ * - Leaf(k): This value matches pattern k.
+ * - Switch(i, cases): This value's current i'th subpattern is a
+ *   constructed type; select the decision tree based on the
+ *   constructor used (or "_" if the constructor is not present in the
+ *   cases) and continue matching after
+ *     1. swapping the i'th subpattern with the last.
+ *     2. replacing the last subpattern with the expansion of any
+ *        arguments to the constructor (see pattern_t::expand).
+ */
+using decision_tree_t = std::variant<dt_fail_t, dt_leaf_t, dt_switch_t>;
+
+struct dt_switch_t {
+  static const std::u8string DEFAULT_KEY;
+  std::size_t index;
+  std::map<std::u8string, decision_tree_t> cases;
+};
+
 class TBigintLiteralExpr;
 class TIntLiteralExpr;
 class TFpLiteralExpr;
@@ -243,6 +272,40 @@ class TExpr {
    * and all its subexpressions. */
   virtual std::unique_ptr<TExpr> apply_substitutions(
       typing::Substitutions substitutions) const = 0;
+};
+
+/** The elaboration of a pattern match. */
+struct match_t {
+ public:
+  struct outcome_t {
+    managed_ptr<typing::ValEnv> bindings;
+    bind_rule_t bind_rule;
+    std::unique_ptr<TExpr> result;
+
+    outcome_t(managed_ptr<typing::ValEnv> bindings, bind_rule_t bind_rule,
+              std::unique_ptr<TExpr> result)
+        : bindings(bindings),
+          bind_rule(std::move(bind_rule)),
+          result(std::move(result)) {}
+  };
+
+  Location location;
+  /**
+   * The type of the value to be matched against.
+   *
+   * It is important that no further unification be applied to this
+   * reference to the type. It is used to control the expansion of
+   * pattern matching rows and can be thrown off if an undetermined
+   * type or type variable that is irrelevant to the match is replaced
+   * by a compound type, e.g. to a tuple.
+   */
+  typing::TypePtr match_type;
+  typing::TypePtr result_type;
+  std::vector<outcome_t> outcomes;
+  decision_tree_t decision_tree;
+  bool nonexhaustive;
+
+  match_t apply_substitutions(typing::Substitutions substitutions) const;
 };
 
 /** A bigint literal. Nonexpansive. */
@@ -473,14 +536,10 @@ class TApplicationExpr : public TExpr {
 class TCaseExpr : public TExpr {
  public:
   std::unique_ptr<TExpr> expr;
-  std::vector<std::pair<std::unique_ptr<TPattern>, std::unique_ptr<TExpr>>>
-      cases;
+  match_t match;
 
-  TCaseExpr(
-      const Location& location, typing::TypePtr type,
-      std::unique_ptr<TExpr> expr,
-      std::vector<std::pair<std::unique_ptr<TPattern>, std::unique_ptr<TExpr>>>
-          cases);
+  TCaseExpr(const Location& location, std::unique_ptr<TExpr> expr,
+            match_t match);
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
@@ -491,13 +550,9 @@ class TCaseExpr : public TExpr {
 /** A function literal expression. Nonexpansive. */
 class TFnExpr : public TExpr {
  public:
-  std::vector<std::pair<std::unique_ptr<TPattern>, std::unique_ptr<TExpr>>>
-      cases;
+  match_t match;
 
-  TFnExpr(
-      const Location& location, typing::TypePtr type,
-      std::vector<std::pair<std::unique_ptr<TPattern>, std::unique_ptr<TExpr>>>
-          cases);
+  TFnExpr(const Location& location, typing::TypePtr type, match_t match);
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 

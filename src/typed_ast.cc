@@ -18,7 +18,7 @@
 #include <cassert>
 #include <compare>
 #include <iterator>
-#include <string_view>
+#include <stdexcept>
 #include <variant>
 
 #include "emil/collections.h"
@@ -204,8 +204,28 @@ std::unique_ptr<TPattern> TPattern::apply_substitutions(
       bindings->apply_substitutions(substitutions), bind_rule);
 }
 
+const std::u8string dt_switch_t::DEFAULT_KEY = u8"_";
+
 TExpr::~TExpr() = default;
 TExpr::Visitor::~Visitor() = default;
+
+match_t match_t::apply_substitutions(
+    typing::Substitutions substitutions) const {
+  match_t result{.match_type = match_type,
+                 .result_type = result_type,
+                 .outcomes{},
+                 .decision_tree = decision_tree,
+                 .nonexhaustive = nonexhaustive};
+  result.outcomes.reserve(outcomes.size());
+  std::transform(outcomes.begin(), outcomes.end(),
+                 back_inserter(result.outcomes), [&](const outcome_t& o) {
+                   return outcome_t{
+                       o.bindings->apply_substitutions(substitutions),
+                       o.bind_rule,
+                       o.result->apply_substitutions(substitutions)};
+                 });
+  return result;
+}
 
 namespace {
 
@@ -411,33 +431,27 @@ std::unique_ptr<TExpr> TApplicationExpr::apply_substitutions(
       is_nonexpansive, apply_substitutions_to_list(exprs, substitutions));
 }
 
-TCaseExpr::TCaseExpr(
-    const Location& location, typing::TypePtr type, std::unique_ptr<TExpr> expr,
-    std::vector<std::pair<std::unique_ptr<TPattern>, std::unique_ptr<TExpr>>>
-        cases)
-    : TExpr(location, type, false),
+TCaseExpr::TCaseExpr(const Location& location, std::unique_ptr<TExpr> expr,
+                     match_t match)
+    : TExpr(location, match.result_type, false),
       expr(std::move(expr)),
-      cases(std::move(cases)) {}
+      match(std::move(match)) {}
 
 std::unique_ptr<TExpr> TCaseExpr::apply_substitutions(
     typing::Substitutions substitutions) const {
-  return std::make_unique<TCaseExpr>(
-      location, typing::apply_substitutions(type, substitutions),
-      expr->apply_substitutions(substitutions),
-      apply_substitutions_to_pairs(cases, substitutions));
+  return std::make_unique<TCaseExpr>(location,
+                                     expr->apply_substitutions(substitutions),
+                                     match.apply_substitutions(substitutions));
 }
 
-TFnExpr::TFnExpr(
-    const Location& location, typing::TypePtr type,
-    std::vector<std::pair<std::unique_ptr<TPattern>, std::unique_ptr<TExpr>>>
-        cases)
-    : TExpr(location, type, true), cases(std::move(cases)) {}
+TFnExpr::TFnExpr(const Location& location, typing::TypePtr type, match_t match)
+    : TExpr(location, type, true), match(std::move(match)) {}
 
 std::unique_ptr<TExpr> TFnExpr::apply_substitutions(
     typing::Substitutions substitutions) const {
   return std::make_unique<TFnExpr>(
       location, typing::apply_substitutions(type, substitutions),
-      apply_substitutions_to_pairs(cases, substitutions));
+      match.apply_substitutions(substitutions));
 }
 
 TDecl::~TDecl() = default;
