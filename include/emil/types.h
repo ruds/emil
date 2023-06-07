@@ -787,9 +787,10 @@ struct unification_t {
  *
  * Throws a UnificationError if the types cannot be unified.
  */
-unification_t unify(TypePtr l, TypePtr r, Substitutions& substitutions,
-                    std::uint64_t maximum_type_name_id_l,
-                    std::uint64_t maximum_type_name_id_r);
+unification_t unify(
+    TypePtr l, TypePtr r, Substitutions& substitutions,
+    std::uint64_t maximum_type_name_id_l = NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+    std::uint64_t maximum_type_name_id_r = NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
 
 /**
  * Unify all the types to a single type.

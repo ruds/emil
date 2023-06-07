@@ -363,12 +363,7 @@ void PatternElaborator::visitListPattern(const ListPattern &node) {
 
   for (const auto &pat : node.patterns | std::views::reverse) {
     pat->accept(*this);
-    auto u = typing::unify(el_type, type, subs,
-                           typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
-                           typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
-    if (!u.new_substitutions->empty()) {
-      bindings = bindings->apply_substitutions(u.new_substitutions);
-    }
+    auto u = typing::unify(el_type, type, subs);
     el_type = u.unified_type;
     std::vector<pattern_t> subpatterns;
     subpatterns.push_back(std::move(pattern));
@@ -440,9 +435,7 @@ void PatternElaborator::visitDatatypePattern(const DatatypePattern &node) {
 
   typing::Substitutions subs =
       collections::managed_map<typing::Stamp, typing::Type>({});
-  auto u = typing::unify(gf.fn->param(), type, subs,
-                         typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
-                         typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
+  auto u = typing::unify(gf.fn->param(), type, subs);
   type = gf.fn->result();
   if (!u.new_substitutions->empty()) {
     type = typing::apply_substitutions(type, u.new_substitutions);
@@ -853,9 +846,7 @@ void ExprElaborator::visitApplicationExpr(const ApplicationExpr &node) {
         e.expr = e.expr->apply_substitutions(gf.new_substitutions);
         new_subs = new_subs | gf.new_substitutions;
       }
-      auto u = typing::unify(gf.fn->result(), e.expr->type, substitutions_,
-                             typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
-                             typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
+      auto u = typing::unify(gf.fn->result(), e.expr->type, substitutions_);
       if (!u.new_substitutions->empty()) {
         e.expr = e.expr->apply_substitutions(u.new_substitutions);
         new_subs = new_subs | u.new_substitutions;
@@ -887,9 +878,7 @@ void ExprElaborator::visitCaseExpr(const CaseExpr &node) {
   auto m = elaborate_match(node.cases);
   auto e = typer_.elaborate(C, *node.expr, substitutions_,
                             typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
-  auto u = typing::unify(m.unified_type->param(), e.expr->type, substitutions_,
-                         typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
-                         typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
+  auto u = typing::unify(match.result_type, e.expr->type, substitutions_);
   if (!u.new_substitutions->empty()) {
     e.expr = e.expr->apply_substitutions(u.new_substitutions);
   }
