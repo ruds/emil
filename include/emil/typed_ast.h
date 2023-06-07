@@ -81,6 +81,8 @@ struct bind_rule_t {
 struct pattern_t {
   static pattern_t wildcard();
   static pattern_t constructed(std::u8string constructor,
+                               managed_ptr<typing::TypeName> type_name,
+                               typing::TypePtr arg_type,
                                std::vector<pattern_t> subpatterns);
   static pattern_t tuple(std::vector<pattern_t> subpatterns);
   // field must be set on each subpattern; subpatterns must be sorted
@@ -94,11 +96,15 @@ struct pattern_t {
   bool is_constructed() const;
 
   // is_constructed() must be true.
-  std::u8string_view constructor() const;
+  const std::u8string& constructor() const;
+  // is_constructed() must be true.
+  managed_ptr<typing::TypeName> type_name() const;
+  // is_constructed() must be true. May be null.
+  typing::TypePtr arg_type() const;
   // is_wildcard() must be false.
   const std::vector<pattern_t>& subpatterns() const;
   // is_record_field() must be true.
-  std::u8string_view field() const;
+  const std::u8string& field() const;
 
   /** Convert this to a record field matcher. */
   void set_field(std::u8string field);
@@ -123,15 +129,34 @@ struct pattern_t {
    * - Otherwise, do not modify out.
    */
   void expand(std::vector<const pattern_t*>& out,
-              typing::TypePtr match_type) const;
+              const typing::Type& match_type) const;
+
+  /** Apply substitutions to types stored in this pattern. */
+  void apply_substitutions(typing::Substitutions substitutions);
 
  private:
-  std::optional<std::u8string> constructor_;
-  std::vector<pattern_t> subpatterns_;
+  struct wildcard_t {};
+
+  struct constructed_t {
+    std::u8string constructor;
+    managed_ptr<typing::TypeName> type_name;
+    typing::TypePtr arg_type;
+    std::vector<pattern_t> subpatterns;
+  };
+
+  struct tuple_t {
+    std::vector<pattern_t> subpatterns;
+  };
+
+  struct record_t {
+    std::vector<pattern_t> subpatterns;
+  };
+
+  using repr = std::variant<wildcard_t, constructed_t, tuple_t, record_t>;
+  repr repr_;
   std::u8string field_;  // Used for matching records
 
-  pattern_t(std::optional<std::u8string> constructor,
-            std::vector<pattern_t> subpatterns, std::u8string field);
+  pattern_t(repr r);
 };
 
 /** A typed pattern. */

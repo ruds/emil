@@ -218,7 +218,7 @@ void PatternElaborator::visitWildcardPattern(const WildcardPattern &) {
 
 class LiteralExtractor : public Expr::Visitor {
  public:
-  typing::TypePtr type;
+  managed_ptr<typing::ConstructedType> type;
   std::u8string value;
 
   explicit LiteralExtractor(Typer &typer) : typer_(typer) {}
@@ -297,7 +297,27 @@ void PatternElaborator::visitLiteralPattern(const LiteralPattern &node) {
   LiteralExtractor v{typer_};
   node.val->accept(v);
   type = v.type;
-  pattern = pattern_t::constructed(std::move(v.value), {});
+  pattern =
+      pattern_t::constructed(std::move(v.value), v.type->name(), nullptr, {});
+}
+
+class TypeNameExtractor : public typing::TypeVisitor {
+ public:
+  managed_ptr<typing::TypeName> name;
+
+  void visit(const typing::TypeWithAgeRestriction &t) { t.accept(*this); }
+  void visit(const typing::TypeVar &) {}
+  void visit(const typing::UndeterminedType &) {}
+  void visit(const typing::TupleType &) {}
+  void visit(const typing::RecordType &) {}
+  void visit(const typing::FunctionType &) {}
+  void visit(const typing::ConstructedType &t) { name = t.name(); }
+};
+
+managed_ptr<typing::TypeName> get_type_name(typing::TypePtr type) {
+  TypeNameExtractor v;
+  type->accept(v);
+  return v.name;
 }
 
 void PatternElaborator::visitIdentifierPattern(const IdentifierPattern &node) {
@@ -320,7 +340,13 @@ void PatternElaborator::visitIdentifierPattern(const IdentifierPattern &node) {
     bind_rule.names.push_back(id);
   } else {
     type = (*binding)->scheme()->instantiate(typer_.stamper());
-    pattern = pattern_t::constructed(id, {});
+    auto name = get_type_name(type);
+    if (!name) {
+      throw ElaborationError("Expected value constructor taking no arguments.",
+                             node.location);
+    }
+
+    pattern = pattern_t::constructed(id, name, nullptr, {});
   }
 }
 
@@ -358,7 +384,8 @@ void PatternElaborator::visitListPattern(const ListPattern &node) {
   typing::Substitutions subs =
       collections::managed_map<typing::Stamp, typing::Type>({});
   pattern_t cons_pattern =
-      pattern_t::constructed(std::u8string(typing::BuiltinTypes::NIL), {});
+      pattern_t::constructed(std::u8string(typing::BuiltinTypes::NIL),
+                             typer_.builtins().list_name(), nullptr, {});
   bind_rule_t cons_bind_rule;
 
   for (const auto &pat : node.patterns | std::views::reverse) {
@@ -370,8 +397,12 @@ void PatternElaborator::visitListPattern(const ListPattern &node) {
     subpatterns.push_back(std::move(cons_pattern));
     std::vector<pattern_t> s;
     s.push_back(pattern_t::tuple(std::move(subpatterns)));
-    cons_pattern = pattern_t::constructed(
-        std::u8string(typing::BuiltinTypes::CONS), std::move(s));
+    cons_pattern =
+        pattern_t::constructed(std::u8string(typing::BuiltinTypes::CONS),
+                               typer_.builtins().list_name(),
+                               typer_.builtins().tuple_type(
+                                   collections::make_array({el_type, el_type})),
+                               std::move(s));
     if (!cons_bind_rule.empty() || !bind_rule.empty()) {
       std::vector<bind_rule_t::tuple_access_t> subtype_bindings;
       if (!bind_rule.empty()) {
@@ -385,6 +416,10 @@ void PatternElaborator::visitListPattern(const ListPattern &node) {
     }
   }
 
+  if (!subs->empty()) {
+    bindings = bindings->apply_substitutions(subs);
+    cons_pattern.apply_substitutions(subs);
+  }
   type = typer_.builtins().list_type(el_type);
   pattern = std::move(cons_pattern);
   bind_rule = std::move(cons_bind_rule);
@@ -440,10 +475,14 @@ void PatternElaborator::visitDatatypePattern(const DatatypePattern &node) {
   if (!u.new_substitutions->empty()) {
     type = typing::apply_substitutions(type, u.new_substitutions);
   }
-
+  auto name = get_type_name(type);
+  if (!name) {
+    throw std::logic_error(
+        "Impossible: value constructor does not produce constructed type.");
+  }
   std::vector<pattern_t> s;
   s.push_back(std::move(pattern));
-  pattern = pattern_t::constructed(con_id, std::move(s));
+  pattern = pattern_t::constructed(con_id, name, u.unified_type, std::move(s));
 
   if (!bind_rule.empty()) {
     std::vector<bind_rule_t::tuple_access_t> r;
@@ -779,30 +818,6 @@ const TIdentifierExpr *get_identifier(const TExpr &expr) {
   return v.id;
 }
 
-class GetTypenameVisitor : public typing::TypeVisitor {
- public:
-  managed_ptr<typing::TypeName> name = nullptr;
-
-  void visit(const typing::TypeWithAgeRestriction &t) override {
-    t.type()->accept(*this);
-  }
-
-  void visit(const typing::ConstructedType &t) override { name = t.name(); }
-
-  void visit(const typing::UndeterminedType &) override {}
-  void visit(const typing::FunctionType &) override {}
-  void visit(const typing::TypeVar &) override {}
-  void visit(const typing::TupleType &) override {}
-  void visit(const typing::RecordType &) override {}
-};
-
-managed_ptr<typing::TypeName> get_type_name(typing::TypePtr type) {
-  GetTypenameVisitor v;
-  type->accept(v);
-  assert(v.name);
-  return v.name;
-}
-
 bool is_nonexpansive_application(
     const std::vector<std::unique_ptr<TExpr>> &exprs, Typer &typer) {
   if (exprs.size() != 2) return false;
@@ -819,8 +834,10 @@ bool is_nonexpansive_application(
     case typing::IdStatus::Constructor: {
       auto gf = get_function(id->type, typer);
       assert(gf.new_substitutions->empty());
-      return get_type_name(gf.fn->result())->stamp() !=
-             typer.builtins().ref_name()->stamp();
+      auto name = get_type_name(gf.fn->result())->stamp() !=
+                  typer.builtins().ref_name()->stamp();
+      assert(name);
+      return name;
     }
   }
 }

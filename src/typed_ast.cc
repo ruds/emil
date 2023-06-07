@@ -19,6 +19,7 @@
 #include <compare>
 #include <iterator>
 #include <string_view>
+#include <variant>
 
 #include "emil/collections.h"
 #include "emil/tree.h"
@@ -26,55 +27,93 @@
 
 namespace emil {
 
-pattern_t::pattern_t(std::optional<std::u8string> constructor,
-                     std::vector<pattern_t> subpatterns, std::u8string field)
-    : constructor_(std::move(constructor)),
-      subpatterns_(std::move(subpatterns)),
-      field_(std::move(field)) {}
+pattern_t::pattern_t(repr r) : repr_(std::move(r)) {}
 
-pattern_t pattern_t::wildcard() { return {std::nullopt, {}, u8""}; }
+pattern_t pattern_t::wildcard() { return {wildcard_t{}}; }
 
 pattern_t pattern_t::constructed(std::u8string constructor,
+                                 managed_ptr<typing::TypeName> type_name,
+                                 typing::TypePtr arg_type,
                                  std::vector<pattern_t> subpatterns) {
-  return {{std::move(constructor)}, std::move(subpatterns), u8""};
+  return {constructed_t{std::move(constructor), type_name, arg_type,
+                        std::move(subpatterns)}};
 }
 
-inline constexpr std::u8string_view TUPLE_CON = u8"@@t@@";
-inline constexpr std::u8string_view RECORD_CON = u8"@@r@@";
-
 pattern_t pattern_t::tuple(std::vector<pattern_t> subpatterns) {
-  return {{std::u8string(TUPLE_CON)}, std::move(subpatterns), u8""};
+  return {tuple_t{std::move(subpatterns)}};
 }
 
 pattern_t pattern_t::record(std::vector<pattern_t> subpatterns) {
   assert(std::is_sorted(
       subpatterns.begin(), subpatterns.end(),
       [](const auto& l, const auto& r) { return l.field() < r.field(); }));
-  return {{std::u8string(RECORD_CON)}, std::move(subpatterns), u8""};
+  return {record_t{std::move(subpatterns)}};
 }
 
-bool pattern_t::is_wildcard() const { return !constructor_; }
+bool pattern_t::is_wildcard() const {
+  return std::holds_alternative<wildcard_t>(repr_);
+}
 
-bool pattern_t::is_tuple() const { return constructor_ == TUPLE_CON; }
+bool pattern_t::is_tuple() const {
+  return std::holds_alternative<tuple_t>(repr_);
+}
 
-bool pattern_t::is_record() const { return constructor_ == RECORD_CON; }
+bool pattern_t::is_record() const {
+  return std::holds_alternative<record_t>(repr_);
+}
 
 bool pattern_t::is_record_field() const { return !field_.empty(); }
 
-std::u8string_view pattern_t::constructor() const {
-  assert(!is_constructed());
-  return *constructor_;
+bool pattern_t::is_constructed() const {
+  return std::holds_alternative<constructed_t>(repr_);
 }
+
+const std::u8string& pattern_t::constructor() const {
+  assert(is_constructed());
+  return get<constructed_t>(repr_).constructor;
+}
+
+managed_ptr<typing::TypeName> pattern_t::type_name() const {
+  assert(is_constructed());
+  return get<constructed_t>(repr_).type_name;
+}
+
+typing::TypePtr pattern_t::arg_type() const {
+  assert(is_constructed());
+  return get<constructed_t>(repr_).arg_type;
+}
+
+namespace {
+
+template <typename... Ts>
+struct overloaded : Ts... {
+  using Ts::operator()...;
+};
+
+template <typename... Ts>
+overloaded(Ts...) -> overloaded<Ts...>;
+
+}  // namespace
 
 const std::vector<pattern_t>& pattern_t::subpatterns() const {
   assert(!is_wildcard());
-  return subpatterns_;
+  return std::visit(
+      overloaded{[](wildcard_t) -> const std::vector<pattern_t>& {
+                   throw std::invalid_argument(
+                       "May not call subpatterns() on wildcard pattern.");
+                 },
+                 [](const auto& r) -> const std::vector<pattern_t>& {
+                   return r.subpatterns;
+                 }},
+      repr_);
 }
 
-std::u8string_view pattern_t::field() const {
+const std::u8string& pattern_t::field() const {
   assert(is_record_field());
   return field_;
 }
+
+namespace {
 
 const pattern_t WILDCARD_PATTERN = pattern_t::wildcard();
 
@@ -139,10 +178,12 @@ class PatternExpander : public typing::TypeVisitor {
   std::vector<const pattern_t*>& out_;
 };
 
+}  // namespace
+
 void pattern_t::expand(std::vector<const pattern_t*>& out,
-                       typing::TypePtr match_type) const {
+                       const typing::Type& match_type) const {
   PatternExpander v{this, out};
-  match_type->accept(v);
+  match_type.accept(v);
 }
 
 TPattern::TPattern(const Location& location, typing::TypePtr type,
@@ -156,8 +197,10 @@ TPattern::TPattern(const Location& location, typing::TypePtr type,
 
 std::unique_ptr<TPattern> TPattern::apply_substitutions(
     typing::Substitutions substitutions) const {
+  auto new_pat = pat;
+  new_pat.apply_substitutions(substitutions);
   return std::make_unique<TPattern>(
-      location, typing::apply_substitutions(type, substitutions), pat,
+      location, typing::apply_substitutions(type, substitutions), new_pat,
       bindings->apply_substitutions(substitutions), bind_rule);
 }
 
