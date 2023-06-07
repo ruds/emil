@@ -408,30 +408,30 @@ class BuiltinTypes : public TypeObj {
   static constexpr std::u8string_view CONS = u8"(::)";
   static constexpr std::u8string_view REF = u8"ref";
 
-  TypePtr bigint_type() const { return bi_; }
-  TypePtr int_type() const { return i_; }
-  TypePtr byte_type() const { return by_; }
-  TypePtr float_type() const { return fl_; }
-  TypePtr bool_type() const { return bo_; }
-  TypePtr char_type() const { return c_; }
-  TypePtr string_type() const { return s_; }
+  managed_ptr<ConstructedType> bigint_type() const { return bi_; }
+  managed_ptr<ConstructedType> int_type() const { return i_; }
+  managed_ptr<ConstructedType> byte_type() const { return by_; }
+  managed_ptr<ConstructedType> float_type() const { return fl_; }
+  managed_ptr<ConstructedType> bool_type() const { return bo_; }
+  managed_ptr<ConstructedType> char_type() const { return c_; }
+  managed_ptr<ConstructedType> string_type() const { return s_; }
   // cppcheck-suppress functionStatic
   TypePtr tuple_type(TypeList types) const;
-  TypePtr list_type(TypePtr type) const;
+  managed_ptr<ConstructedType> list_type(TypePtr type) const;
   managed_ptr<TypeName> list_name() const { return l_; }
-  TypePtr ref_type(TypePtr type) const;
+  managed_ptr<ConstructedType> ref_type(TypePtr type) const;
   managed_ptr<TypeName> ref_name() const { return r_; }
   // cppcheck-suppress functionStatic
   TypePtr record_type(StringMap<Type> rows) const;
 
  private:
-  const TypePtr bi_;
-  const TypePtr i_;
-  const TypePtr by_;
-  const TypePtr fl_;
-  const TypePtr bo_;
-  const TypePtr c_;
-  const TypePtr s_;
+  const managed_ptr<ConstructedType> bi_;
+  const managed_ptr<ConstructedType> i_;
+  const managed_ptr<ConstructedType> by_;
+  const managed_ptr<ConstructedType> fl_;
+  const managed_ptr<ConstructedType> bo_;
+  const managed_ptr<ConstructedType> c_;
+  const managed_ptr<ConstructedType> s_;
   const managed_ptr<TypeName> l_;
   const managed_ptr<TypeName> r_;
 

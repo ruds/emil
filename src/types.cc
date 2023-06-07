@@ -287,8 +287,9 @@ void ConstructedType::visit_additional_subobjects_of_type(
 
 namespace {
 
-TypePtr construct_type0(managed_ptr<Stamp>&& stamp, std::u8string_view name,
-                        std::size_t span = INFINITE_SPAN) {
+managed_ptr<ConstructedType> construct_type0(managed_ptr<Stamp>&& stamp,
+                                             std::u8string_view name,
+                                             std::size_t span = INFINITE_SPAN) {
   return make_managed<ConstructedType>(
       make_managed<TypeName>(name, std::move(stamp), 0, span), type_list());
 }
@@ -319,11 +320,11 @@ TypePtr BuiltinTypes::tuple_type(TypeList types) const {
   return make_managed<TupleType>(std::move(types));
 }
 
-TypePtr BuiltinTypes::list_type(TypePtr type) const {
+managed_ptr<ConstructedType> BuiltinTypes::list_type(TypePtr type) const {
   return make_managed<ConstructedType>(l_, type_list({std::move(type)}));
 }
 
-TypePtr BuiltinTypes::ref_type(TypePtr type) const {
+managed_ptr<ConstructedType> BuiltinTypes::ref_type(TypePtr type) const {
   return make_managed<ConstructedType>(r_, type_list({std::move(type)}));
 }
 
