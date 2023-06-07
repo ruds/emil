@@ -274,24 +274,39 @@ class UndeterminedType : public Type {
   const managed_ptr<Stamp> stamp_;
 };
 
+inline const std::size_t INFINITE_SPAN =
+    std::numeric_limits<std::size_t>::max();
+
 /** A globally unique name assigned to a constructed type. */
 class TypeName : public TypeObj {
  public:
-  TypeName(std::u8string_view name, managed_ptr<Stamp> stamp,
-           std::size_t arity);
-  TypeName(std::u8string_view name, StampGenerator& stamper, std::size_t arity);
-  TypeName(StringPtr name, managed_ptr<Stamp> stamp, std::size_t arity);
-  TypeName(StringPtr name, StampGenerator& stamper, std::size_t arity);
+  TypeName(std::u8string_view name, managed_ptr<Stamp> stamp, std::size_t arity,
+           std::size_t span);
+  TypeName(std::u8string_view name, StampGenerator& stamper, std::size_t arity,
+           std::size_t span);
+  TypeName(StringPtr name, managed_ptr<Stamp> stamp, std::size_t arity,
+           std::size_t span);
+  TypeName(StringPtr name, StampGenerator& stamper, std::size_t arity,
+           std::size_t span);
 
   std::u8string_view name() const { return *name_; }
   StringPtr name_ptr() const { return name_; }
   const managed_ptr<Stamp>& stamp() const { return stamp_; }
+  /** The number of type parameters needed to construct a type with this name.
+   */
   std::size_t arity() const { return arity_; }
+  /**
+   * The number of value constructors this type has.
+   *
+   * May be INFINITE_SPAN (e.g. int, float, string, and bigint).
+   */
+  std::size_t span() const { return span_; }
 
  private:
   const StringPtr name_;
   const managed_ptr<Stamp> stamp_;
   const std::size_t arity_;
+  const std::size_t span_;
 
   void visit_additional_subobjects(const ManagedVisitor&) override;
   std::size_t managed_size() const noexcept override {

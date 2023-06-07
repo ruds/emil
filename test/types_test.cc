@@ -68,9 +68,9 @@ class TypesTestBase : public ::testing::Test {
   TestContext tc;
   StampGenerator stamper;
 
-  TypePtr int_type = constructed_type(u8"int", {});
-  TypePtr float_type = constructed_type(u8"float", {});
-  managed_ptr<TypeName> list_name = type_name(u8"list", 1);
+  TypePtr int_type = constructed_type(u8"int", {}, INFINITE_SPAN);
+  TypePtr float_type = constructed_type(u8"float", {}, INFINITE_SPAN);
+  managed_ptr<TypeName> list_name = type_name(u8"list", 1, 2);
 
   managed_ptr<TypeVar> type_variable(std::u8string_view name) {
     return tc.root.add_root(make_managed<TypeVar>(name));
@@ -101,8 +101,9 @@ class TypesTestBase : public ::testing::Test {
     return tc.root.add_root(make_managed<FunctionType>(param, result));
   }
 
-  managed_ptr<TypeName> type_name(std::u8string_view name, std::size_t arity) {
-    return tc.root.add_root(make_managed<TypeName>(name, stamper, arity));
+  managed_ptr<TypeName> type_name(std::u8string_view name, std::size_t arity,
+                                  std::size_t span) {
+    return tc.root.add_root(make_managed<TypeName>(name, stamper, arity, span));
   }
 
   TypePtr constructed_type(managed_ptr<TypeName> name,
@@ -114,10 +115,11 @@ class TypesTestBase : public ::testing::Test {
 
   /** Creates a constructed type with a fresh name. */
   TypePtr constructed_type(std::u8string_view name,
-                           std::initializer_list<TypePtr> types) {
+                           std::initializer_list<TypePtr> types,
+                           std::size_t span) {
     auto hold = tc.mgr.acquire_hold();
     return tc.root.add_root(make_managed<ConstructedType>(
-        type_name(name, types.size()), make_array(types)));
+        type_name(name, types.size(), span), make_array(types)));
   }
 
   TypePtr list_type(TypePtr el_type) {
@@ -141,7 +143,7 @@ TEST_F(InstantiateSchemeTest, BasicOperation) {
   auto b = type_variable(u8"'b");
   auto c = type_variable(u8"'c");
   auto ut0 = undetermined_type();
-  auto contype = constructed_type(u8"contype", {});
+  auto contype = constructed_type(u8"contype", {}, 0);
   auto ut1var = undetermined_type();
   auto ut1 = make_managed<TypeWithAgeRestriction>(ut1var, ut0->stamp()->id());
   auto ut2 = undetermined_type();
@@ -194,7 +196,7 @@ TEST_F(PrintTypeTest, BasicOperation) {
       list_type(list_type(ut2)),
       PrintsCorrectly(std::ref(tc), u8"'~5 list list", u8"'~0 list list"));
 
-  auto pair_name = type_name(u8"pair", 2);
+  auto pair_name = type_name(u8"pair", 2, 1);
   EXPECT_THAT(
       constructed_type(pair_name, {int_type, int_type}),
       PrintsCorrectly(std::ref(tc), u8"(int, int) pair", u8"(int, int) pair"));
@@ -263,7 +265,7 @@ class ApplySubstitutionsTest : public TypesTestBase {
   managed_ptr<UndeterminedType> ut1 = undetermined_type();
   managed_ptr<UndeterminedType> ut2 = undetermined_type();
 
-  managed_ptr<TypeName> pair_name = type_name(u8"pair", 2);
+  managed_ptr<TypeName> pair_name = type_name(u8"pair", 2, 1);
 
   managed_ptr<UndeterminedType> ut3 = undetermined_type();
   managed_ptr<UndeterminedType> ut4 = undetermined_type();
@@ -819,7 +821,7 @@ class UnifyTest : public TypesTestBase {
   managed_ptr<UndeterminedType> ute3 = undetermined_type();
   managed_ptr<UndeterminedType> ute4 = undetermined_type();
 
-  managed_ptr<TypeName> pair_name = type_name(u8"pair", 2);
+  managed_ptr<TypeName> pair_name = type_name(u8"pair", 2, 1);
 
   // "Late" undetermined types -- newer than `pair`.
   managed_ptr<UndeterminedType> utl1 = undetermined_type();
@@ -1032,7 +1034,7 @@ TEST_F(UnifyTest, Constructed) {
   const auto pair_ute2_utl2 = pair_type(ute2, utl2);
   const auto list_pair_int_float = list_type(pair_int_float);
 
-  const auto new_pair_name = type_name(u8"pair", 2);
+  const auto new_pair_name = type_name(u8"pair", 2, 1);
   const auto new_pair_int_float =
       constructed_type(new_pair_name, {int_type, float_type});
 

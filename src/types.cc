@@ -211,21 +211,24 @@ void UndeterminedType::visit_additional_subobjects_of_type(
 }
 
 TypeName::TypeName(std::u8string_view name, managed_ptr<Stamp> stamp,
-                   std::size_t arity)
-    : TypeName(make_string(name), std::move(stamp), arity) {}
+                   std::size_t arity, std::size_t span)
+    : TypeName(make_string(name), std::move(stamp), arity, span) {}
 
 TypeName::TypeName(std::u8string_view name, StampGenerator& stamper,
-                   std::size_t arity)
-    : TypeName(name, stamper(), arity) {}
+                   std::size_t arity, std::size_t span)
+    : TypeName(name, stamper(), arity, span) {}
 
-TypeName::TypeName(StringPtr name, managed_ptr<Stamp> stamp, std::size_t arity)
+TypeName::TypeName(StringPtr name, managed_ptr<Stamp> stamp, std::size_t arity,
+                   std::size_t span)
     : TypeObj(string_set(), stamp_set({stamp})),
       name_(std::move(name)),
       stamp_(std::move(stamp)),
-      arity_(arity) {}
+      arity_(arity),
+      span_(span) {}
 
-TypeName::TypeName(StringPtr name, StampGenerator& stamper, std::size_t arity)
-    : TypeName(name, stamper(), arity) {}
+TypeName::TypeName(StringPtr name, StampGenerator& stamper, std::size_t arity,
+                   std::size_t span)
+    : TypeName(name, stamper(), arity, span) {}
 
 void TypeName::visit_additional_subobjects(const ManagedVisitor& visitor) {
   name_.accept(visitor);
@@ -284,9 +287,10 @@ void ConstructedType::visit_additional_subobjects_of_type(
 
 namespace {
 
-TypePtr construct_type0(managed_ptr<Stamp>&& stamp, std::u8string_view name) {
+TypePtr construct_type0(managed_ptr<Stamp>&& stamp, std::u8string_view name,
+                        std::size_t span = INFINITE_SPAN) {
   return make_managed<ConstructedType>(
-      make_managed<TypeName>(name, std::move(stamp), 0), type_list());
+      make_managed<TypeName>(name, std::move(stamp), 0, span), type_list());
 }
 
 }  // namespace
@@ -303,13 +307,13 @@ BuiltinTypes::BuiltinTypes(managed_ptr<Stamp> bi, managed_ptr<Stamp> i,
     : TypeObj(string_set(), stamp_set({bi, i, by, fl, bo, c, s, l})),
       bi_(construct_type0(std::move(bi), u8"bigint")),
       i_(construct_type0(std::move(i), u8"int")),
-      by_(construct_type0(std::move(by), u8"byte")),
+      by_(construct_type0(std::move(by), u8"byte", 256)),
       fl_(construct_type0(std::move(fl), u8"float")),
-      bo_(construct_type0(std::move(bo), u8"bool")),
+      bo_(construct_type0(std::move(bo), u8"bool", 2)),
       c_(construct_type0(std::move(c), u8"char")),
       s_(construct_type0(std::move(s), u8"string")),
-      l_(make_managed<TypeName>(u8"list", l, 1)),
-      r_(make_managed<TypeName>(u8"ref", r, 1)) {}
+      l_(make_managed<TypeName>(u8"list", l, 1, 2)),
+      r_(make_managed<TypeName>(u8"ref", r, 1, 1)) {}
 
 TypePtr BuiltinTypes::tuple_type(TypeList types) const {
   return make_managed<TupleType>(std::move(types));
