@@ -20,7 +20,9 @@
 #include <cassert>
 #include <initializer_list>
 #include <iterator>
+#include <map>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -350,33 +352,14 @@ TypeFunction::TypeFunction(TypePtr t, collections::ArrayPtr<TypeVar> bound)
       t_(std::move(t)),
       bound_(std::move(bound)) {}
 
-void TypeFunction::visit_additional_subobjects(const ManagedVisitor& visitor) {
-  t_.accept(visitor);
-  bound_.accept(visitor);
-}
-
-TypeScheme::TypeScheme(TypePtr t, collections::ArrayPtr<TypeVar> bound)
-    : TypeObj(t->free_variables() - to_distinct_string_set(bound),
-              t->type_names()),
-      t_(std::move(t)),
-      bound_(std::move(bound)) {}
-
 namespace {
 
-class SchemeInstantiator : public TypeVisitor {
+class TypeInstantiator : public TypeVisitor {
  public:
   TypePtr type;
 
-  SchemeInstantiator(StampGenerator& stamper,
-                     collections::ArrayPtr<TypeVar> bound)
-      : stamper_(stamper), bound_(bound) {
-    for (const auto& v : *bound_) {
-      mapping_ =
-          mapping_
-              ->insert(v->name_ptr(), make_managed<UndeterminedType>(stamper_))
-              .first;
-    }
-  }
+  explicit TypeInstantiator(std::map<std::u8string_view, TypePtr> mapping)
+      : mapping_(mapping) {}
 
   void visit(const TypeWithAgeRestriction& t) override {
     t.type()->accept(*this);
@@ -384,9 +367,9 @@ class SchemeInstantiator : public TypeVisitor {
   }
 
   void visit(const TypeVar& t) override {
-    const auto it = mapping_->find(t.name());
-    type = it == mapping_->cend() ? make_managed<TypeVar>(t.name_ptr())
-                                  : it->second;
+    const auto it = mapping_.find(t.name());
+    type = it == mapping_.cend() ? make_managed<TypeVar>(t.name_ptr())
+                                 : it->second;
   }
 
   void visit(const UndeterminedType& t) override {
@@ -428,16 +411,48 @@ class SchemeInstantiator : public TypeVisitor {
   }
 
  private:
-  StampGenerator& stamper_;
-  collections::ArrayPtr<TypeVar> bound_;
-  StringMap<Type> mapping_ = collections::managed_map<ManagedString, Type>({});
+  std::map<std::u8string_view, TypePtr> mapping_;
 };
 
 }  // namespace
 
+TypePtr TypeFunction::instantiate(collections::ArrayPtr<Type> params) const {
+  auto hold = ctx().mgr->acquire_hold();
+  std::map<std::u8string_view, TypePtr> mapping;
+  if (params->size() != bound_->size()) {
+    throw std::logic_error(
+        "TypeFunction instantiated with wrong number of parameters.");
+  }
+  // Assume that bound_ is in alpha order.
+  auto hint = mapping.end();
+  for (std::size_t i = 0; i < params->size(); ++i) {
+    hint =
+        mapping.emplace_hint(mapping.end(), (*bound_)[i]->name(), (*params)[i]);
+  }
+  TypeInstantiator v{std::move(mapping)};
+  t_->accept(v);
+  return v.type;
+}
+
+void TypeFunction::visit_additional_subobjects(const ManagedVisitor& visitor) {
+  t_.accept(visitor);
+  bound_.accept(visitor);
+}
+
+TypeScheme::TypeScheme(TypePtr t, collections::ArrayPtr<TypeVar> bound)
+    : TypeObj(t->free_variables() - to_distinct_string_set(bound),
+              t->type_names()),
+      t_(std::move(t)),
+      bound_(std::move(bound)) {}
+
 TypePtr TypeScheme::instantiate(StampGenerator& stamper) const {
   auto hold = ctx().mgr->acquire_hold();
-  SchemeInstantiator s{stamper, bound_};
+  std::map<std::u8string_view, TypePtr> mapping;
+  for (const auto& v : *bound_) {
+    mapping.emplace(v->name(), make_managed<UndeterminedType>(stamper));
+  }
+
+  TypeInstantiator s{std::move(mapping)};
   t_->accept(s);
   return s.type;
 }

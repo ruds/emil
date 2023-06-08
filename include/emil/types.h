@@ -470,6 +470,10 @@ class TypeFunction : public TypeObj {
 
   TypePtr t() const { return t_; }
   const collections::ArrayPtr<TypeVar>& bound() const { return bound_; }
+  std::size_t arity() const { return bound_->size(); }
+
+  // Requires params.size() == arity().
+  TypePtr instantiate(collections::ArrayPtr<Type> params) const;
 
  private:
   const TypePtr t_;

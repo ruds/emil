@@ -127,6 +127,55 @@ class TypesTestBase : public ::testing::Test {
   }
 };
 
+using InstantiateFunctionTest = TypesTestBase;
+
+TEST_F(InstantiateFunctionTest, BasicOperation) {
+  // {k0: 'a,
+  //  k1: ('b * 'c),
+  //  k2: {bar: '~0, foo: 'a, ...} list -> ('b * '~1 * '~2)}
+  //
+  // with 'a and 'b bound and mapped to int list and '~0 -> 'c,
+  // respectively, becomes
+  // {k0: int list,
+  //  k1: ('~0 -> 'c * 'c),
+  //  k2: {bar: '~1, foo: int list, ...} list
+  //    -> ('~0 -> 'c * '~2 * '~3)}
+  auto hold = tc.mgr.acquire_hold();
+  auto a = type_variable(u8"'a");
+  auto b = type_variable(u8"'b");
+  auto c = type_variable(u8"'c");
+  auto ut0 = undetermined_type();
+  auto contype = constructed_type(u8"contype", {}, 0);
+  auto ut1var = undetermined_type();
+  auto ut1 = make_managed<TypeWithAgeRestriction>(ut1var, ut0->stamp()->id());
+  auto ut2 = undetermined_type();
+  auto ut3 = undetermined_type();
+
+  auto func = make_managed<TypeFunction>(
+      record_type(
+          {{u8"k0", a},
+           {u8"k1", tuple_type({b, c})},
+           {u8"k2", function_type(list_type(record_type(
+                                      {{u8"bar", ut0}, {u8"foo", a}}, true)),
+                                  tuple_type({b, ut1, ut2}))}}),
+      make_array({a, b}));
+  auto instance = func->instantiate(
+      make_array({list_type(int_type), function_type(ut3, c)}));
+
+  EXPECT_THAT(
+      instance,
+      PrintsAs(u8"{k0: int list, k1: ('~0 -> 'c * 'c), k2: {bar: '~1, foo: int "
+               u8"list, ...} list -> ('~0 -> 'c * '~2 * '~3)}"));
+  EXPECT_THROW(apply_substitutions(instance, managed_map<Stamp, Type>(
+                                                 {{ut0->stamp(), contype}})),
+               UnificationError);
+  EXPECT_THROW(apply_substitutions(instance, managed_map<Stamp, Type>(
+                                                 {{ut1var->stamp(), contype}})),
+               UnificationError);
+  EXPECT_NO_THROW(apply_substitutions(
+      instance, managed_map<Stamp, Type>({{ut2->stamp(), contype}})));
+}
+
 using InstantiateSchemeTest = TypesTestBase;
 
 TEST_F(InstantiateSchemeTest, BasicOperation) {
