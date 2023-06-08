@@ -564,18 +564,31 @@ Env::Env(managed_ptr<StrEnv> str_env, managed_ptr<TypeEnv> type_env,
       type_env_(std::move(type_env)),
       val_env_(std::move(val_env)) {}
 
-std::optional<managed_ptr<ValueBinding>> Env::lookup_val(
-    const std::vector<std::u8string>& qualifiers, std::u8string_view id) const {
-  const Env* e = this;
+namespace {
+
+const Env* lookup_env(const Env* root,
+                      const std::vector<std::u8string>& qualifiers) {
   for (const auto& q : qualifiers) {
-    const auto r = e->str_env()->get(q);
+    const auto r = root->str_env()->get(q);
     if (r) {
-      e = &**r;
+      root = &**r;
     } else {
-      return std::nullopt;
+      return nullptr;
     }
   }
-  return e->val_env()->get(id);
+  return root;
+}
+
+}  // namespace
+
+std::optional<managed_ptr<ValueBinding>> Env::lookup_val(
+    const std::vector<std::u8string>& qualifiers, std::u8string_view id) const {
+  return lookup_env(this, qualifiers)->val_env()->get(id);
+}
+
+std::optional<managed_ptr<TypeStructure>> Env::lookup_type(
+    const std::vector<std::u8string>& qualifiers, std::u8string_view id) const {
+  return lookup_env(this, qualifiers)->type_env()->get(id);
 }
 
 managed_ptr<StrEnv> Env::str_env() const { return str_env_; }

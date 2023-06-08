@@ -642,6 +642,10 @@ class Env : public TypeObj {
       const std::vector<std::u8string>& qualifiers,
       std::u8string_view id) const;
 
+  std::optional<managed_ptr<TypeStructure>> lookup_type(
+      const std::vector<std::u8string>& qualifiers,
+      std::u8string_view id) const;
+
   managed_ptr<StrEnv> str_env() const;
   managed_ptr<TypeEnv> type_env() const { return type_env_; }
   managed_ptr<ValEnv> val_env() const { return val_env_; }
