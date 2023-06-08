@@ -150,14 +150,17 @@ managed_ptr<Stamp> StampGenerator::operator()() {
   return make_managed<Stamp>(Stamp::token{}, next_id_++);
 }
 
-TypeObj::TypeObj(StringSet free_variables, StampSet type_names)
+TypeObj::TypeObj(StringSet free_variables, StampSet undetermined_types,
+                 StampSet type_names)
     : free_variables_(std::move(free_variables)),
+      undetermined_types_(std::move(undetermined_types)),
       type_names_(std::move(type_names)) {}
 
 TypeObj::~TypeObj() = default;
 
 void TypeObj::visit_subobjects(const ManagedVisitor& visitor) {
   free_variables_.accept(visitor);
+  undetermined_types_.accept(visitor);
   type_names_.accept(visitor);
   visit_additional_subobjects(visitor);
 }
@@ -166,14 +169,9 @@ TypeVisitor::~TypeVisitor() = default;
 
 Type::Type(StringSet free_variables, StampSet undetermined_types,
            StampSet type_names)
-    : TypeObj(std::move(free_variables), std::move(type_names)),
-      id_of_youngest_typename_(compute_max_id(this->type_names())),
-      undetermined_types_(std::move(undetermined_types)) {}
-
-void Type::visit_additional_subobjects(const ManagedVisitor& visitor) {
-  undetermined_types_.accept(visitor);
-  visit_additional_subobjects_of_type(visitor);
-}
+    : TypeObj(std::move(free_variables), std::move(undetermined_types),
+              std::move(type_names)),
+      id_of_youngest_typename_(compute_max_id(this->type_names())) {}
 
 TypeWithAgeRestriction::TypeWithAgeRestriction(TypePtr type,
                                                std::uint64_t birthdate)
@@ -182,7 +180,7 @@ TypeWithAgeRestriction::TypeWithAgeRestriction(TypePtr type,
       type_(std::move(type)),
       birthdate_(birthdate) {}
 
-void TypeWithAgeRestriction::visit_additional_subobjects_of_type(
+void TypeWithAgeRestriction::visit_additional_subobjects(
     const ManagedVisitor& visitor) {
   type_.accept(visitor);
 }
@@ -193,8 +191,7 @@ TypeVar::TypeVar(StringPtr name)
     : Type(string_set({name}), stamp_set(), stamp_set()),
       name_(std::move(name)) {}
 
-void TypeVar::visit_additional_subobjects_of_type(
-    const ManagedVisitor& visitor) {
+void TypeVar::visit_additional_subobjects(const ManagedVisitor& visitor) {
   name_.accept(visitor);
 }
 
@@ -206,7 +203,7 @@ UndeterminedType::UndeterminedType(managed_ptr<Stamp> stamp)
 UndeterminedType::UndeterminedType(StampGenerator& stamper)
     : UndeterminedType(stamper()) {}
 
-void UndeterminedType::visit_additional_subobjects_of_type(
+void UndeterminedType::visit_additional_subobjects(
     const ManagedVisitor& visitor) {
   name_.accept(visitor);
   stamp_.accept(visitor);
@@ -222,7 +219,7 @@ TypeName::TypeName(std::u8string_view name, StampGenerator& stamper,
 
 TypeName::TypeName(StringPtr name, managed_ptr<Stamp> stamp, std::size_t arity,
                    std::size_t span)
-    : TypeObj(string_set(), stamp_set({stamp})),
+    : TypeObj(string_set(), stamp_set(), stamp_set({stamp})),
       name_(std::move(name)),
       stamp_(std::move(stamp)),
       arity_(arity),
@@ -244,8 +241,7 @@ TupleType::TupleType(TypeList types)
   assert(types_->size() != 1);
 }
 
-void TupleType::visit_additional_subobjects_of_type(
-    const ManagedVisitor& visitor) {
+void TupleType::visit_additional_subobjects(const ManagedVisitor& visitor) {
   types_.accept(visitor);
 }
 
@@ -255,8 +251,7 @@ RecordType::RecordType(StringMap<Type> rows, bool has_wildcard)
       rows_(std::move(rows)),
       has_wildcard_(has_wildcard) {}
 
-void RecordType::visit_additional_subobjects_of_type(
-    const ManagedVisitor& visitor) {
+void RecordType::visit_additional_subobjects(const ManagedVisitor& visitor) {
   rows_.accept(visitor);
 }
 
@@ -267,8 +262,7 @@ FunctionType::FunctionType(TypePtr param, TypePtr result)
       param_(std::move(param)),
       result_(std::move(result)) {}
 
-void FunctionType::visit_additional_subobjects_of_type(
-    const ManagedVisitor& visitor) {
+void FunctionType::visit_additional_subobjects(const ManagedVisitor& visitor) {
   param_.accept(visitor);
   result_.accept(visitor);
 }
@@ -281,7 +275,7 @@ ConstructedType::ConstructedType(managed_ptr<TypeName> name, TypeList types)
   assert(types_->size() == name_->arity());
 }
 
-void ConstructedType::visit_additional_subobjects_of_type(
+void ConstructedType::visit_additional_subobjects(
     const ManagedVisitor& visitor) {
   name_.accept(visitor);
   types_.accept(visitor);
@@ -307,7 +301,8 @@ BuiltinTypes::BuiltinTypes(managed_ptr<Stamp> bi, managed_ptr<Stamp> i,
                            managed_ptr<Stamp> bo, managed_ptr<Stamp> c,
                            managed_ptr<Stamp> s, managed_ptr<Stamp> l,
                            managed_ptr<Stamp> r)
-    : TypeObj(string_set(), stamp_set({bi, i, by, fl, bo, c, s, l})),
+    : TypeObj(string_set(), stamp_set(),
+              stamp_set({bi, i, by, fl, bo, c, s, l})),
       bi_(construct_type0(std::move(bi), u8"bigint")),
       i_(construct_type0(std::move(i), u8"int")),
       by_(construct_type0(std::move(by), u8"byte", 256)),
@@ -348,7 +343,7 @@ void BuiltinTypes::visit_additional_subobjects(const ManagedVisitor& visitor) {
 
 TypeFunction::TypeFunction(TypePtr t, collections::ArrayPtr<TypeVar> bound)
     : TypeObj(t->free_variables() - to_distinct_string_set(bound),
-              t->type_names()),
+              t->undetermined_types(), t->type_names()),
       t_(std::move(t)),
       bound_(std::move(bound)) {}
 
@@ -441,7 +436,7 @@ void TypeFunction::visit_additional_subobjects(const ManagedVisitor& visitor) {
 
 TypeScheme::TypeScheme(TypePtr t, collections::ArrayPtr<TypeVar> bound)
     : TypeObj(t->free_variables() - to_distinct_string_set(bound),
-              t->type_names()),
+              t->undetermined_types(), t->type_names()),
       t_(std::move(t)),
       bound_(std::move(bound)) {}
 
@@ -465,6 +460,7 @@ void TypeScheme::visit_additional_subobjects(const ManagedVisitor& visitor) {
 TypeStructure::TypeStructure(managed_ptr<TypeFunction> fn,
                              managed_ptr<ValEnv> env)
     : TypeObj(fn->free_variables() | env->free_variables(),
+              fn->undetermined_types() | env->undetermined_types(),
               fn->type_names() | env->type_names()),
       fn_(std::move(fn)),
       env_(std::move(env)) {}
@@ -475,7 +471,8 @@ void TypeStructure::visit_additional_subobjects(const ManagedVisitor& visitor) {
 }
 
 TypeEnv::TypeEnv(StringMap<TypeStructure> env)
-    : TypeObj(merge_free_variables(env), merge_type_names(env)),
+    : TypeObj(merge_free_variables(env), merge_undetermined_types(env),
+              merge_type_names(env)),
       env_(std::move(env)) {}
 
 std::optional<managed_ptr<TypeStructure>> TypeEnv::get(
@@ -488,7 +485,8 @@ void TypeEnv::visit_additional_subobjects(const ManagedVisitor& visitor) {
 }
 
 ValueBinding::ValueBinding(managed_ptr<TypeScheme> scheme, IdStatus status)
-    : TypeObj(scheme->free_variables(), scheme->type_names()),
+    : TypeObj(scheme->free_variables(), scheme->undetermined_types(),
+              scheme->type_names()),
       scheme_(std::move(scheme)),
       status_(status) {}
 
@@ -512,7 +510,8 @@ BindingError::BindingError(std::u8string_view id)
       full_msg_(fmt::format("Could not rebind {}.", to_std_string(id))) {}
 
 ValEnv::ValEnv(StringMap<ValueBinding> env)
-    : TypeObj(merge_free_variables(env), merge_type_names(env)),
+    : TypeObj(merge_free_variables(env), merge_undetermined_types(env),
+              merge_type_names(env)),
       env_(std::move(env)) {}
 
 std::optional<managed_ptr<ValueBinding>> ValEnv::get(
@@ -558,6 +557,8 @@ Env::Env(managed_ptr<StrEnv> str_env, managed_ptr<TypeEnv> type_env,
          managed_ptr<ValEnv> val_env)
     : TypeObj(str_env->free_variables() | type_env->free_variables() |
                   val_env->free_variables(),
+              str_env->undetermined_types() | type_env->undetermined_types() |
+                  val_env->undetermined_types(),
               str_env->type_names() | type_env->type_names() |
                   val_env->type_names()),
       str_env_(std::move(str_env)),
@@ -600,7 +601,8 @@ void Env::visit_additional_subobjects(const ManagedVisitor& visitor) {
 }
 
 StrEnv::StrEnv(StringMap<Env> env)
-    : TypeObj(merge_free_variables(env), merge_type_names(env)),
+    : TypeObj(merge_free_variables(env), merge_undetermined_types(env),
+              merge_type_names(env)),
       env_(std::move(env)) {}
 
 std::optional<managed_ptr<Env>> StrEnv::get(std::u8string_view key) const {
@@ -614,7 +616,7 @@ void StrEnv::visit_additional_subobjects(const ManagedVisitor& visitor) {
 Context::Context(StampSet type_names, StringSet explicit_type_variables,
                  managed_ptr<Env> env)
     : TypeObj(explicit_type_variables | env->free_variables(),
-              std::move(type_names)),
+              env->undetermined_types(), std::move(type_names)),
       vars_(std::move(explicit_type_variables)) {}
 
 void Context::visit_additional_subobjects(const ManagedVisitor& visitor) {
@@ -623,7 +625,8 @@ void Context::visit_additional_subobjects(const ManagedVisitor& visitor) {
 }
 
 Basis::Basis(StampSet type_names, managed_ptr<Env> env)
-    : TypeObj(env->free_variables(), std::move(type_names)),
+    : TypeObj(env->free_variables(), env->undetermined_types(),
+              std::move(type_names)),
       env_(std::move(env)) {}
 
 managed_ptr<Context> Basis::as_context() const {

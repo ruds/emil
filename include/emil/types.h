@@ -136,14 +136,17 @@ class StampGenerator {
 class TypeObj : public Managed {
  public:
   const StringSet& free_variables() const { return free_variables_; }
+  const StampSet& undetermined_types() const { return undetermined_types_; }
   const StampSet& type_names() const { return type_names_; }
 
  protected:
-  TypeObj(StringSet free_variables, StampSet type_names);
+  TypeObj(StringSet free_variables, StampSet undetermined_types,
+          StampSet type_names);
   ~TypeObj() override;
 
  private:
   const StringSet free_variables_;
+  const StampSet undetermined_types_;
   const StampSet type_names_;
 
   virtual void visit_additional_subobjects(const ManagedVisitor& visitor) = 0;
@@ -184,8 +187,6 @@ class Type : public TypeObj {
     return id_of_youngest_typename_;
   }
 
-  const StampSet& undetermined_types() const { return undetermined_types_; }
-
   virtual void accept(TypeVisitor& v) const = 0;
 
  protected:
@@ -194,12 +195,6 @@ class Type : public TypeObj {
 
  private:
   const std::uint64_t id_of_youngest_typename_;
-  const StampSet undetermined_types_;
-
-  virtual void visit_additional_subobjects_of_type(
-      const ManagedVisitor& visitor) = 0;
-
-  void visit_additional_subobjects(const ManagedVisitor& visitor) final;
 };
 using TypePtr = managed_ptr<Type>;
 using TypeList = collections::ArrayPtr<Type>;
@@ -221,8 +216,7 @@ class TypeWithAgeRestriction : public Type {
   const TypePtr& type() const { return type_; }
   std::uint64_t birthdate() const { return birthdate_; }
 
-  void visit_additional_subobjects_of_type(
-      const ManagedVisitor& visitor) override;
+  void visit_additional_subobjects(const ManagedVisitor& visitor) override;
   std::size_t managed_size() const noexcept override {
     return sizeof(TypeWithAgeRestriction);
   }
@@ -243,7 +237,7 @@ class TypeVar : public Type {
   std::u8string_view name() const { return *name_; }
   StringPtr name_ptr() const { return name_; }
 
-  void visit_additional_subobjects_of_type(const ManagedVisitor&) override;
+  void visit_additional_subobjects(const ManagedVisitor&) override;
   std::size_t managed_size() const noexcept override { return sizeof(TypeVar); }
 
   void accept(TypeVisitor& v) const override { v.visit(*this); }
@@ -262,7 +256,7 @@ class UndeterminedType : public Type {
   StringPtr name_ptr() const { return name_; }
   const managed_ptr<Stamp>& stamp() const { return stamp_; }
 
-  void visit_additional_subobjects_of_type(const ManagedVisitor&) override;
+  void visit_additional_subobjects(const ManagedVisitor&) override;
   std::size_t managed_size() const noexcept override {
     return sizeof(UndeterminedType);
   }
@@ -326,8 +320,7 @@ class TupleType : public Type {
  private:
   const TypeList types_;
 
-  void visit_additional_subobjects_of_type(
-      const ManagedVisitor& visitor) override;
+  void visit_additional_subobjects(const ManagedVisitor& visitor) override;
   std::size_t managed_size() const noexcept override {
     return sizeof(TupleType);
   }
@@ -347,8 +340,7 @@ class RecordType : public Type {
   const StringMap<Type> rows_;
   const bool has_wildcard_;
 
-  void visit_additional_subobjects_of_type(
-      const ManagedVisitor& visitor) override;
+  void visit_additional_subobjects(const ManagedVisitor& visitor) override;
   std::size_t managed_size() const noexcept override {
     return sizeof(RecordType);
   }
@@ -368,8 +360,7 @@ class FunctionType : public Type {
   const TypePtr param_;
   const TypePtr result_;
 
-  void visit_additional_subobjects_of_type(
-      const ManagedVisitor& visitor) override;
+  void visit_additional_subobjects(const ManagedVisitor& visitor) override;
   std::size_t managed_size() const noexcept override {
     return sizeof(FunctionType);
   }
@@ -390,8 +381,7 @@ class ConstructedType : public Type {
   managed_ptr<TypeName> name_;
   const TypeList types_;
 
-  void visit_additional_subobjects_of_type(
-      const ManagedVisitor& visitor) override;
+  void visit_additional_subobjects(const ManagedVisitor& visitor) override;
   std::size_t managed_size() const noexcept override {
     return sizeof(ConstructedType);
   }
