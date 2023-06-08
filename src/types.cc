@@ -655,6 +655,11 @@ managed_ptr<Env> operator+(const managed_ptr<Env>& l,
                            l->val_env() + r->val_env());
 }
 
+managed_ptr<Env> operator+(const managed_ptr<Env>& l,
+                           const managed_ptr<ValEnv>& r) {
+  return make_managed<Env>(l->str_env(), l->type_env(), l->val_env() + r);
+}
+
 managed_ptr<Context> operator+(const managed_ptr<Context>& C,
                                const managed_ptr<Env>& e) {
   return make_managed<Context>(C->type_names(), C->explicit_type_variables(),
