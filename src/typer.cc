@@ -1149,7 +1149,78 @@ match_t ExprElaborator::elaborate_match(
   return result;
 }
 
+class TypeExprElaborator : public TypeExpr::Visitor {
+ public:
+  typing::TypePtr type;
+
+  TypeExprElaborator(Typer &typer, managed_ptr<typing::Context> C)
+      : typer_(typer), C(C) {}
+
+  void visitVarTypeExpr(const VarTypeExpr &node) override {
+    type = make_managed<typing::TypeVar>(node.id);
+  }
+
+  void visitRecordTypeExpr(const RecordTypeExpr &node) override {
+    auto rows = collections::managed_map<ManagedString, typing::Type>({});
+    for (const auto &row : node.rows) {
+      row.second->accept(*this);
+      rows = rows->insert(make_string(row.first), type).first;
+    }
+    type = typer_.builtins().record_type(rows);
+  }
+
+  void visitTyconTypeExpr(const TyconTypeExpr &node) override {
+    auto ty = C->env()->lookup_type(node.qualifiers, node.identifier);
+    if (!ty) {
+      throw ElaborationError(
+          fmt::format("Unknown type constructor in type expression: {}",
+                      id_to_string(node.qualifiers, node.identifier)),
+          node.location);
+    }
+    if ((*ty)->fn()->arity() != node.types.size()) {
+      throw ElaborationError(
+          fmt::format("Type constructor {} takes {} type parameters but got {}",
+                      id_to_string(node.qualifiers, node.identifier),
+                      (*ty)->fn()->arity(), node.types.size()),
+          node.location);
+    }
+    auto params = make_managed<collections::ManagedArray<typing::Type>>(
+        node.types.size(), [&](std::size_t i) {
+          node.types[i]->accept(*this);
+          return type;
+        });
+    type = (*ty)->fn()->instantiate(params);
+  }
+
+  void visitTupleTypeExpr(const TupleTypeExpr &node) override {
+    auto types = make_managed<collections::ManagedArray<typing::Type>>(
+        node.types.size(), [&](std::size_t i) {
+          node.types[i]->accept(*this);
+          return type;
+        });
+    type = typer_.builtins().tuple_type(types);
+  }
+
+  void visitFuncTypeExpr(const FuncTypeExpr &node) override {
+    node.param->accept(*this);
+    auto param = type;
+    node.ret->accept(*this);
+    type = make_managed<typing::FunctionType>(param, type);
+  }
+
+ private:
+  Typer &typer_;
+  managed_ptr<typing::Context> C;
+};
+
 }  // namespace
+
+typing::TypePtr Typer::elaborate_type_expr(managed_ptr<typing::Context> C,
+                                           const TypeExpr &ty) {
+  TypeExprElaborator v{*this, C};
+  ty.accept(v);
+  return v.type;
+}
 
 managed_ptr<typing::Stamp> Typer::new_stamp() { return stamp_generator_(); }
 
