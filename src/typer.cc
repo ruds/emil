@@ -39,6 +39,7 @@
 #include "emil/strconvert.h"
 #include "emil/string.h"
 #include "emil/token.h"
+#include "emil/tree.h"
 #include "emil/typed_ast.h"
 #include "emil/types.h"
 
@@ -192,6 +193,90 @@ Typer::elaborate_topdecl_t Typer::elaborate(managed_ptr<typing::Basis> B,
   TopDeclElaborator v(*this, std::move(B));
   topdec.accept(v);
   return {std::move(v.B), std::move(v.typed)};
+}
+
+namespace {
+
+class DeclElaborator : public Decl::Visitor {
+ public:
+  managed_ptr<typing::Env> env;
+  std::unique_ptr<TDecl> decl;
+  typing::Substitutions new_substitutions;
+
+  DeclElaborator(Typer &typer, managed_ptr<typing::Context> C,
+                 typing::Substitutions &substitutions)
+      : typer_(typer), C(C), substitutions_(substitutions) {}
+
+  DECLARE_DECL_V_FUNCS;
+
+ private:
+  Typer &typer_;
+  managed_ptr<typing::Context> C;
+  typing::Substitutions &substitutions_;
+};
+
+/**
+ * Close a value environment that stems from the elabration of a valbind.
+ *
+ * Closure is described in Section 4.8 of the Definition of Standard
+ * ML (revised). Essentially, if the expression used to assign to the
+ * bound variable is nonexpansive, then the type of the bound variable
+ * is generalized over all the type variables and undetermined types
+ * found in the type but not the enclosing context. If it is
+ * expansive, then the type of the bound variable is monomorphic.
+ */
+managed_ptr<typing::ValEnv> close_for_valbind(
+    managed_ptr<typing::Context> C, const std::vector<match_t> &matches) {
+  auto closed =
+      collections::managed_map<ManagedString, typing::ValueBinding>({});
+  for (const auto &match : matches) {
+    for (const auto &outcome : match.outcomes) {
+      for (const auto &binding : *outcome.bindings->env()) {
+        managed_ptr<typing::TypeScheme> scheme = binding.second->scheme();
+        assert(scheme->bound()->empty());
+        if (outcome.result->is_nonexpansive) {
+          scheme = typing::TypeScheme::generalize(C, scheme->t());
+        }
+      }
+    }
+  }
+  return make_managed<typing::ValEnv>(closed);
+}
+
+void DeclElaborator::visitValDecl(const ValDecl &node) {
+  std::vector<match_t> bindings;
+  bindings.reserve(node.bindings.size());
+  for (auto it = node.bindings.begin(); it != node.bindings.end(); ++it) {
+    auto m = typer_.elaborate_match(it->first->location, C, it, std::next(it),
+                                    substitutions_, typer_.new_stamp()->id());
+    if (!m.new_substitutions->empty()) {
+      for (auto &b : bindings) {
+        b = b.apply_substitutions(m.new_substitutions);
+      }
+      new_substitutions = new_substitutions | m.new_substitutions;
+    }
+    assert(m.match.outcomes.size() == 1);
+  }
+  env = env + close_for_valbind(C, bindings);
+  decl = std::make_unique<TValDecl>(node.location, std::move(bindings));
+}
+
+}  // namespace
+
+Typer::elaborate_decl_t Typer::elaborate(managed_ptr<typing::Context> C,
+                                         const Decl &dec) {
+  typing::Substitutions subs =
+      collections::managed_map<typing::Stamp, typing::Type>({});
+  auto r = elaborate(C, dec, subs);
+  return {r.env, std::move(r.decl)};
+}
+
+Typer::elaborate_decl_with_substitutions_t Typer::elaborate(
+    managed_ptr<typing::Context> C, const Decl &dec,
+    typing::Substitutions &substitutions) {
+  DeclElaborator v{*this, C, substitutions};
+  dec.accept(v);
+  return {v.env, std::move(v.decl), v.new_substitutions};
 }
 
 namespace {
@@ -565,11 +650,6 @@ class ExprElaborator : public Expr::Visitor {
   };
 
   elaborate_rec_row_t elaborate_rec_row(const RecRowExpr &node) const;
-
-  match_t elaborate_match(
-      const Location &location,
-      const std::vector<
-          std::pair<std::unique_ptr<Pattern>, std::unique_ptr<Expr>>> &cases);
 };
 
 void ExprElaborator::visitBigintLiteralExpr(const BigintLiteralExpr &node) {
@@ -891,36 +971,43 @@ void ExprElaborator::visitApplicationExpr(const ApplicationExpr &node) {
 }
 
 void ExprElaborator::visitCaseExpr(const CaseExpr &node) {
-  auto match = elaborate_match(node.location, node.cases);
+  auto m = typer_.elaborate_match(node.location, C, node.cases, substitutions_,
+                                  maximum_type_name_id_);
+  new_substitutions = new_substitutions | m.new_substitutions;
   auto e = typer_.elaborate(C, *node.expr, substitutions_,
                             typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
-  auto u = typing::unify(match.result_type, e.expr->type, substitutions_);
-  if (!u.new_substitutions->empty()) {
-    match.result_type = u.unified_type;
-    e.expr = e.expr->apply_substitutions(u.new_substitutions);
+  if (!e.new_substitutions->empty()) {
+    m.match = m.match.apply_substitutions(e.new_substitutions);
+    new_substitutions = new_substitutions | e.new_substitutions;
   }
-  new_substitutions =
-      new_substitutions | e.new_substitutions | u.new_substitutions;
-  if (match.result_type->id_of_youngest_typename() > maximum_type_name_id_) {
+  auto u = typing::unify(m.match.result_type, e.expr->type, substitutions_);
+  if (!u.new_substitutions->empty()) {
+    m.match = m.match.apply_substitutions(u.new_substitutions);
+    e.expr = e.expr->apply_substitutions(u.new_substitutions);
+    new_substitutions = new_substitutions | u.new_substitutions;
+  }
+  if (m.match.result_type->id_of_youngest_typename() > maximum_type_name_id_) {
     throw ElaborationError(
         "Illegal substitution in case expression (type escape).",
         node.location);
   }
   typed = std::make_unique<TCaseExpr>(node.location, std::move(e.expr),
-                                      std::move(match));
+                                      std::move(m.match));
 }
 
 void ExprElaborator::visitFnExpr(const FnExpr &node) {
-  auto match = elaborate_match(node.location, node.cases);
+  auto m = typer_.elaborate_match(node.location, C, node.cases, substitutions_,
+                                  maximum_type_name_id_);
+  new_substitutions = new_substitutions | m.new_substitutions;
 
-  if (match.result_type->id_of_youngest_typename() > maximum_type_name_id_ ||
-      match.match_type->id_of_youngest_typename() > maximum_type_name_id_) {
+  if (m.match.result_type->id_of_youngest_typename() > maximum_type_name_id_ ||
+      m.match.match_type->id_of_youngest_typename() > maximum_type_name_id_) {
     throw ElaborationError(
         "Illegal substitution in fn expression (type escape).", node.location);
   }
-  auto type =
-      make_managed<typing::FunctionType>(match.match_type, match.result_type);
-  typed = std::make_unique<TFnExpr>(node.location, type, std::move(match));
+  auto type = make_managed<typing::FunctionType>(m.match.match_type,
+                                                 m.match.result_type);
+  typed = std::make_unique<TFnExpr>(node.location, type, std::move(m.match));
 }
 
 void ExprElaborator::visitTypedExpr(const TypedExpr &node) {
@@ -1100,26 +1187,33 @@ void compile_match(match_t &match, std::vector<TCase> cases) {
   }
 }
 
-match_t ExprElaborator::elaborate_match(
-    const Location &location,
-    const std::vector<
-        std::pair<std::unique_ptr<Pattern>, std::unique_ptr<Expr>>> &cases) {
+}  // namespace
+
+Typer::elaborate_match_t Typer::elaborate_match(
+    const Location &location, managed_ptr<typing::Context> C,
+    std::vector<std::pair<std::unique_ptr<Pattern>,
+                          std::unique_ptr<Expr>>>::const_iterator begin,
+    std::vector<std::pair<std::unique_ptr<Pattern>,
+                          std::unique_ptr<Expr>>>::const_iterator end,
+    typing::Substitutions &substitutions, std::uint64_t maximum_type_name_id) {
+  elaborate_match_t result;
+
   typing::TypePtr match_type =
-      make_managed<typing::UndeterminedType>(typer_.new_stamp());
+      make_managed<typing::UndeterminedType>(new_stamp());
   typing::TypePtr result_type =
-      make_managed<typing::UndeterminedType>(typer_.new_stamp());
+      make_managed<typing::UndeterminedType>(new_stamp());
   std::vector<TCase> tcases;
-  tcases.reserve(cases.size());
-  for (const auto &c : cases) {
+  tcases.reserve(std::distance(begin, end));
+  for (; begin != end; ++begin) {
+    const auto &c = *begin;
     tcases.emplace_back();
-    auto tpat = typer_.elaborate_pattern(C, *c.first);
-    auto mu = typing::unify(match_type, tpat->type, substitutions_);
+    auto tpat = elaborate_pattern(C, *c.first);
+    auto mu = typing::unify(match_type, tpat->type, substitutions);
     match_type = mu.unified_type;
 
-    auto e =
-        typer_.elaborate(C, *c.second, substitutions_, maximum_type_name_id_);
-    auto ru = typing::unify(result_type, e.expr->type, substitutions_,
-                            maximum_type_name_id_, maximum_type_name_id_);
+    auto e = elaborate(C, *c.second, substitutions, maximum_type_name_id);
+    auto ru = typing::unify(result_type, e.expr->type, substitutions,
+                            maximum_type_name_id, maximum_type_name_id);
 
     auto new_subs = e.new_substitutions | ru.new_substitutions;
     if (!new_subs->empty()) {
@@ -1133,21 +1227,23 @@ match_t ExprElaborator::elaborate_match(
         tc.first = tc.first->apply_substitutions(mu.new_substitutions);
         tc.second = tc.second->apply_substitutions(mu.new_substitutions);
       }
-      new_substitutions = new_substitutions | new_subs;
+      result.new_substitutions = result.new_substitutions | new_subs;
     }
 
     tcases.emplace_back(std::move(tpat), std::move(e.expr));
   }
 
-  match_t result{.location = location,
-                 .match_type = match_type,
-                 .result_type = result_type};
-  compile_match(result, std::move(tcases));
-  if (result.nonexhaustive) {
-    typer_.issue_warning(location, "match nonexhaustive");
+  result.match = {.location = location,
+                  .match_type = match_type,
+                  .result_type = result_type};
+  compile_match(result.match, std::move(tcases));
+  if (result.match.nonexhaustive) {
+    issue_warning(location, "match nonexhaustive");
   }
   return result;
 }
+
+namespace {
 
 class TypeExprElaborator : public TypeExpr::Visitor {
  public:

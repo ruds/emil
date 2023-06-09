@@ -305,6 +305,7 @@ struct match_t {
   decision_tree_t decision_tree;
   bool nonexhaustive;
 
+  /** Applies substitutions to the result_type and outcomes. */
   match_t apply_substitutions(typing::Substitutions substitutions) const;
 };
 
@@ -560,6 +561,8 @@ class TFnExpr : public TExpr {
       typing::Substitutions substitutions) const override;
 };
 
+class TValDecl;
+
 /** A typed declaration. */
 class TDecl {
  public:
@@ -571,11 +574,25 @@ class TDecl {
   class Visitor {
    public:
     virtual ~Visitor();
+
+    virtual void visit(const TValDecl& node) = 0;
   };
 
   virtual void accept(Visitor& visitor) const = 0;
   virtual std::unique_ptr<TDecl> apply_substitutions(
       typing::Substitutions substitutions) const = 0;
+};
+
+class TValDecl : public TDecl {
+ public:
+  std::vector<match_t> bindings;
+
+  TValDecl(const Location& location, std::vector<match_t> bindings);
+
+  std::unique_ptr<TDecl> apply_substitutions(
+      typing::Substitutions substitutions) const override;
+
+  void accept(Visitor& visitor) const override { visitor.visit(*this); }
 };
 
 class TEmptyTopDecl;

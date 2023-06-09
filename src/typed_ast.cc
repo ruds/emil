@@ -457,6 +457,19 @@ std::unique_ptr<TExpr> TFnExpr::apply_substitutions(
 TDecl::~TDecl() = default;
 TDecl::Visitor::~Visitor() = default;
 
+TValDecl::TValDecl(const Location& location, std::vector<match_t> bindings)
+    : TDecl(location), bindings(std::move(bindings)) {}
+
+std::unique_ptr<TDecl> TValDecl::apply_substitutions(
+    typing::Substitutions substitutions) const {
+  std::vector<match_t> new_bindings;
+  new_bindings.reserve(bindings.size());
+  std::transform(
+      bindings.begin(), bindings.end(), back_inserter(new_bindings),
+      [&](const auto& m) { return m.apply_substitutions(substitutions); });
+  return std::make_unique<TValDecl>(location, std::move(new_bindings));
+}
+
 TTopDecl::~TTopDecl() = default;
 TTopDecl::Visitor::~Visitor() = default;
 
