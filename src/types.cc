@@ -701,12 +701,22 @@ managed_ptr<Env> operator+(const managed_ptr<Env>& l,
 }
 
 managed_ptr<Context> operator+(const managed_ptr<Context>& C,
-                               const managed_ptr<Env>& e) {
+                               const StringSet& U) {
+  assert(C);
+  assert(U);
+  auto hold = ctx().mgr->acquire_hold();
+  assert((C->explicit_type_variables() & U)->empty());
+  return make_managed<Context>(C->type_names(),
+                               C->explicit_type_variables() | U, C->env());
+}
+
+managed_ptr<Context> operator+(const managed_ptr<Context>& C,
+                               const managed_ptr<Env>& E) {
   assert(C);
   assert(E);
   auto hold = ctx().mgr->acquire_hold();
   return make_managed<Context>(C->type_names(), C->explicit_type_variables(),
-                               C->env() + e);
+                               C->env() + E);
 }
 
 managed_ptr<Basis> operator+(const managed_ptr<Basis>& B,
