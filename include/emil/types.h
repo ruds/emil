@@ -475,6 +475,8 @@ class TypeFunction : public TypeObj {
   }
 };
 
+class Context;
+
 /**
  * @brief A particular generalization of a type.
  *
@@ -497,6 +499,18 @@ class TypeScheme : public TypeObj {
    * types.
    */
   TypePtr instantiate(StampGenerator& stamper) const;
+
+  /**
+   * Generalize `type` with respect to `C`.
+   *
+   * Binds the free variables and undetermined types in `type` that
+   * are not free in `C`, after renaming them nicely.
+   *
+   * Throws UnificationError if any subtype of `type` is a record with
+   * a wildcard.
+   */
+  static managed_ptr<TypeScheme> generalize(managed_ptr<Context> C,
+                                            TypePtr type);
 
  private:
   const TypePtr t_;

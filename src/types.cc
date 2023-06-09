@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <compare>
 #include <initializer_list>
 #include <iterator>
 #include <map>
@@ -26,6 +27,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 
 #include "emil/collections.h"
 #include "emil/gc.h"
@@ -154,7 +156,11 @@ TypeObj::TypeObj(StringSet free_variables, StampSet undetermined_types,
                  StampSet type_names)
     : free_variables_(std::move(free_variables)),
       undetermined_types_(std::move(undetermined_types)),
-      type_names_(std::move(type_names)) {}
+      type_names_(std::move(type_names)) {
+  assert(free_variables_);
+  assert(undetermined_types_);
+  assert(type_names_);
+}
 
 TypeObj::~TypeObj() = default;
 
@@ -452,6 +458,151 @@ TypePtr TypeScheme::instantiate(StampGenerator& stamper) const {
   return s.type;
 }
 
+namespace {
+
+using FreeVarKey = std::variant<std::uint64_t, std::u8string_view>;
+
+bool operator==(const FreeVarKey& l, std::u8string_view r) {
+  return l.index() == 1 && std::get<1>(l) == r;
+}
+
+bool operator==(const FreeVarKey& l, std::uint64_t r) {
+  return l.index() == 0 && std::get<0>(l) == r;
+}
+
+class TypeGeneralizer : public TypeVisitor {
+ public:
+  TypePtr type;
+  std::map<FreeVarKey, managed_ptr<TypeVar>> bindings;
+
+  TypeGeneralizer(managed_ptr<Context> C, TypePtr orig)
+      : C(C),
+        vars_to_bind_(orig->free_variables() - C->free_variables()),
+        uts_to_bind_(orig->undetermined_types() - C->undetermined_types()),
+        orig_(orig) {}
+
+  void visit(const TypeWithAgeRestriction& t) override {
+    orig_ = t.type();
+    orig_->accept(*this);
+  }
+
+  void visit(const TypeVar& t) override {
+    const auto it = bindings.find(t.name());
+    if (it != bindings.cend() && it->first == t.name()) {
+      type = it->second;
+    } else if (vars_to_bind_->contains(t.name())) {
+      auto var = fresh_variable();
+      bindings.emplace_hint(it, t.name(), var);
+      type = var;
+    } else {
+      type = orig_;
+    }
+  }
+
+  void visit(const UndeterminedType& t) override {
+    auto stamp = t.stamp();
+    const auto it = bindings.find(stamp->id());
+    if (it != bindings.cend() && it->first == stamp->id()) {
+      type = it->second;
+    } else if (uts_to_bind_->contains(*stamp)) {
+      auto var = fresh_variable();
+      bindings.emplace_hint(it, stamp->id(), var);
+      type = var;
+    } else {
+      type = orig_;
+    }
+  }
+
+  void visit(const TupleType& t) override {
+    auto types = make_managed<collections::ManagedArray<Type>>(
+        t.types()->size(), [&](const std::size_t i) {
+          orig_ = (*t.types())[i];
+          orig_->accept(*this);
+          return type;
+        });
+    type = make_managed<TupleType>(types);
+  }
+
+  void visit(const RecordType& t) override {
+    if (t.has_wildcard()) {
+      throw UnificationError(fmt::format(
+          "Unresolved flex record: {}",
+          to_std_string(print_type(t, CanonicalizeUndeterminedTypes::YES))));
+    }
+    auto rows = collections::managed_map<ManagedString, Type>({});
+    for (const auto& row : *t.rows()) {
+      orig_ = row.second;
+      orig_->accept(*this);
+      rows = rows->insert(row.first, type).first;
+    }
+    type = make_managed<RecordType>(rows);
+  }
+
+  void visit(const FunctionType& t) override {
+    orig_ = t.param();
+    orig_->accept(*this);
+    auto param = type;
+    orig_ = t.result();
+    orig_->accept(*this);
+    type = make_managed<FunctionType>(param, type);
+  }
+
+  void visit(const ConstructedType& t) override {
+    auto types = make_managed<collections::ManagedArray<Type>>(
+        t.types()->size(), [&](const std::size_t i) {
+          orig_ = (*t.types())[i];
+          orig_->accept(*this);
+          return type;
+        });
+    type = make_managed<ConstructedType>(t.name(), types);
+  }
+
+ private:
+  managed_ptr<Context> C;
+  typing::StringSet vars_to_bind_;
+  typing::StampSet uts_to_bind_;
+  typing::TypePtr orig_;
+  std::size_t next_var_cand_ = 1;
+
+  managed_ptr<TypeVar> fresh_variable() {
+    std::u8string name;
+    do {
+      name = to_name(next_var_cand_++);
+    } while (C->free_variables()->contains(name));
+    return make_managed<TypeVar>(name);
+  }
+
+  std::u8string to_name(std::size_t n) {
+    std::u8string name;
+    while (n) {
+      name += u8'a' + ((n - 1) % 26);
+      n /= 26;
+    }
+    name += u8'\'';
+    std::reverse(name.begin(), name.end());
+    return name;
+  }
+};
+
+}  // namespace
+
+/** Generalize type across typevars and undetermined types not found in C. */
+managed_ptr<TypeScheme> TypeScheme::generalize(managed_ptr<Context> C,
+                                               TypePtr type) {
+  auto hold = ctx().mgr->acquire_hold();
+  TypeGeneralizer v{C, type};
+  type->accept(v);
+  std::vector<managed_ptr<TypeVar>> bound;
+  bound.reserve(v.bindings.size());
+  for (const auto& b : v.bindings) {
+    bound.push_back(b.second);
+  }
+  std::sort(bound.begin(), bound.end(),
+            [](const auto& l, const auto& r) { return l->name() < r->name(); });
+  return make_managed<TypeScheme>(v.type,
+                                  collections::to_array(std::move(bound)));
+}
+
 void TypeScheme::visit_additional_subobjects(const ManagedVisitor& visitor) {
   t_.accept(visitor);
   bound_.accept(visitor);
@@ -635,7 +786,12 @@ Context::Context(StampSet type_names, StringSet explicit_type_variables,
                  managed_ptr<Env> env)
     : TypeObj(explicit_type_variables | env->free_variables(),
               env->undetermined_types(), std::move(type_names)),
-      vars_(std::move(explicit_type_variables)) {}
+      vars_(std::move(explicit_type_variables)),
+      env_(env) {
+  assert(type_names);
+  assert(explicit_type_variables);
+  assert(env);
+}
 
 managed_ptr<Context> Context::empty() {
   return make_managed<Context>(stamp_set(), string_set(), Env::empty());

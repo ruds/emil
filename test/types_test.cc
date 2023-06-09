@@ -127,9 +127,9 @@ class TypesTestBase : public ::testing::Test {
   }
 };
 
-using InstantiateFunctionTest = TypesTestBase;
+using TypeFunctionTest = TypesTestBase;
 
-TEST_F(InstantiateFunctionTest, BasicOperation) {
+TEST_F(TypeFunctionTest, Instantiate) {
   // {k0: 'a,
   //  k1: ('b * 'c),
   //  k2: {bar: '~0, foo: 'a, ...} list -> ('b * '~1 * '~2)}
@@ -176,9 +176,9 @@ TEST_F(InstantiateFunctionTest, BasicOperation) {
       instance, managed_map<Stamp, Type>({{ut2->stamp(), contype}})));
 }
 
-using InstantiateSchemeTest = TypesTestBase;
+using TypeSchemeTest = TypesTestBase;
 
-TEST_F(InstantiateSchemeTest, BasicOperation) {
+TEST_F(TypeSchemeTest, Instantiate) {
   // {k0: 'a,
   //  k1: ('b * 'c),
   //  k2: {bar: '~0, foo: 'a, ...} list -> ('b * '~1 * '~2)}
@@ -218,6 +218,56 @@ TEST_F(InstantiateSchemeTest, BasicOperation) {
                UnificationError);
   EXPECT_NO_THROW(apply_substitutions(
       instance, managed_map<Stamp, Type>({{ut2->stamp(), contype}})));
+}
+
+TEST_F(TypeSchemeTest, Generalize) {
+  // {k0: '~0,
+  //  k1: ('~1 * 'b),
+  //  k2: {bar: 'd, foo: '~0} list -> ('~1 * 'c * '~2),
+  //  k3: 'c -> 'a}
+  //
+  // with ~1, 'c, and 'd free in the context generalizes to
+  //
+  // {k0: 'a,
+  //  k1: ('~0 * 'b),
+  //  k2: {bar: 'd, foo: 'a} list -> ('~0 * 'c * 'e),
+  //  k3: 'c -> 'f}
+  auto hold = tc.mgr.acquire_hold();
+
+  auto a = type_variable(u8"'a");
+  auto b = type_variable(u8"'b");
+  auto c = type_variable(u8"'c");
+  auto d = type_variable(u8"'d");
+  auto ut0 = undetermined_type();
+  auto ut1 = undetermined_type();
+  auto ut2 = undetermined_type();
+
+  auto type = record_type(
+      {{u8"k0", ut0},
+       {u8"k1", tuple_type({ut1, b})},
+       {u8"k2",
+        function_type(list_type(record_type({{u8"bar", d}, {u8"foo", ut0}})),
+                      tuple_type({ut1, c, ut2}))},
+       {u8"k3", function_type(c, a)}});
+  auto C = Context::empty();
+  C = C + collections::managed_set({make_string(u8"'c")});
+  C = C + (C->env() +
+           C->env()->val_env()->add_binding(
+               u8"foo",
+               make_managed<TypeScheme>(tuple_type({d, ut1}),
+                                        collections::make_array<TypeVar>({})),
+               IdStatus::Variable, false));
+  auto scheme = TypeScheme::generalize(C, type);
+
+  EXPECT_THAT(*scheme->bound(),
+              ::testing::ElementsAre(PrintsAs(u8"'a"), PrintsAs(u8"'b"),
+                                     PrintsAs(u8"'e"), PrintsAs(u8"'f")));
+  EXPECT_THAT(scheme->t(),
+              PrintsAs(u8"{k0: 'a, k1: ('~0 * 'b), k2: {bar: 'd, foo: 'a} "
+                       u8"list -> ('~0 * 'c * 'e), k3: 'c -> 'f}"));
+
+  EXPECT_THROW(TypeScheme::generalize(C, record_type({{u8"k0", a}}, true)),
+               UnificationError);
 }
 
 using PrintTypeTest = TypesTestBase;
