@@ -661,20 +661,32 @@ void Basis::visit_additional_subobjects(const ManagedVisitor& visitor) {
 
 managed_ptr<StrEnv> operator+(const managed_ptr<StrEnv>& l,
                               const managed_ptr<StrEnv>& r) {
+  assert(l);
+  assert(r);
+  auto hold = ctx().mgr->acquire_hold();
   return make_managed<StrEnv>(l->env() | r->env());
 }
 
 managed_ptr<TypeEnv> operator+(const managed_ptr<TypeEnv>& l,
                                const managed_ptr<TypeEnv>& r) {
+  assert(l);
+  assert(r);
+  auto hold = ctx().mgr->acquire_hold();
   return make_managed<TypeEnv>(l->env() | r->env());
 }
 managed_ptr<ValEnv> operator+(const managed_ptr<ValEnv>& l,
                               const managed_ptr<ValEnv>& r) {
+  assert(l);
+  assert(r);
+  auto hold = ctx().mgr->acquire_hold();
   return make_managed<ValEnv>(l->env() | r->env());
 }
 
 managed_ptr<Env> operator+(const managed_ptr<Env>& l,
                            const managed_ptr<Env>& r) {
+  assert(l);
+  assert(r);
+  auto hold = ctx().mgr->acquire_hold();
   return make_managed<Env>(l->str_env() + r->str_env(),
                            l->type_env() + r->type_env(),
                            l->val_env() + r->val_env());
@@ -682,17 +694,26 @@ managed_ptr<Env> operator+(const managed_ptr<Env>& l,
 
 managed_ptr<Env> operator+(const managed_ptr<Env>& l,
                            const managed_ptr<ValEnv>& r) {
+  assert(l);
+  assert(r);
+  auto hold = ctx().mgr->acquire_hold();
   return make_managed<Env>(l->str_env(), l->type_env(), l->val_env() + r);
 }
 
 managed_ptr<Context> operator+(const managed_ptr<Context>& C,
                                const managed_ptr<Env>& e) {
+  assert(C);
+  assert(E);
+  auto hold = ctx().mgr->acquire_hold();
   return make_managed<Context>(C->type_names(), C->explicit_type_variables(),
                                C->env() + e);
 }
 
 managed_ptr<Basis> operator+(const managed_ptr<Basis>& B,
                              const managed_ptr<Env>& E) {
+  assert(B);
+  assert(E);
+  auto hold = ctx().mgr->acquire_hold();
   return make_managed<Basis>(B->type_names() | E->type_names(), B->env() + E);
 }
 
