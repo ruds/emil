@@ -539,6 +539,8 @@ class TypeEnv : public TypeObj {
  public:
   explicit TypeEnv(StringMap<TypeStructure> env);
 
+  static managed_ptr<TypeEnv> empty();
+
   std::optional<managed_ptr<TypeStructure>> get(std::u8string_view key) const;
 
   const StringMap<TypeStructure>& env() const { return env_; }
@@ -596,6 +598,8 @@ class ValEnv : public TypeObj {
  public:
   explicit ValEnv(StringMap<ValueBinding> env);
 
+  static managed_ptr<ValEnv> empty();
+
   std::optional<managed_ptr<ValueBinding>> get(std::u8string_view key) const;
 
   /**
@@ -628,6 +632,8 @@ class Env : public TypeObj {
   Env(managed_ptr<StrEnv> str_env, managed_ptr<TypeEnv> type_env,
       managed_ptr<ValEnv> val_env);
 
+  static managed_ptr<Env> empty();
+
   std::optional<managed_ptr<ValueBinding>> lookup_val(
       const std::vector<std::u8string>& qualifiers,
       std::u8string_view id) const;
@@ -656,6 +662,8 @@ class StrEnv : public TypeObj {
  public:
   explicit StrEnv(StringMap<Env> env);
 
+  static managed_ptr<StrEnv> empty();
+
   std::optional<managed_ptr<Env>> get(std::u8string_view key) const;
 
   const StringMap<Env>& env() const { return env_; }
@@ -672,6 +680,8 @@ class Context : public TypeObj {
  public:
   Context(StampSet type_names, StringSet explicit_type_variables,
           managed_ptr<Env> env);
+
+  static managed_ptr<Context> empty();
 
   const StringSet& explicit_type_variables() const { return vars_; }
   const managed_ptr<Env>& env() const { return env_; }

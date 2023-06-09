@@ -475,6 +475,11 @@ TypeEnv::TypeEnv(StringMap<TypeStructure> env)
               merge_type_names(env)),
       env_(std::move(env)) {}
 
+managed_ptr<TypeEnv> TypeEnv::empty() {
+  return make_managed<TypeEnv>(
+      collections::managed_map<ManagedString, TypeStructure>({}));
+}
+
 std::optional<managed_ptr<TypeStructure>> TypeEnv::get(
     std::u8string_view key) const {
   return env_->get(key);
@@ -513,6 +518,11 @@ ValEnv::ValEnv(StringMap<ValueBinding> env)
     : TypeObj(merge_free_variables(env), merge_undetermined_types(env),
               merge_type_names(env)),
       env_(std::move(env)) {}
+
+managed_ptr<ValEnv> ValEnv::empty() {
+  return make_managed<ValEnv>(
+      collections::managed_map<ManagedString, ValueBinding>({}));
+}
 
 std::optional<managed_ptr<ValueBinding>> ValEnv::get(
     std::u8string_view key) const {
@@ -565,6 +575,10 @@ Env::Env(managed_ptr<StrEnv> str_env, managed_ptr<TypeEnv> type_env,
       type_env_(std::move(type_env)),
       val_env_(std::move(val_env)) {}
 
+managed_ptr<Env> Env::empty() {
+  return make_managed<Env>(StrEnv::empty(), TypeEnv::empty(), ValEnv::empty());
+}
+
 namespace {
 
 const Env* lookup_env(const Env* root,
@@ -605,6 +619,10 @@ StrEnv::StrEnv(StringMap<Env> env)
               merge_type_names(env)),
       env_(std::move(env)) {}
 
+managed_ptr<StrEnv> StrEnv::empty() {
+  return make_managed<StrEnv>(collections::managed_map<ManagedString, Env>({}));
+}
+
 std::optional<managed_ptr<Env>> StrEnv::get(std::u8string_view key) const {
   return env_->get(key);
 }
@@ -618,6 +636,10 @@ Context::Context(StampSet type_names, StringSet explicit_type_variables,
     : TypeObj(explicit_type_variables | env->free_variables(),
               env->undetermined_types(), std::move(type_names)),
       vars_(std::move(explicit_type_variables)) {}
+
+managed_ptr<Context> Context::empty() {
+  return make_managed<Context>(stamp_set(), string_set(), Env::empty());
+}
 
 void Context::visit_additional_subobjects(const ManagedVisitor& visitor) {
   vars_.accept(visitor);
