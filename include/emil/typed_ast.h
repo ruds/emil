@@ -623,14 +623,14 @@ class TTopDecl {
 
 class TEmptyTopDecl : public TTopDecl {
  public:
-  explicit TEmptyTopDecl(const Location& location);
+  using TTopDecl::TTopDecl;
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 };
 
 class TEndOfFileTopDecl : public TTopDecl {
  public:
-  explicit TEndOfFileTopDecl(const Location& location);
+  using TTopDecl::TTopDecl;
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 };

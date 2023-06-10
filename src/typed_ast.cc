@@ -113,6 +113,8 @@ const std::u8string& pattern_t::field() const {
   return field_;
 }
 
+void pattern_t::set_field(std::u8string field) { field_ = std::move(field); }
+
 namespace {
 
 const pattern_t WILDCARD_PATTERN = pattern_t::wildcard();
@@ -186,6 +188,21 @@ void pattern_t::expand(std::vector<const pattern_t*>& out,
   match_type.accept(v);
 }
 
+void pattern_t::apply_substitutions(typing::Substitutions substitutions) {
+  std::visit(overloaded{[substitutions](auto& r) {
+                          for (auto& p : r.subpatterns)
+                            p.apply_substitutions(substitutions);
+                        },
+                        [](wildcard_t&) {},
+                        [substitutions](constructed_t& c) {
+                          c.arg_type = typing::apply_substitutions(
+                              c.arg_type, substitutions);
+                          for (auto& p : c.subpatterns)
+                            p.apply_substitutions(substitutions);
+                        }},
+             repr_);
+}
+
 TPattern::TPattern(const Location& location, typing::TypePtr type,
                    pattern_t pat, managed_ptr<typing::ValEnv> bindings,
                    bind_rule_t bind_rule)
@@ -205,6 +222,10 @@ std::unique_ptr<TPattern> TPattern::apply_substitutions(
 }
 
 const std::u8string dt_switch_t::DEFAULT_KEY = u8"_";
+
+TExpr::TExpr(const Location& location, typing::TypePtr type,
+             bool is_nonexpansive)
+    : location(location), type(type), is_nonexpansive(is_nonexpansive) {}
 
 TExpr::~TExpr() = default;
 TExpr::Visitor::~Visitor() = default;
@@ -457,6 +478,8 @@ std::unique_ptr<TExpr> TFnExpr::apply_substitutions(
 TDecl::~TDecl() = default;
 TDecl::Visitor::~Visitor() = default;
 
+TDecl::TDecl(const Location& location) : location(location) {}
+
 TValDecl::TValDecl(const Location& location, std::vector<match_t> bindings)
     : TDecl(location), bindings(std::move(bindings)) {}
 
@@ -470,7 +493,17 @@ std::unique_ptr<TDecl> TValDecl::apply_substitutions(
   return std::make_unique<TValDecl>(location, std::move(new_bindings));
 }
 
+TTopDecl::TTopDecl(const Location& location) : location(location) {}
+
 TTopDecl::~TTopDecl() = default;
 TTopDecl::Visitor::~Visitor() = default;
+
+TExprTopDecl::TExprTopDecl(const Location& location,
+                           std::unique_ptr<TExpr> expr)
+    : TTopDecl(location), expr(std::move(expr)) {}
+
+TDeclTopDecl::TDeclTopDecl(const Location& location,
+                           std::unique_ptr<TDecl> decl)
+    : TTopDecl(location), decl(std::move(decl)) {}
 
 }  // namespace emil

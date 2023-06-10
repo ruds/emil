@@ -1024,6 +1024,26 @@ void ExprElaborator::visitTypedExpr(const TypedExpr &node) {
   typed = std::move(e.expr);
 }
 
+}  // namespace
+
+std::unique_ptr<TExpr> Typer::elaborate(managed_ptr<typing::Context> C,
+                                        const Expr &exp) {
+  typing::Substitutions s =
+      collections::managed_map<typing::Stamp, typing::Type>({});
+  auto e = elaborate(C, exp, s, typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
+  return std::move(e.expr);
+}
+
+Typer::elaborate_expr_with_substitutions_t Typer::elaborate(
+    managed_ptr<typing::Context> C, const Expr &exp,
+    typing::Substitutions &substitutions, std::uint64_t maximum_type_name_id) {
+  ExprElaborator v{*this, C, substitutions, maximum_type_name_id};
+  exp.accept(v);
+  return {std::move(v.typed), v.new_substitutions};
+}
+
+namespace {
+
 /** A single clause of a match. */
 struct clause {
   /** The not-yet-matched part of the pattern. */
