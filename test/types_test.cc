@@ -28,6 +28,13 @@
 #include "emil/string.h"
 #include "testing/test_util.h"
 
+namespace emil {
+template <typename T>
+const T* GetRawPointer(managed_ptr<T> ptr) {
+  return &*ptr;
+}
+}  // namespace emil
+
 namespace emil::typing::testing {
 
 using collections::make_array;
@@ -36,6 +43,7 @@ using emil::testing::TestContext;
 
 using ::testing::Eq;
 using ::testing::ExplainMatchResult;
+using ::testing::Pointee;
 using ::testing::PrintToString;
 
 MATCHER_P3(PrintsCorrectly, tc, no, yes,
@@ -158,7 +166,7 @@ TEST_F(TypeFunctionTest, Instantiate) {
            {u8"k2", function_type(list_type(record_type(
                                       {{u8"bar", ut0}, {u8"foo", a}}, true)),
                                   tuple_type({b, ut1, ut2}))}}),
-      make_array({a, b}));
+      make_array({a->name_ptr(), b->name_ptr()}));
   auto instance = func->instantiate(
       make_array({list_type(int_type), function_type(ut3, c)}));
 
@@ -204,7 +212,7 @@ TEST_F(TypeSchemeTest, Instantiate) {
            {u8"k2", function_type(list_type(record_type(
                                       {{u8"bar", ut0}, {u8"foo", a}}, true)),
                                   tuple_type({b, ut1, ut2}))}}),
-      make_array({a, b}));
+      make_array({a->name_ptr(), b->name_ptr()}));
   auto instance = scheme->instantiate(stamper);
 
   EXPECT_THAT(instance,
@@ -251,17 +259,17 @@ TEST_F(TypeSchemeTest, Generalize) {
        {u8"k3", function_type(c, a)}});
   auto C = Context::empty();
   C = C + collections::managed_set({make_string(u8"'c")});
-  C = C + (C->env() +
-           C->env()->val_env()->add_binding(
-               u8"foo",
-               make_managed<TypeScheme>(tuple_type({d, ut1}),
-                                        collections::make_array<TypeVar>({})),
-               IdStatus::Variable, false));
+  C = C + (C->env() + C->env()->val_env()->add_binding(
+                          u8"foo",
+                          make_managed<TypeScheme>(
+                              tuple_type({d, ut1}),
+                              collections::make_array<ManagedString>({})),
+                          IdStatus::Variable, false));
   auto scheme = TypeScheme::generalize(C, type);
 
   EXPECT_THAT(*scheme->bound(),
-              ::testing::ElementsAre(PrintsAs(u8"'a"), PrintsAs(u8"'b"),
-                                     PrintsAs(u8"'e"), PrintsAs(u8"'f")));
+              ::testing::ElementsAre(Pointee(Eq(u8"'a")), Pointee(Eq(u8"'b")),
+                                     Pointee(Eq(u8"'e")), Pointee(Eq(u8"'f"))));
   EXPECT_THAT(scheme->t(),
               PrintsAs(u8"{k0: 'a, k1: ('~0 * 'b), k2: {bar: 'd, foo: 'a} "
                        u8"list -> ('~0 * 'c * 'e), k3: 'c -> 'f}"));

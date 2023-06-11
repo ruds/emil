@@ -426,7 +426,7 @@ void PatternElaborator::visitIdentifierPattern(const IdentifierPattern &node) {
     bindings = bindings->add_binding(
         id,
         make_managed<typing::TypeScheme>(
-            type, collections::make_array<typing::TypeVar>({})),
+            type, collections::make_array<ManagedString>({})),
         typing::IdStatus::Variable, false);
     bind_rule.names.push_back(id);
   } else {
@@ -596,7 +596,7 @@ void PatternElaborator::visitLayeredPattern(const LayeredPattern &node) {
   bindings = bindings->add_binding(
       node.identifier,
       make_managed<typing::TypeScheme>(
-          type, collections::make_array<typing::TypeVar>({})),
+          type, collections::make_array<ManagedString>({})),
       typing::IdStatus::Variable, false);
 
   bind_rule.names.push_back(node.identifier);

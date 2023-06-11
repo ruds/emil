@@ -456,10 +456,10 @@ enum class IdStatus {
  */
 class TypeFunction : public TypeObj {
  public:
-  TypeFunction(TypePtr t, collections::ArrayPtr<TypeVar> bound);
+  TypeFunction(TypePtr t, collections::ArrayPtr<ManagedString> bound);
 
   TypePtr t() const { return t_; }
-  const collections::ArrayPtr<TypeVar>& bound() const { return bound_; }
+  const collections::ArrayPtr<ManagedString>& bound() const { return bound_; }
   std::size_t arity() const { return bound_->size(); }
 
   // Requires params.size() == arity().
@@ -467,7 +467,7 @@ class TypeFunction : public TypeObj {
 
  private:
   const TypePtr t_;
-  const collections::ArrayPtr<TypeVar> bound_;
+  const collections::ArrayPtr<ManagedString> bound_;
 
   void visit_additional_subobjects(const ManagedVisitor& visitor) override;
   std::size_t managed_size() const noexcept override {
@@ -487,10 +487,10 @@ class Context;
  */
 class TypeScheme : public TypeObj {
  public:
-  TypeScheme(TypePtr t, collections::ArrayPtr<TypeVar> bound);
+  TypeScheme(TypePtr t, collections::ArrayPtr<ManagedString> bound);
 
   TypePtr t() const { return t_; }
-  const collections::ArrayPtr<TypeVar>& bound() const { return bound_; }
+  const collections::ArrayPtr<ManagedString>& bound() const { return bound_; }
 
   /**
    * Instantiates this type scheme.
@@ -514,7 +514,7 @@ class TypeScheme : public TypeObj {
 
  private:
   const TypePtr t_;
-  const collections::ArrayPtr<TypeVar> bound_;
+  const collections::ArrayPtr<ManagedString> bound_;
 
   void visit_additional_subobjects(const ManagedVisitor& visitor) override;
   std::size_t managed_size() const noexcept override {

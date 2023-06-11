@@ -347,9 +347,10 @@ void BuiltinTypes::visit_additional_subobjects(const ManagedVisitor& visitor) {
   r_.accept(visitor);
 }
 
-TypeFunction::TypeFunction(TypePtr t, collections::ArrayPtr<TypeVar> bound)
-    : TypeObj(t->free_variables() - to_distinct_string_set(bound),
-              t->undetermined_types(), t->type_names()),
+TypeFunction::TypeFunction(TypePtr t,
+                           collections::ArrayPtr<ManagedString> bound)
+    : TypeObj(t->free_variables() - to_set(bound), t->undetermined_types(),
+              t->type_names()),
       t_(std::move(t)),
       bound_(std::move(bound)) {}
 
@@ -427,8 +428,7 @@ TypePtr TypeFunction::instantiate(collections::ArrayPtr<Type> params) const {
   // Assume that bound_ is in alpha order.
   auto hint = mapping.end();
   for (std::size_t i = 0; i < params->size(); ++i) {
-    hint =
-        mapping.emplace_hint(mapping.end(), (*bound_)[i]->name(), (*params)[i]);
+    hint = mapping.emplace_hint(mapping.end(), *(*bound_)[i], (*params)[i]);
   }
   TypeInstantiator v{std::move(mapping)};
   t_->accept(v);
@@ -440,9 +440,9 @@ void TypeFunction::visit_additional_subobjects(const ManagedVisitor& visitor) {
   bound_.accept(visitor);
 }
 
-TypeScheme::TypeScheme(TypePtr t, collections::ArrayPtr<TypeVar> bound)
-    : TypeObj(t->free_variables() - to_distinct_string_set(bound),
-              t->undetermined_types(), t->type_names()),
+TypeScheme::TypeScheme(TypePtr t, collections::ArrayPtr<ManagedString> bound)
+    : TypeObj(t->free_variables() - to_set(bound), t->undetermined_types(),
+              t->type_names()),
       t_(std::move(t)),
       bound_(std::move(bound)) {}
 
@@ -450,7 +450,7 @@ TypePtr TypeScheme::instantiate(StampGenerator& stamper) const {
   auto hold = ctx().mgr->acquire_hold();
   std::map<std::u8string_view, TypePtr> mapping;
   for (const auto& v : *bound_) {
-    mapping.emplace(v->name(), make_managed<UndeterminedType>(stamper));
+    mapping.emplace(*v, make_managed<UndeterminedType>(stamper));
   }
 
   TypeInstantiator s{std::move(mapping)};
@@ -592,13 +592,13 @@ managed_ptr<TypeScheme> TypeScheme::generalize(managed_ptr<Context> C,
   auto hold = ctx().mgr->acquire_hold();
   TypeGeneralizer v{C, type};
   type->accept(v);
-  std::vector<managed_ptr<TypeVar>> bound;
+  std::vector<managed_ptr<ManagedString>> bound;
   bound.reserve(v.bindings.size());
   for (const auto& b : v.bindings) {
-    bound.push_back(b.second);
+    bound.push_back(b.second->name_ptr());
   }
   std::sort(bound.begin(), bound.end(),
-            [](const auto& l, const auto& r) { return l->name() < r->name(); });
+            [](const auto& l, const auto& r) { return *l < *r; });
   return make_managed<TypeScheme>(v.type,
                                   collections::to_array(std::move(bound)));
 }
@@ -645,10 +645,10 @@ managed_ptr<TypeEnv> TypeEnv::add_binding(StringPtr id,
 
 managed_ptr<TypeEnv> TypeEnv::add_binding(StringPtr id, managed_ptr<Type> theta,
                                           managed_ptr<ValEnv> VE) const {
-  return add_binding(
-      id,
-      make_managed<TypeFunction>(theta, collections::make_array<TypeVar>({})),
-      VE);
+  return add_binding(id,
+                     make_managed<TypeFunction>(
+                         theta, collections::make_array<ManagedString>({})),
+                     VE);
 }
 
 void TypeEnv::visit_additional_subobjects(const ManagedVisitor& visitor) {
