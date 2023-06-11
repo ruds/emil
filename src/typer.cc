@@ -19,6 +19,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <initializer_list>
 #include <iterator>
 #include <map>
 #include <numeric>
@@ -104,6 +105,56 @@ std::string describe_basis_updates(const TTopDecl &topdecl) {
   TopDeclChangeDescriber v;
   topdecl.accept(v);
   return std::move(v.out);
+}
+
+namespace {
+
+void add_type(managed_ptr<typing::TypeEnv> &TE, managed_ptr<typing::ValEnv> &VE,
+              managed_ptr<typing::ConstructedType> t,
+              std::initializer_list<std::pair<std::u8string, typing::TypePtr>>
+                  constructors = {}) {
+  auto theta =
+      make_managed<typing::TypeFunction>(t, to_array(t->free_variables()));
+  auto type_VE = typing::ValEnv::empty();
+  for (const auto &con : constructors) {
+    auto &type = con.second;
+    type_VE = type_VE->add_binding(con.first,
+                                   make_managed<typing::TypeScheme>(
+                                       type, to_array(type->free_variables())),
+                                   typing::IdStatus::Constructor, false);
+  }
+  VE = VE + type_VE;
+  TE = TE->add_binding(t->name()->name_ptr(), theta, type_VE);
+}
+
+}  // namespace
+
+managed_ptr<typing::Basis> Typer::initial_basis() const {
+  auto TE = typing::TypeEnv::empty();
+  auto VE = typing::ValEnv::empty();
+
+  add_type(TE, VE, builtins_.bigint_type());
+  add_type(TE, VE, builtins_.int_type());
+  add_type(TE, VE, builtins_.byte_type());
+  add_type(TE, VE, builtins_.float_type());
+  add_type(TE, VE, builtins_.char_type());
+  add_type(TE, VE, builtins_.string_type());
+  add_type(
+      TE, VE, builtins_.bool_type(),
+      {{u8"true", builtins_.bool_type()}, {u8"false", builtins_.bool_type()}});
+  const auto a = make_managed<typing::TypeVar>(u8"'a");
+  add_type(TE, VE, builtins_.list_type(a),
+           {{u8"nil", builtins_.list_type(a)},
+            {u8"(::)",
+             make_managed<typing::FunctionType>(
+                 builtins_.tuple_type(collections::make_array<typing::Type>(
+                     {a, builtins_.list_type(a)})),
+                 builtins_.list_type(a))}});
+  add_type(TE, VE, builtins_.ref_type(a),
+           {{u8"ref",
+             make_managed<typing::FunctionType>(a, builtins_.ref_type(a))}});
+  return make_managed<typing::Basis>(
+      make_managed<typing::Env>(typing::StrEnv::empty(), TE, VE));
 }
 
 namespace {

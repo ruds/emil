@@ -57,6 +57,8 @@ class Typer {
  public:
   Typer();
 
+  managed_ptr<typing::Basis> initial_basis() const;
+
   struct elaborate_topdecl_t {
     managed_ptr<typing::Basis> B;
     std::unique_ptr<TTopDecl> topdecl;
