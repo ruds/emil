@@ -898,6 +898,14 @@ managed_ptr<Basis> operator+(const managed_ptr<Basis>& B,
   return make_managed<Basis>(B->env() + E);
 }
 
+managed_ptr<Basis> operator+(const managed_ptr<Basis>& B,
+                             const managed_ptr<ValEnv>& VE) {
+  assert(B);
+  assert(VE);
+  auto hold = ctx().mgr->acquire_hold();
+  return make_managed<Basis>(B->env() + VE);
+}
+
 namespace {
 
 class TypePrinter : public TypeVisitor {

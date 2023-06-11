@@ -748,6 +748,8 @@ managed_ptr<Context> operator+(const managed_ptr<Context>& C,
 
 managed_ptr<Basis> operator+(const managed_ptr<Basis>& B,
                              const managed_ptr<Env>& E);
+managed_ptr<Basis> operator+(const managed_ptr<Basis>& B,
+                             const managed_ptr<ValEnv>& VE);
 
 enum class CanonicalizeUndeterminedTypes {
   NO,
