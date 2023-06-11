@@ -1,0 +1,19 @@
+@0001:
+val it : bigint
+@0002:
+val it : int
+@0003:
+val it : float
+@0004:
+val it : float
+@0005:
+val it : float
+@0006:
+val it : char
+@0007:
+val it : string
+@0009:
+val it : string
+@0013:
+val it : string
+@0020:

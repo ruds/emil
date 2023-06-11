@@ -19,8 +19,9 @@ namespace emil {
 class MemoryManager;
 
 namespace testing {
+class DriverContextAccessor;
 class TestContextHolder;
-}
+}  // namespace testing
 
 /** Important context that must be available at runtime. */
 struct RuntimeContext {
@@ -33,6 +34,7 @@ const RuntimeContext& ctx();
 /** Manages the shared context -- limited access interface. */
 class ContextManager {
   friend class Runtime;
+  friend class testing::DriverContextAccessor;
   friend class testing::TestContextHolder;
   friend const RuntimeContext& ctx();
 
