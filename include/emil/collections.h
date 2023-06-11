@@ -447,6 +447,16 @@ SetPtr<T> managed_set() {
   return managed_set<T>(std::less<>());
 }
 
+template <ManagedType T>
+SetPtr<T> to_set(ArrayPtr<T> arr) {
+  auto hold = ctx().mgr->acquire_hold();
+  auto set = managed_set<T>({});
+  for (const auto& el : *arr) {
+    set = set->insert(el).first;
+  }
+  return set;
+}
+
 /**
  * A map whose keys and values are managed, with O(lg n) insertion and deletion
  * times.
