@@ -405,6 +405,14 @@ class ManagedSet : public ManagedWithSelfPtr<ManagedSet<T, Comp>> {
 template <ManagedType T, typename Comp = std::less<>>
 using SetPtr = managed_ptr<ManagedSet<T, Comp>>;
 
+template <ManagedType T>
+ArrayPtr<T> to_array(SetPtr<T> set) {
+  auto hold = ctx().mgr->acquire_hold();
+  auto it = set->begin();
+  return make_managed<ManagedArray<T>>(set->size(),
+                                       [&it](std::size_t) { return *it++; });
+}
+
 /**
  * Creates a `ManagedSet` with the given elements.
  *
