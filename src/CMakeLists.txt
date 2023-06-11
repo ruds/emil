@@ -62,13 +62,17 @@ add_custom_command(
   DEPENDS genast
 )
 
-add_library(parser STATIC
-  parser.cc ast_printer.cc "${CMAKE_CURRENT_BINARY_DIR}/ast.cc")
-add_emil_options(parser)
-target_link_libraries(parser PUBLIC lexer)
-target_include_directories(parser
+add_library(ast STATIC "${CMAKE_CURRENT_BINARY_DIR}/ast.cc" ast_printer.cc)
+add_emil_options(ast)
+target_link_libraries(ast PUBLIC fmt::fmt)
+target_include_directories(ast
   PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/include" ../include
   PRIVATE ./private-includes)
+
+add_library(parser STATIC parser.cc)
+add_emil_options(parser)
+target_link_libraries(parser PUBLIC ast lexer)
+target_include_directories(parser PUBLIC ../include)
 
 add_library(runtime STATIC gc.cc reporter.cc runtime.cc string.cc types.cc)
 add_emil_options(runtime)
@@ -76,7 +80,14 @@ target_include_directories(runtime
   PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/include" ../include)
 target_link_libraries(runtime PRIVATE util fmt::fmt utf8cpp)
 
+add_library(typed_ast STATIC typed_ast.cc)
+add_emil_options(typed_ast)
+target_link_libraries(typed_ast PUBLIC bigint runtime fmt::fmt)
+target_include_directories(typed_ast PUBLIC ../include)
+
 add_library(typer STATIC typer.cc typed_ast.cc)
 add_emil_options(typer)
 target_include_directories(typer PUBLIC ../include)
-target_link_libraries(typer PRIVATE parser runtime)
+target_link_libraries(typer
+  PUBLIC ast typed_ast runtime
+  PRIVATE parser)
