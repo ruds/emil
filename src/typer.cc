@@ -59,6 +59,55 @@ Typer::Typer()
 
 namespace {
 
+class DeclChangeDescriber : public TDecl::Visitor {
+ public:
+  explicit DeclChangeDescriber(std::string &out) : out_(out) {}
+
+  void visit(const TValDecl &decl) override {
+    auto it = back_inserter(out_);
+    for (const auto &m : decl.bindings) {
+      for (const auto &o : m.outcomes) {
+        for (const auto &b : *o.bindings->env()) {
+          fmt::format_to(it, "val {} : {}\n", to_std_string(*b.first),
+                         to_std_string(print_type(b.second->scheme()->t())));
+        }
+      }
+    }
+  }
+
+ private:
+  std::string &out_;
+};
+
+class TopDeclChangeDescriber : public TTopDecl::Visitor {
+ public:
+  std::string out;
+
+  void visit(const TEmptyTopDecl &) override {}
+
+  void visit(const TEndOfFileTopDecl &) override {}
+
+  void visit(const TExprTopDecl &d) override {
+    fmt::format_to(back_inserter(out), "val it : {}\n",
+                   to_std_string(typing::print_type(d.expr->type)));
+  }
+
+  void visit(const TDeclTopDecl &d) override {
+    DeclChangeDescriber v{out};
+    d.decl->accept(v);
+  }
+};
+
+}  // namespace
+
+std::string describe_basis_updates(const TTopDecl &topdecl) {
+  TopDeclChangeDescriber v;
+  topdecl.accept(v);
+  return std::move(v.out);
+}
+
+namespace {
+
 collections::ConsPtr<ManagedString> consify(
     const std::vector<std::u8string> &names) {
   collections::ConsPtr<ManagedString> l = nullptr;
