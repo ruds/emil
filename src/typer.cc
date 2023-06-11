@@ -37,6 +37,7 @@
 #include "emil/bigint.h"
 #include "emil/collections.h"
 #include "emil/gc.h"
+#include "emil/reporter.h"
 #include "emil/strconvert.h"
 #include "emil/string.h"
 #include "emil/token.h"
@@ -54,9 +55,10 @@ ElaborationError::ElaborationError(std::string msg, const Location &location)
       full_msg(fmt::format("{}:{}: error: {}", this->location.filename,
                            this->location.line, this->msg)) {}
 
-Typer::Typer()
+Typer::Typer(Reporter &reporter)
     : stamp_generator_(),
-      builtins_(typing::BuiltinTypes::create(stamp_generator_)) {}
+      builtins_(typing::BuiltinTypes::create(stamp_generator_)),
+      reporter_(reporter) {}
 
 namespace {
 
@@ -1441,5 +1443,9 @@ typing::TypePtr Typer::elaborate_type_expr(managed_ptr<typing::Context> C,
 managed_ptr<typing::Stamp> Typer::new_stamp() { return stamp_generator_(); }
 
 const typing::BuiltinTypes &Typer::builtins() const { return builtins_; }
+
+void Typer::issue_warning(const Location &location, std::string_view text) {
+  reporter_.report_warning(location, text);
+}
 
 }  // namespace emil

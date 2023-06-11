@@ -20,6 +20,7 @@
 #include <exception>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -30,6 +31,8 @@
 #include "emil/types.h"
 
 namespace emil {
+
+class Reporter;
 
 /** Error thrown due to error in static elaboration. */
 class ElaborationError : public std::exception {
@@ -55,7 +58,7 @@ std::string describe_basis_updates(const TTopDecl& topdecl);
  */
 class Typer {
  public:
-  Typer();
+  explicit Typer(Reporter& reporter);
 
   managed_ptr<typing::Basis> initial_basis() const;
 
@@ -142,11 +145,12 @@ class Typer {
   typing::StampGenerator& stamper() { return stamp_generator_; }
   const typing::BuiltinTypes& builtins() const;
 
-  void issue_warning(const Location& location, std::string text);
+  void issue_warning(const Location& location, std::string_view text);
 
  private:
   typing::StampGenerator stamp_generator_;
   typing::BuiltinTypes builtins_;
+  Reporter& reporter_;
 };
 
 }  // namespace emil
