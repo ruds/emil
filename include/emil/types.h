@@ -718,7 +718,7 @@ class Context : public TypeObj {
 /** The type basis of a program. */
 class Basis : public TypeObj {
  public:
-  Basis(StampSet type_names, managed_ptr<Env> env);
+  explicit Basis(managed_ptr<Env> env);
 
   const managed_ptr<Env>& env() const { return env_; }
 

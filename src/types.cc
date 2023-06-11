@@ -817,9 +817,9 @@ void Context::visit_additional_subobjects(const ManagedVisitor& visitor) {
   env_.accept(visitor);
 }
 
-Basis::Basis(StampSet type_names, managed_ptr<Env> env)
+Basis::Basis(managed_ptr<Env> env)
     : TypeObj(env->free_variables(), env->undetermined_types(),
-              std::move(type_names)),
+              env->type_names()),
       env_(std::move(env)) {}
 
 managed_ptr<Context> Basis::as_context() const {
@@ -895,7 +895,7 @@ managed_ptr<Basis> operator+(const managed_ptr<Basis>& B,
   assert(B);
   assert(E);
   auto hold = ctx().mgr->acquire_hold();
-  return make_managed<Basis>(B->type_names() | E->type_names(), B->env() + E);
+  return make_managed<Basis>(B->env() + E);
 }
 
 namespace {
