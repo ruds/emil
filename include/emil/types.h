@@ -559,6 +559,13 @@ class TypeEnv : public TypeObj {
 
   const StringMap<TypeStructure>& env() const { return env_; }
 
+  managed_ptr<TypeEnv> add_binding(StringPtr id,
+                                   managed_ptr<TypeFunction> theta,
+                                   managed_ptr<ValEnv> VE) const;
+
+  managed_ptr<TypeEnv> add_binding(StringPtr id, managed_ptr<Type> theta,
+                                   managed_ptr<ValEnv> VE) const;
+
  private:
   StringMap<TypeStructure> env_;
 

@@ -636,6 +636,21 @@ std::optional<managed_ptr<TypeStructure>> TypeEnv::get(
   return env_->get(key);
 }
 
+managed_ptr<TypeEnv> TypeEnv::add_binding(StringPtr id,
+                                          managed_ptr<TypeFunction> theta,
+                                          managed_ptr<ValEnv> VE) const {
+  return make_managed<TypeEnv>(
+      env_->insert(id, make_managed<TypeStructure>(theta, VE)).first);
+}
+
+managed_ptr<TypeEnv> TypeEnv::add_binding(StringPtr id, managed_ptr<Type> theta,
+                                          managed_ptr<ValEnv> VE) const {
+  return add_binding(
+      id,
+      make_managed<TypeFunction>(theta, collections::make_array<TypeVar>({})),
+      VE);
+}
+
 void TypeEnv::visit_additional_subobjects(const ManagedVisitor& visitor) {
   env_.accept(visitor);
 }
