@@ -278,8 +278,13 @@ void TopDeclElaborator::visitEndOfFileTopDecl(const EndOfFileTopDecl &node) {
 }
 
 void TopDeclElaborator::visitExprTopDecl(const ExprTopDecl &node) {
-  typed = std::make_unique<TExprTopDecl>(
-      node.location, typer_.elaborate(B->as_context(), *node.expr));
+  auto expr = typer_.elaborate(B->as_context(), *node.expr);
+  auto env = B->env();
+  B = B + typing::ValEnv::empty()->add_binding(
+              u8"it",
+              typing::TypeScheme::generalize(B->as_context(), expr->type),
+              typing::IdStatus::Variable, true);
+  typed = std::make_unique<TExprTopDecl>(node.location, std::move(expr));
 }
 
 void TopDeclElaborator::visitDeclTopDecl(const DeclTopDecl &node) {
