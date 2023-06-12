@@ -1,0 +1,63 @@
+@0001:
+val foo : string
+@0002:
+val bar : string
+val baz : bigint
+val foo : (string * bigint)
+@0003:
+val bar : float
+val foo : (float * bigint)
+@0004: WARNING
+@0004:
+val bar : float
+@0005: WARNING
+@0005: ERROR
+@0006:
+val a : string
+val bar : int
+val foo : bool
+@0007: ERROR
+@0008:
+val a : string
+val b : string
+@0009: ERROR
+@0010: WARNING
+@0010:
+val a : bigint
+val b : bigint
+val c : bigint
+@0011: WARNING
+@0011:
+val a : bigint
+val b : bigint
+val c : bigint
+@0012: WARNING
+@0012:
+val a : bigint
+val b : bigint
+val c : bigint
+@0013: WARNING
+@0013:
+val a : bigint
+val b : bigint list
+@0014: WARNING
+@0014:
+val a : bigint
+val b : bigint list
+@0015: WARNING
+@0015:
+val a : '~0
+val b : '~0 list
+@0016: WARNING
+@0016:
+val a : '~0
+@0017: WARNING
+@0017:
+val a : bigint
+@0018: WARNING
+@0018:
+val a : bigint
+@0019: ERROR
+@0020:
+val a : bigint
+@0021:

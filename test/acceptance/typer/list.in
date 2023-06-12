@@ -1,0 +1,7 @@
+[];
+[1, 2, 3, 4];
+[(1, "foo"), (2, "bar"), (3, "baz")];
+[1, "foo"];
+[] : int list;
+[1, 2, 3, 4] : bigint list;
+[1, 2, 3, 4] : string list;

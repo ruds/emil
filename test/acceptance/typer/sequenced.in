@@ -1,0 +1,3 @@
+(12; "foo");
+(12; "foo") : string;
+(12; "foo") : bigint;

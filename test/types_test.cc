@@ -912,14 +912,6 @@ TEST_F(ApplySubstitutionsTest, ChainWithYoungTypeName) {
                u8"list list, int) pair, int list) pair"));
 }
 
-TypePtr unify(TypePtr l, TypePtr r) {
-  Substitutions subs = collections::managed_map<Stamp, Type>({});
-  return unify(std::move(l), std::move(r), subs,
-               NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
-               NO_ADDITIONAL_TYPE_NAME_RESTRICTION)
-      .unified_type;
-}
-
 class UnifyTest : public TypesTestBase {
  protected:
   // "Early" undetermined types -- older than `pair`.
@@ -938,6 +930,15 @@ class UnifyTest : public TypesTestBase {
 
   TypePtr a = type_variable(u8"'a");
   TypePtr b = type_variable(u8"'b");
+
+  TypePtr unify(TypePtr l, TypePtr r) {
+    auto hold = ctx().mgr->acquire_hold();
+    Substitutions subs = collections::managed_map<Stamp, Type>({});
+    return tc.root.add_root(typing::unify(std::move(l), std::move(r), subs,
+                                          NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                          NO_ADDITIONAL_TYPE_NAME_RESTRICTION)
+                                .unified_type);
+  }
 
   TypePtr pair_type(TypePtr first, TypePtr second) {
     return constructed_type(pair_name, {first, second});
@@ -1002,6 +1003,19 @@ TEST_F(UnifyTest, Tuple) {
               PrintsAs(u8"(int list * '~0)"));
   EXPECT_THROW(unify(t_ute2_and_ute3, t_int_list_and_ute1_and_int),
                UnificationError);
+
+  EXPECT_THAT(
+      unify(tuple_type({ute1, ute2}), tuple_type({ute3, list_type(ute3)})),
+      PrintsAs(u8"('~0 * '~0 list)"));
+  EXPECT_THAT(
+      unify(tuple_type({ute3, list_type(ute3)}), tuple_type({ute1, ute2})),
+      PrintsAs(u8"('~0 * '~0 list)"));
+  EXPECT_THAT(
+      unify(tuple_type({ute2, ute3}), tuple_type({ute1, list_type(ute1)})),
+      PrintsAs(u8"('~0 * '~0 list)"));
+  EXPECT_THAT(
+      unify(tuple_type({ute1, list_type(ute1)}), tuple_type({ute2, ute3})),
+      PrintsAs(u8"('~0 * '~0 list)"));
 
   EXPECT_THROW(unify(t_empty, a), UnificationError);
   EXPECT_THROW(unify(t_empty, record_type({}, true)), UnificationError);

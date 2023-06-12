@@ -1031,7 +1031,7 @@ UnificationError::UnificationError(const std::string& msg, TypePtr l, TypePtr r)
 
 void UnificationError::add_context(TypePtr l, TypePtr r) {
   fmt::format_to(back_inserter(full_msg_),
-                 "\n----\nwhile trying to unify\n{}\nwith\n{}",
+                 "\nwhile trying to unify <{}> with <{}>",
                  to_std_string(print_type(l)), to_std_string(print_type(r)));
   context_.emplace_back(std::move(l), std::move(r));
 }
@@ -1207,14 +1207,16 @@ class UnifierBase : public TypeVisitor {
   void visit(const UndeterminedType& r) final {
     const auto it = substitutions_->find(*r.stamp());
     if (it == substitutions_->cend()) {
+      TypePtr subbed_l;
       try {
+        subbed_l = apply_substitutions(orig_l_, substitutions(), max_id_l());
         result.unified_type =
-            compute_single_substitution(r, orig_l_, max_id_r_);
+            compute_single_substitution(r, subbed_l, max_id_r_);
       } catch (UnificationError& e) {
         e.add_context(orig_l_, orig_r_);
         throw;
       }
-      add_substitution(substitutions_, result.new_substitutions, r, orig_l_);
+      add_substitution(substitutions_, result.new_substitutions, r, subbed_l);
       return;
     }
     try {
@@ -1252,16 +1254,19 @@ class UnifierBase : public TypeVisitor {
 
  protected:
   UnifierBase(std::string_view type_name, TypePtr orig_l, TypePtr orig_r,
-              Substitutions& substitutions, std::uint64_t max_id_r)
+              Substitutions& substitutions, std::uint64_t max_id_l,
+              std::uint64_t max_id_r)
       : type_name_(type_name),
         orig_l_(std::move(orig_l)),
         orig_r_(std::move(orig_r)),
         substitutions_(substitutions),
+        max_id_l_(max_id_l),
         max_id_r_(max_id_r) {}
 
   const TypePtr& orig_l() const { return orig_l_; }
   const TypePtr& orig_r() const { return orig_r_; }
   Substitutions& substitutions() { return substitutions_; }
+  std::uint64_t max_id_l() const { return max_id_l_; }
   std::uint64_t max_id_r() const { return max_id_r_; }
 
  private:
@@ -1269,6 +1274,7 @@ class UnifierBase : public TypeVisitor {
   TypePtr orig_l_;
   TypePtr orig_r_;
   Substitutions& substitutions_;
+  std::uint64_t max_id_l_;
   std::uint64_t max_id_r_;
 };
 
@@ -1278,7 +1284,8 @@ class TypeVarUnifier : public UnifierBase {
   TypeVarUnifier(const TypeVar& l, TypePtr orig_l, TypePtr orig_r,
                  Substitutions& substitutions, std::uint64_t max_id_r)
       : UnifierBase("type variable", std::move(orig_l), std::move(orig_r),
-                    substitutions, max_id_r),
+                    substitutions, NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                    max_id_r),
         l_(l) {}
 
   void visit(const TypeVar& r) override {
@@ -1359,13 +1366,15 @@ class UndeterminedUnifier : public TypeVisitor {
   std::uint64_t max_id_r_;
 
   void unify_by_substitution() {
+    TypePtr r;
     try {
-      result.unified_type = compute_single_substitution(l_, orig_r_, max_id_l_);
+      r = apply_substitutions(orig_r_, substitutions_, max_id_r_);
+      result.unified_type = compute_single_substitution(l_, r, max_id_l_);
     } catch (UnificationError& e) {
       e.add_context(orig_l_, orig_r_);
       throw;
     }
-    add_substitution(substitutions_, result.new_substitutions, l_, orig_r_);
+    add_substitution(substitutions_, result.new_substitutions, l_, r);
   }
 };
 
@@ -1376,9 +1385,8 @@ class TupleUnifier : public UnifierBase {
                Substitutions& substitutions, std::uint64_t max_id_l,
                std::uint64_t max_id_r)
       : UnifierBase("tuple type", std::move(orig_l), std::move(orig_r),
-                    substitutions, max_id_r),
-        l_(l),
-        max_id_l_(max_id_l) {}
+                    substitutions, max_id_l, max_id_r),
+        l_(l) {}
 
   void visit(const TupleType& r) override {
     if (l_.types()->size() != r.types()->size()) {
@@ -1386,7 +1394,7 @@ class TupleUnifier : public UnifierBase {
                              orig_l(), orig_r());
     }
     auto subtypes = unify_subtypes(l_.types(), r.types(), substitutions(),
-                                   max_id_l_, max_id_r());
+                                   max_id_l(), max_id_r());
     result.unified_type = make_managed<TupleType>(subtypes.unified_subtypes);
     result.new_substitutions =
         result.new_substitutions | subtypes.new_substitutions;
@@ -1394,7 +1402,6 @@ class TupleUnifier : public UnifierBase {
 
  private:
   const TupleType& l_;
-  const std::uint64_t max_id_l_;
 };
 
 /** Performs unification when l is a record type. */
@@ -1404,9 +1411,8 @@ class RecordUnifier : public UnifierBase {
                 Substitutions& substitutions, std::uint64_t max_id_l,
                 std::uint64_t max_id_r)
       : UnifierBase("record type", std::move(orig_l), std::move(orig_r),
-                    substitutions, max_id_r),
-        l_(l),
-        max_id_l_(max_id_l) {}
+                    substitutions, max_id_l, max_id_r),
+        l_(l) {}
 
   // To merge two record types:
   //
@@ -1436,14 +1442,14 @@ class RecordUnifier : public UnifierBase {
                              orig_l(), orig_r());
     }
     auto rows = collections::managed_map<ManagedString, Type>({});
-    const auto max_id_u = std::min(max_id_l_, max_id_r());
+    const auto max_id_u = std::min(max_id_l(), max_id_r());
     // Order is important: `both` has the values from `r`.
     const auto both = l_.rows() & r.rows();
     std::vector<StringPtr> keys;
     keys.reserve(both->size());
     for (const auto& entry : *both) {
       auto u = unify(*l_.rows()->get(*entry.first), entry.second,
-                     substitutions(), max_id_l_, max_id_r());
+                     substitutions(), max_id_l(), max_id_r());
       rows = rows->insert(entry.first, u.unified_type).first;
       result.new_substitutions = result.new_substitutions | u.new_substitutions;
       for (const auto& k : keys) {
@@ -1460,7 +1466,6 @@ class RecordUnifier : public UnifierBase {
 
  private:
   const RecordType& l_;
-  const std::uint64_t max_id_l_;
 };
 
 /** Performs unification when l is a function type. */
@@ -1470,16 +1475,15 @@ class FunctionUnifier : public UnifierBase {
                   Substitutions& substitutions, std::uint64_t max_id_l,
                   std::uint64_t max_id_r)
       : UnifierBase("function type", std::move(orig_l), std::move(orig_r),
-                    substitutions, max_id_r),
-        l_(l),
-        max_id_l_(max_id_l) {}
+                    substitutions, max_id_l, max_id_r),
+        l_(l) {}
 
   void visit(const FunctionType& r) override {
-    const auto max_id_u = std::min(max_id_l_, max_id_r());
+    const auto max_id_u = std::min(max_id_l(), max_id_r());
     auto param_u =
-        unify(l_.param(), r.param(), substitutions(), max_id_l_, max_id_r());
+        unify(l_.param(), r.param(), substitutions(), max_id_l(), max_id_r());
     auto result_u =
-        unify(l_.result(), r.result(), substitutions(), max_id_l_, max_id_r());
+        unify(l_.result(), r.result(), substitutions(), max_id_l(), max_id_r());
     result.unified_type = make_managed<FunctionType>(
         apply_substitutions(param_u.unified_type, result_u.new_substitutions,
                             max_id_u),
@@ -1491,7 +1495,6 @@ class FunctionUnifier : public UnifierBase {
 
  private:
   const FunctionType& l_;
-  const std::uint64_t max_id_l_;
 };
 
 /** Performs unification when l is a constructed type. */
@@ -1501,9 +1504,8 @@ class ConstructedUnifier : public UnifierBase {
                      Substitutions& substitutions, std::uint64_t max_id_l,
                      std::uint64_t max_id_r)
       : UnifierBase("constructed type", std::move(orig_l), std::move(orig_r),
-                    substitutions, max_id_r),
-        l_(l),
-        max_id_l_(max_id_l) {}
+                    substitutions, max_id_l, max_id_r),
+        l_(l) {}
 
   void visit(const ConstructedType& r) override {
     if (l_.name()->stamp() != r.name()->stamp()) {
@@ -1513,7 +1515,7 @@ class ConstructedUnifier : public UnifierBase {
     assert(l_.types()->size() == l_.name()->arity());
     assert(l_.types()->size() == r.types()->size());
     auto subtypes = unify_subtypes(l_.types(), r.types(), substitutions(),
-                                   max_id_l_, max_id_r());
+                                   max_id_l(), max_id_r());
     result.unified_type =
         make_managed<ConstructedType>(l_.name(), subtypes.unified_subtypes);
     result.new_substitutions =
@@ -1522,7 +1524,6 @@ class ConstructedUnifier : public UnifierBase {
 
  private:
   const ConstructedType& l_;
-  const std::uint64_t max_id_l_;
 };
 
 /**

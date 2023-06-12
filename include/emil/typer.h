@@ -123,19 +123,13 @@ class Typer {
       const Location& location, managed_ptr<typing::Context> C,
       const std::vector<
           std::pair<std::unique_ptr<Pattern>, std::unique_ptr<Expr>>>& cases,
-      typing::Substitutions& substitutions,
-      std::uint64_t maximum_type_name_id) {
-    return elaborate_match(location, C, cases.cbegin(), cases.cend(),
-                           substitutions, maximum_type_name_id);
-  }
-
-  elaborate_match_t elaborate_match(
-      const Location& location, managed_ptr<typing::Context> C,
-      std::vector<std::pair<std::unique_ptr<Pattern>,
-                            std::unique_ptr<Expr>>>::const_iterator begin,
-      std::vector<std::pair<std::unique_ptr<Pattern>,
-                            std::unique_ptr<Expr>>>::const_iterator end,
       typing::Substitutions& substitutions, std::uint64_t maximum_type_name_id);
+
+  elaborate_match_t elaborate_match(const Location& location,
+                                    managed_ptr<typing::Context> C,
+                                    const Pattern& pat,
+                                    typing::Substitutions& substitutions,
+                                    std::uint64_t maximum_type_name_id);
 
   managed_ptr<typing::Type> elaborate_type_expr(managed_ptr<typing::Context> C,
                                                 const TypeExpr& ty);

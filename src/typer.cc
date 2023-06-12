@@ -22,6 +22,7 @@
 #include <initializer_list>
 #include <iterator>
 #include <map>
+#include <memory>
 #include <numeric>
 #include <optional>
 #include <ranges>
@@ -76,10 +77,12 @@ class DeclChangeDescriber : public TDecl::Visitor {
   void visit(const TValDecl &decl) override {
     auto it = back_inserter(out_);
     for (const auto &m : decl.bindings) {
-      for (const auto &o : m.outcomes) {
+      for (const auto &o : m.first.outcomes) {
         for (const auto &b : *o.bindings->env()) {
           fmt::format_to(it, "val {} : {}\n", to_std_string(*b.first),
-                         to_std_string(print_type(b.second->scheme()->t())));
+                         to_std_string(print_type(
+                             b.second->scheme()->t(),
+                             typing::CanonicalizeUndeterminedTypes::YES)));
         }
       }
     }
@@ -98,8 +101,10 @@ class TopDeclChangeDescriber : public TTopDecl::Visitor {
   void visit(const TEndOfFileTopDecl &) override {}
 
   void visit(const TExprTopDecl &d) override {
-    fmt::format_to(back_inserter(out), "val it : {}\n",
-                   to_std_string(typing::print_type(d.expr->type)));
+    fmt::format_to(
+        back_inserter(out), "val it : {}\n",
+        to_std_string(typing::print_type(
+            d.sigma->t(), typing::CanonicalizeUndeterminedTypes::YES)));
   }
 
   void visit(const TDeclTopDecl &d) override {
@@ -287,11 +292,10 @@ void TopDeclElaborator::visitEndOfFileTopDecl(const EndOfFileTopDecl &node) {
 void TopDeclElaborator::visitExprTopDecl(const ExprTopDecl &node) {
   auto expr = typer_.elaborate(B->as_context(), *node.expr);
   auto env = B->env();
+  auto sigma = typing::TypeScheme::generalize(B->as_context(), expr->type);
   B = B + typing::ValEnv::empty()->add_binding(
-              u8"it",
-              typing::TypeScheme::generalize(B->as_context(), expr->type),
-              typing::IdStatus::Variable, true);
-  typed = std::make_unique<TExprTopDecl>(node.location, std::move(expr));
+              u8"it", sigma, typing::IdStatus::Variable, true);
+  typed = std::make_unique<TExprTopDecl>(node.location, std::move(expr), sigma);
 }
 
 void TopDeclElaborator::visitDeclTopDecl(const DeclTopDecl &node) {
@@ -313,9 +317,10 @@ namespace {
 
 class DeclElaborator : public Decl::Visitor {
  public:
-  managed_ptr<typing::Env> env;
+  managed_ptr<typing::Env> env = typing::Env::empty();
   std::unique_ptr<TDecl> decl;
-  typing::Substitutions new_substitutions;
+  typing::Substitutions new_substitutions =
+      collections::managed_map<typing::Stamp, typing::Type>({});
 
   DeclElaborator(Typer &typer, managed_ptr<typing::Context> C,
                  typing::Substitutions &substitutions)
@@ -339,39 +344,61 @@ class DeclElaborator : public Decl::Visitor {
  * found in the type but not the enclosing context. If it is
  * expansive, then the type of the bound variable is monomorphic.
  */
-managed_ptr<typing::ValEnv> close_for_valbind(
-    managed_ptr<typing::Context> C, const std::vector<match_t> &matches) {
+managed_ptr<typing::ValEnv> close_for_valbind(managed_ptr<typing::Context> C,
+                                              const match_t &match) {
   auto closed =
       collections::managed_map<ManagedString, typing::ValueBinding>({});
-  for (const auto &match : matches) {
-    for (const auto &outcome : match.outcomes) {
-      for (const auto &binding : *outcome.bindings->env()) {
-        managed_ptr<typing::TypeScheme> scheme = binding.second->scheme();
-        assert(scheme->bound()->empty());
-        if (outcome.result->is_nonexpansive) {
-          scheme = typing::TypeScheme::generalize(C, scheme->t());
-        }
+  for (const auto &outcome : match.outcomes) {
+    for (const auto &binding : *outcome.bindings->env()) {
+      managed_ptr<typing::TypeScheme> scheme = binding.second->scheme();
+      assert(scheme->bound()->empty());
+      if (outcome.result->is_nonexpansive) {
+        scheme = typing::TypeScheme::generalize(C, scheme->t());
       }
+      closed =
+          closed
+              ->insert(binding.first, make_managed<typing::ValueBinding>(
+                                          scheme, typing::IdStatus::Variable))
+              .first;
     }
   }
   return make_managed<typing::ValEnv>(closed);
 }
 
 void DeclElaborator::visitValDecl(const ValDecl &node) {
-  std::vector<match_t> bindings;
+  std::vector<std::pair<match_t, std::unique_ptr<TExpr>>> bindings;
   bindings.reserve(node.bindings.size());
   for (auto it = node.bindings.begin(); it != node.bindings.end(); ++it) {
-    auto m = typer_.elaborate_match(it->first->location, C, it, std::next(it),
+    auto m = typer_.elaborate_match(it->first->location, C, *it->first,
                                     substitutions_, typer_.new_stamp()->id());
-    if (!m.new_substitutions->empty()) {
-      for (auto &b : bindings) {
-        b = b.apply_substitutions(m.new_substitutions);
-      }
-      new_substitutions = new_substitutions | m.new_substitutions;
+    auto new_subs = m.new_substitutions;
+    auto e = typer_.elaborate(C, *it->second, substitutions_,
+                              typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
+    if (!e.new_substitutions->empty()) {
+      m.match = m.match.apply_substitutions(e.new_substitutions);
+      new_subs = new_subs | e.new_substitutions;
     }
-    assert(m.match.outcomes.size() == 1);
+    typing::unification_t u;
+    try {
+      u = typing::unify(m.match.match_type, e.expr->type, substitutions_);
+    } catch (typing::UnificationError &e) {
+      throw ElaborationError(e, it->first->location);
+    }
+    if (!u.new_substitutions->empty()) {
+      m.match = m.match.apply_substitutions(u.new_substitutions);
+      e.expr = e.expr->apply_substitutions(u.new_substitutions);
+      new_subs = new_subs | u.new_substitutions;
+    }
+    if (!new_subs->empty()) {
+      for (auto &b : bindings) {
+        b.first = b.first.apply_substitutions(m.new_substitutions);
+        b.second = b.second->apply_substitutions(m.new_substitutions);
+      }
+      new_substitutions = new_substitutions | new_subs;
+    }
+    env = env + close_for_valbind(C, m.match);
+    bindings.emplace_back(std::move(m.match), std::move(e.expr));
   }
-  env = env + close_for_valbind(C, bindings);
   decl = std::make_unique<TValDecl>(node.location, std::move(bindings));
 }
 
@@ -595,19 +622,24 @@ void PatternElaborator::visitListPattern(const ListPattern &node) {
 
   for (const auto &pat : node.patterns | std::views::reverse) {
     pat->accept(*this);
-    auto u = typing::unify(el_type, type, subs);
+    typing::unification_t u;
+    try {
+      u = typing::unify(el_type, type, subs);
+    } catch (typing::UnificationError &e) {
+      throw ElaborationError(e, node.location);
+    }
     el_type = u.unified_type;
     std::vector<pattern_t> subpatterns;
     subpatterns.push_back(std::move(pattern));
     subpatterns.push_back(std::move(cons_pattern));
     std::vector<pattern_t> s;
     s.push_back(pattern_t::tuple(std::move(subpatterns)));
-    cons_pattern =
-        pattern_t::constructed(std::u8string(typing::BuiltinTypes::CONS),
-                               typer_.builtins().list_name(),
-                               typer_.builtins().tuple_type(
-                                   collections::make_array({el_type, el_type})),
-                               std::move(s));
+    cons_pattern = pattern_t::constructed(
+        std::u8string(typing::BuiltinTypes::CONS),
+        typer_.builtins().list_name(),
+        typer_.builtins().tuple_type(collections::make_array<typing::Type>(
+            {el_type, typer_.builtins().list_type(el_type)})),
+        std::move(s));
     if (!cons_bind_rule.empty() || !bind_rule.empty()) {
       std::vector<bind_rule_t::tuple_access_t> subtype_bindings;
       if (!bind_rule.empty()) {
@@ -675,10 +707,16 @@ void PatternElaborator::visitDatatypePattern(const DatatypePattern &node) {
 
   typing::Substitutions subs =
       collections::managed_map<typing::Stamp, typing::Type>({});
-  auto u = typing::unify(gf.fn->param(), type, subs);
+  typing::unification_t u;
+  try {
+    u = typing::unify(gf.fn->param(), type, subs);
+  } catch (typing::UnificationError &e) {
+    throw ElaborationError(e, node.location);
+  }
   type = gf.fn->result();
   if (!u.new_substitutions->empty()) {
     type = typing::apply_substitutions(type, u.new_substitutions);
+    bindings = bindings->apply_substitutions(u.new_substitutions);
   }
   auto name = get_type_name(type);
   if (!name) {
@@ -922,8 +960,14 @@ void ExprElaborator::visitListExpr(const ListExpr &node) {
       make_managed<typing::UndeterminedType>(typer_.new_stamp());
   for (const auto &ne : node.exprs) {
     auto e = typer_.elaborate(C, *ne, substitutions_, maximum_type_name_id_);
-    auto u = typing::unify(type, e.expr->type, substitutions_,
-                           maximum_type_name_id_, maximum_type_name_id_);
+    typing::unification_t u;
+    try {
+      u = typing::unify(type, e.expr->type, substitutions_,
+                        maximum_type_name_id_, maximum_type_name_id_);
+    } catch (typing::UnificationError &e) {
+      throw ElaborationError(e, node.location);
+    }
+    type = u.unified_type;
     if (!u.new_substitutions->empty()) {
       e.expr = e.expr->apply_substitutions(u.new_substitutions);
     }
@@ -936,7 +980,8 @@ void ExprElaborator::visitListExpr(const ListExpr &node) {
     }
     exprs.push_back(std::move(e.expr));
   }
-  typed = std::make_unique<TListExpr>(node.location, type, std::move(exprs));
+  typed = std::make_unique<TListExpr>(
+      node.location, typer_.builtins().list_type(type), std::move(exprs));
 }
 
 void ExprElaborator::visitLetExpr(const LetExpr &node) {
@@ -1027,10 +1072,9 @@ bool is_nonexpansive_application(
     case typing::IdStatus::Constructor: {
       auto gf = get_function(id->type, typer);
       assert(gf.new_substitutions->empty());
-      auto name = get_type_name(gf.fn->result())->stamp() !=
-                  typer.builtins().ref_name()->stamp();
+      auto name = get_type_name(gf.fn->result());
       assert(name);
-      return name;
+      return name->stamp() != typer.builtins().ref_name()->stamp();
     }
   }
 }
@@ -1039,12 +1083,18 @@ void ExprElaborator::visitApplicationExpr(const ApplicationExpr &node) {
   assert(node.exprs.size() >= 2);
   std::vector<std::unique_ptr<TExpr>> exprs;
   exprs.reserve(node.exprs.size());
+  typing::TypePtr type;
   for (const auto &ne : node.exprs) {
     auto e = typer_.elaborate(C, *ne, substitutions_,
                               typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
     auto new_subs = e.new_substitutions;
-    if (!exprs.empty()) {
-      auto gf = get_function(exprs.back()->type, typer_);
+    if (exprs.empty()) {
+      type = e.expr->type;
+    } else {
+      if (!new_subs->empty()) {
+        type = typing::apply_substitutions(type, new_subs);
+      }
+      auto gf = get_function(type, typer_);
       if (!gf.fn) {
         throw ElaborationError(
             fmt::format("Expression must be a function but instead is {}.",
@@ -1056,8 +1106,15 @@ void ExprElaborator::visitApplicationExpr(const ApplicationExpr &node) {
         e.expr = e.expr->apply_substitutions(gf.new_substitutions);
         new_subs = new_subs | gf.new_substitutions;
       }
-      auto u = typing::unify(gf.fn->result(), e.expr->type, substitutions_);
+      type = gf.fn->result();
+      typing::unification_t u;
+      try {
+        u = typing::unify(gf.fn->param(), e.expr->type, substitutions_);
+      } catch (typing::UnificationError &err) {
+        throw ElaborationError(err, node.location);
+      }
       if (!u.new_substitutions->empty()) {
+        type = typing::apply_substitutions(type, u.new_substitutions);
         e.expr = e.expr->apply_substitutions(u.new_substitutions);
         new_subs = new_subs | u.new_substitutions;
       }
@@ -1071,7 +1128,6 @@ void ExprElaborator::visitApplicationExpr(const ApplicationExpr &node) {
     exprs.push_back(std::move(e.expr));
   }
 
-  auto type = exprs.back()->type;
   if (type->id_of_youngest_typename() > maximum_type_name_id_) {
     throw ElaborationError(
         "Illegal substitution in function application expression (type "
@@ -1094,7 +1150,12 @@ void ExprElaborator::visitCaseExpr(const CaseExpr &node) {
     m.match = m.match.apply_substitutions(e.new_substitutions);
     new_substitutions = new_substitutions | e.new_substitutions;
   }
-  auto u = typing::unify(m.match.result_type, e.expr->type, substitutions_);
+  typing::unification_t u;
+  try {
+    u = typing::unify(m.match.result_type, e.expr->type, substitutions_);
+  } catch (typing::UnificationError &e) {
+    throw ElaborationError(e, node.location);
+  }
   if (!u.new_substitutions->empty()) {
     m.match = m.match.apply_substitutions(u.new_substitutions);
     e.expr = e.expr->apply_substitutions(u.new_substitutions);
@@ -1326,41 +1387,54 @@ void compile_match(match_t &match, std::vector<TCase> cases) {
   }
 }
 
-}  // namespace
-
-Typer::elaborate_match_t Typer::elaborate_match(
-    const Location &location, managed_ptr<typing::Context> C,
-    std::vector<std::pair<std::unique_ptr<Pattern>,
-                          std::unique_ptr<Expr>>>::const_iterator begin,
-    std::vector<std::pair<std::unique_ptr<Pattern>,
-                          std::unique_ptr<Expr>>>::const_iterator end,
-    typing::Substitutions &substitutions, std::uint64_t maximum_type_name_id) {
-  elaborate_match_t result;
+template <typename It>
+Typer::elaborate_match_t elaborate_match_impl(
+    Typer &typer, const Location &location, managed_ptr<typing::Context> C,
+    It begin, It end, typing::Substitutions &substitutions,
+    std::uint64_t maximum_type_name_id) {
+  Typer::elaborate_match_t result;
 
   typing::TypePtr match_type =
-      make_managed<typing::UndeterminedType>(new_stamp());
+      make_managed<typing::UndeterminedType>(typer.new_stamp());
   typing::TypePtr result_type =
-      make_managed<typing::UndeterminedType>(new_stamp());
+      make_managed<typing::UndeterminedType>(typer.new_stamp());
   std::vector<TCase> tcases;
   tcases.reserve(std::distance(begin, end));
   for (; begin != end; ++begin) {
     const auto &c = *begin;
-    tcases.emplace_back();
-    auto tpat = elaborate_pattern(C, *c.first);
-    auto mu = typing::unify(match_type, tpat->type, substitutions);
+    auto tpat = typer.elaborate_pattern(C, *c.first);
+    typing::unification_t mu;
+    try {
+      mu = typing::unify(match_type, tpat->type, substitutions);
+    } catch (typing::UnificationError &e) {
+      throw ElaborationError(e, c.first->location);
+    }
     match_type = mu.unified_type;
+    auto new_subs = mu.new_substitutions;
 
-    auto e = elaborate(C, *c.second, substitutions, maximum_type_name_id);
-    auto ru = typing::unify(result_type, e.expr->type, substitutions,
-                            maximum_type_name_id, maximum_type_name_id);
-
-    auto new_subs = e.new_substitutions | ru.new_substitutions;
-    if (!new_subs->empty()) {
-      match_type = typing::apply_substitutions(match_type, new_subs);
-      tpat = tpat->apply_substitutions(new_subs);
+    auto e = typer.elaborate(C, *c.second, substitutions, maximum_type_name_id);
+    if (!e.new_substitutions->empty()) {
+      match_type = typing::apply_substitutions(match_type, e.new_substitutions);
+      tpat = tpat->apply_substitutions(e.new_substitutions);
+      new_subs = new_subs | e.new_substitutions;
     }
 
-    new_subs = mu.new_substitutions | new_subs;
+    typing::unification_t ru;
+    try {
+      ru = typing::unify(result_type, e.expr->type, substitutions,
+                         maximum_type_name_id, maximum_type_name_id);
+    } catch (typing::UnificationError &e) {
+      throw ElaborationError(e, c.second->location);
+    }
+
+    if (!ru.new_substitutions->empty()) {
+      match_type =
+          typing::apply_substitutions(match_type, ru.new_substitutions);
+      tpat = tpat->apply_substitutions(ru.new_substitutions);
+      e.expr = e.expr->apply_substitutions(ru.new_substitutions);
+      new_subs = new_subs | ru.new_substitutions;
+    }
+
     if (!new_subs->empty()) {
       for (auto &tc : tcases) {
         tc.first = tc.first->apply_substitutions(mu.new_substitutions);
@@ -1377,13 +1451,34 @@ Typer::elaborate_match_t Typer::elaborate_match(
                   .result_type = result_type};
   compile_match(result.match, std::move(tcases));
   if (result.match.nonexhaustive) {
-    issue_warning(location, "match nonexhaustive");
+    typer.issue_warning(location, "match nonexhaustive");
   }
   return result;
 }
 
-namespace {
+}  // namespace
 
+Typer::elaborate_match_t Typer::elaborate_match(
+    const Location &location, managed_ptr<typing::Context> C,
+    const std::vector<
+        std::pair<std::unique_ptr<Pattern>, std::unique_ptr<Expr>>> &cases,
+    typing::Substitutions &substitutions, std::uint64_t maximum_type_name_id) {
+  return elaborate_match_impl(*this, location, C, cases.cbegin(), cases.cend(),
+                              substitutions, maximum_type_name_id);
+}
+
+Typer::elaborate_match_t Typer::elaborate_match(
+    const Location &location, managed_ptr<typing::Context> C,
+    const Pattern &pat, typing::Substitutions &substitutions,
+    std::uint64_t maximum_type_name_id) {
+  auto expr = std::make_unique<UnitExpr>(location);
+  std::vector<std::pair<const Pattern *, const Expr *>> cases{
+      std::make_pair(&pat, &*expr)};
+  return elaborate_match_impl(*this, location, C, cases.cbegin(), cases.cend(),
+                              substitutions, maximum_type_name_id);
+}
+
+namespace {
 class TypeExprElaborator : public TypeExpr::Visitor {
  public:
   typing::TypePtr type;

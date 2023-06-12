@@ -585,9 +585,10 @@ class TDecl {
 
 class TValDecl : public TDecl {
  public:
-  std::vector<match_t> bindings;
+  std::vector<std::pair<match_t, std::unique_ptr<TExpr>>> bindings;
 
-  TValDecl(const Location& location, std::vector<match_t> bindings);
+  TValDecl(const Location& location,
+           std::vector<std::pair<match_t, std::unique_ptr<TExpr>>> bindings);
 
   std::unique_ptr<TDecl> apply_substitutions(
       typing::Substitutions substitutions) const override;
@@ -638,8 +639,10 @@ class TEndOfFileTopDecl : public TTopDecl {
 class TExprTopDecl : public TTopDecl {
  public:
   std::unique_ptr<TExpr> expr;
+  managed_ptr<typing::TypeScheme> sigma;
 
-  TExprTopDecl(const Location& location, std::unique_ptr<TExpr> expr);
+  TExprTopDecl(const Location& location, std::unique_ptr<TExpr> expr,
+               managed_ptr<typing::TypeScheme> sigma);
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 };

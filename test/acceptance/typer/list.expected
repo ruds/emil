@@ -1,0 +1,13 @@
+@0001:
+val it : 'a list
+@0002:
+val it : bigint list
+@0003:
+val it : (bigint * string) list
+@0004: ERROR
+@0005:
+val it : int list
+@0006:
+val it : bigint list
+@0007: ERROR
+@0008:

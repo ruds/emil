@@ -125,7 +125,7 @@ class PatternExpander : public typing::TypeVisitor {
       : pat_(pat), out_(out) {}
 
   void visit(const typing::TypeWithAgeRestriction& t) override {
-    t.accept(*this);
+    t.type()->accept(*this);
   }
 
   void visit(const typing::TypeVar&) override { assert(pat_->is_wildcard()); }
@@ -195,8 +195,10 @@ void pattern_t::apply_substitutions(typing::Substitutions substitutions) {
                         },
                         [](wildcard_t&) {},
                         [substitutions](constructed_t& c) {
-                          c.arg_type = typing::apply_substitutions(
-                              c.arg_type, substitutions);
+                          c.arg_type = c.arg_type
+                                           ? typing::apply_substitutions(
+                                                 c.arg_type, substitutions)
+                                           : nullptr;
                           for (auto& p : c.subpatterns)
                             p.apply_substitutions(substitutions);
                         }},
@@ -232,11 +234,12 @@ TExpr::Visitor::~Visitor() = default;
 
 match_t match_t::apply_substitutions(
     typing::Substitutions substitutions) const {
-  match_t result{.match_type = match_type,
-                 .result_type = result_type,
-                 .outcomes{},
-                 .decision_tree = decision_tree,
-                 .nonexhaustive = nonexhaustive};
+  match_t result{
+      .match_type = match_type,
+      .result_type = typing::apply_substitutions(result_type, substitutions),
+      .outcomes{},
+      .decision_tree = decision_tree,
+      .nonexhaustive = nonexhaustive};
   result.outcomes.reserve(outcomes.size());
   std::transform(outcomes.begin(), outcomes.end(),
                  back_inserter(result.outcomes), [&](const outcome_t& o) {
@@ -480,16 +483,21 @@ TDecl::Visitor::~Visitor() = default;
 
 TDecl::TDecl(const Location& location) : location(location) {}
 
-TValDecl::TValDecl(const Location& location, std::vector<match_t> bindings)
+TValDecl::TValDecl(
+    const Location& location,
+    std::vector<std::pair<match_t, std::unique_ptr<TExpr>>> bindings)
     : TDecl(location), bindings(std::move(bindings)) {}
 
 std::unique_ptr<TDecl> TValDecl::apply_substitutions(
     typing::Substitutions substitutions) const {
-  std::vector<match_t> new_bindings;
+  std::vector<std::pair<match_t, std::unique_ptr<TExpr>>> new_bindings;
   new_bindings.reserve(bindings.size());
-  std::transform(
-      bindings.begin(), bindings.end(), back_inserter(new_bindings),
-      [&](const auto& m) { return m.apply_substitutions(substitutions); });
+  std::transform(bindings.begin(), bindings.end(), back_inserter(new_bindings),
+                 [&](const auto& p) {
+                   return std::make_pair(
+                       p.first.apply_substitutions(substitutions),
+                       p.second->apply_substitutions(substitutions));
+                 });
   return std::make_unique<TValDecl>(location, std::move(new_bindings));
 }
 
@@ -499,8 +507,9 @@ TTopDecl::~TTopDecl() = default;
 TTopDecl::Visitor::~Visitor() = default;
 
 TExprTopDecl::TExprTopDecl(const Location& location,
-                           std::unique_ptr<TExpr> expr)
-    : TTopDecl(location), expr(std::move(expr)) {}
+                           std::unique_ptr<TExpr> expr,
+                           managed_ptr<typing::TypeScheme> sigma)
+    : TTopDecl(location), expr(std::move(expr)), sigma(sigma) {}
 
 TDeclTopDecl::TDeclTopDecl(const Location& location,
                            std::unique_ptr<TDecl> decl)
