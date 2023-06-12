@@ -1129,8 +1129,13 @@ void ExprElaborator::visitTypedExpr(const TypedExpr &node) {
   auto e =
       typer_.elaborate(C, *node.expr, substitutions_, maximum_type_name_id_);
   new_substitutions = new_substitutions | e.new_substitutions;
-  auto u = typing::unify(t, e.expr->type, substitutions_, maximum_type_name_id_,
-                         maximum_type_name_id_);
+  typing::unification_t u;
+  try {
+    u = typing::unify(t, e.expr->type, substitutions_, maximum_type_name_id_,
+                      maximum_type_name_id_);
+  } catch (typing::UnificationError &e) {
+    throw ElaborationError(e, node.location);
+  }
   if (!u.new_substitutions->empty()) {
     e.expr = e.expr->apply_substitutions(u.new_substitutions);
     new_substitutions = new_substitutions | u.new_substitutions;
