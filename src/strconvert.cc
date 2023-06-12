@@ -51,6 +51,10 @@ std::string to_std_string(std::u8string_view s) {
   return out;
 }
 
+std::string to_std_string(const std::u8string& s) {
+  return to_std_string(std::u8string_view(s));
+}
+
 // Macs don't have the uchar.h header so we have to assume that
 // std::string is encoded with utf-8.
 void to_std_string(std::u8string_view s, std::string& out) {

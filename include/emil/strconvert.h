@@ -24,6 +24,8 @@ std::string to_hex(std::u8string_view s);
 void to_hex(std::u8string_view s, std::string& out);
 
 std::string to_std_string(std::u8string_view s);
+// LLDB has trouble converting u8string to u8string_view.
+std::string to_std_string(const std::u8string& s);
 void to_std_string(std::u8string_view s, std::string& out);
 
 std::string to_std_string(std::u32string_view s);
