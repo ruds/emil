@@ -1,0 +1,4 @@
+{foo = 2, bar = "hi there", baz = 2.3};
+{a = it, b = "that's a biggie"};
+{foo = 23i : int};
+{foo = 23i : string};

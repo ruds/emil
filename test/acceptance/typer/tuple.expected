@@ -1,0 +1,12 @@
+@0001:
+val it : ()
+@0002:
+val it : bigint
+@0003:
+val it : (bigint * string)
+@0004:
+val it : ((bigint * string) * {a: bigint, b: (bigint * string)})
+@0005:
+val it : (int * string)
+@0006: ERROR
+@0007:

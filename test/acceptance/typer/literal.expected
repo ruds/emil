@@ -17,3 +17,10 @@ val it : string
 @0013:
 val it : string
 @0020:
+val it : string
+@0021:
+val it : bigint
+@0022: ERROR
+@0023:
+val it : string
+@0024:

@@ -17,3 +17,7 @@ can
 be
 fun
 )===";
+f"This is a ${"formatted string"}. Also, have you heard that $it?";
+123 : bigint;
+123 : int;
+"foo" : string;

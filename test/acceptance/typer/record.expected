@@ -1,0 +1,8 @@
+@0001:
+val it : {bar: string, baz: float, foo: bigint}
+@0002:
+val it : {a: {bar: string, baz: float, foo: bigint}, b: string}
+@0003:
+val it : {foo: int}
+@0004: ERROR
+@0005:

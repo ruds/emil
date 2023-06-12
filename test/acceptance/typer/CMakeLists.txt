@@ -22,3 +22,6 @@ macro(typer_golden_test TESTNAME)
 endmacro()
 
 typer_golden_test(literal)
+typer_golden_test(identifier)
+typer_golden_test(record)
+typer_golden_test(tuple)
