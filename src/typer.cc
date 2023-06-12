@@ -55,6 +55,13 @@ ElaborationError::ElaborationError(std::string msg, const Location &location)
       full_msg(fmt::format("{}:{}: error: {}", this->location.filename,
                            this->location.line, this->msg)) {}
 
+ElaborationError::ElaborationError(const typing::UnificationError &e,
+                                   const Location &location)
+    : msg(fmt::format("Unification error: {}", e.what())),
+      location(location),
+      full_msg(fmt::format("{}:{}: error: {}", this->location.filename,
+                           this->location.line, e.what())) {}
+
 Typer::Typer(Reporter &reporter)
     : stamp_generator_(),
       builtins_(typing::BuiltinTypes::create(stamp_generator_)),

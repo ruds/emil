@@ -38,6 +38,8 @@ class Reporter;
 class ElaborationError : public std::exception {
  public:
   ElaborationError(std::string msg, const Location& location);
+  ElaborationError(const typing::UnificationError& err,
+                   const Location& location);
 
   virtual const char* what() const noexcept override {
     return full_msg.c_str();
