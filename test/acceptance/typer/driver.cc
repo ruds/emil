@@ -55,14 +55,16 @@ class TestReporter : public Reporter {
   explicit TestReporter(OutIt& out) : out_(out) {}
 
   void report_error(const Location& location, std::string_view text) override {
-    fmt::format_to(out_, "{:04} ERROR\n", location.line);
-    fmt::print(stderr, "{:04} ERROR: {}", location.line, text);
+    fmt::format_to(out_, "@{:04}: ERROR\n", location.line);
+    fmt::print(stderr, "{}:{}: ERROR: {}\n", location.filename, location.line,
+               text);
   }
 
   void report_warning(const Location& location,
                       std::string_view text) override {
-    fmt::format_to(out_, "{:04} WARNING\n", location.line);
-    fmt::print(stderr, "{:04} WARNING: {}", location.line, text);
+    fmt::format_to(out_, "@{:04}: WARNING\n", location.line);
+    fmt::print(stderr, "{}:{}: WARNING: {}\n", location.filename, location.line,
+               text);
   }
 
  private:
@@ -95,7 +97,11 @@ void process_file(std::string_view infile, const std::string& outfile) {
   auto B = typer.initial_basis();
 
   while (!parser.at_end()) {
-    process_next_topdecl(B, typer, parser, out);
+    try {
+      process_next_topdecl(B, typer, parser, out);
+    } catch (ElaborationError& e) {
+      reporter.report_error(e.location, e.msg);
+    }
     outstream.flush();
   }
 }
