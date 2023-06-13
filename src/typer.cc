@@ -1152,7 +1152,7 @@ void ExprElaborator::visitCaseExpr(const CaseExpr &node) {
   }
   typing::unification_t u;
   try {
-    u = typing::unify(m.match.result_type, e.expr->type, substitutions_);
+    u = typing::unify(m.match.match_type, e.expr->type, substitutions_);
   } catch (typing::UnificationError &e) {
     throw ElaborationError(e, node.location);
   }
@@ -1412,7 +1412,8 @@ Typer::elaborate_match_t elaborate_match_impl(
     match_type = mu.unified_type;
     auto new_subs = mu.new_substitutions;
 
-    auto e = typer.elaborate(C, *c.second, substitutions, maximum_type_name_id);
+    auto e = typer.elaborate(C + tpat->bindings, *c.second, substitutions,
+                             maximum_type_name_id);
     if (!e.new_substitutions->empty()) {
       match_type = typing::apply_substitutions(match_type, e.new_substitutions);
       tpat = tpat->apply_substitutions(e.new_substitutions);
@@ -1426,6 +1427,7 @@ Typer::elaborate_match_t elaborate_match_impl(
     } catch (typing::UnificationError &e) {
       throw ElaborationError(e, c.second->location);
     }
+    result_type = ru.unified_type;
 
     if (!ru.new_substitutions->empty()) {
       match_type =

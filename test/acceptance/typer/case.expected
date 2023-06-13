@@ -1,0 +1,13 @@
+@0001:
+val it : string
+@0005:
+val it : string
+@0009:
+val it : (bigint * string)
+@0013: WARNING
+@0013:
+val it : (bigint * string)
+@0016: ERROR
+@0021: WARNING
+@0021: ERROR
+@0022:

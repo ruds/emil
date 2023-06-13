@@ -1,0 +1,21 @@
+case (23, "hi there")
+ of (23, s) => s
+  | (_, "hi there") => "bye"
+  | _ => "huh";
+case [1, 2, 3]
+ of nil => "empty"
+  | (::) (_, nil) => "one"
+  | (::) (_, _) => "many";
+case {a = (1, "hi"), b = 2.3, c = 12}
+ of {a, c = 1, ...} => a
+  | {c = 2, ...} => (2, "bye")
+  | {a, ...} => a;
+case {a = (1, "hi"), b = 2.3, c = 12}
+ of {a, c = 1, ...} => a
+  | {c = 2, ...} => (2, "bye");
+case {a = (1, "hi"), b = 2.3, c = 12}
+ of {a, c = 1, ...} => a
+  | {c = 2, ...} => (2, "bye")
+  | {a, ...} => a
+  | {b, ...} => (3, "redundant");
+case 1 of "hi" => 2;

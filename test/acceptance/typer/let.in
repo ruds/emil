@@ -1,0 +1,25 @@
+let
+  val a = 1
+  val b = "foo"
+in
+  (a, b, 20)
+end;
+let
+  val a = 1
+  val b = "foo"
+in
+  a;
+  (b, it)
+end;
+let
+  val a = 1
+  val b = "foo"
+in
+  (a, b, 20)
+end : bigint * string * bigint;
+let
+  val a = 1
+  val b = "foo"
+in
+  (a, b, 20)
+end : bigint * string;
