@@ -890,6 +890,15 @@ managed_ptr<Context> operator+(const managed_ptr<Context>& C,
                                C->env() + E);
 }
 
+managed_ptr<Context> operator+(const managed_ptr<Context>& C,
+                               const managed_ptr<ValEnv>& VE) {
+  assert(C);
+  assert(VE);
+  auto hold = ctx().mgr->acquire_hold();
+  return make_managed<Context>(C->type_names(), C->explicit_type_variables(),
+                               C->env() + VE);
+}
+
 managed_ptr<Basis> operator+(const managed_ptr<Basis>& B,
                              const managed_ptr<Env>& E) {
   assert(B);

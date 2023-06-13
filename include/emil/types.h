@@ -745,7 +745,8 @@ managed_ptr<Context> operator+(const managed_ptr<Context>& C,
                                const StringSet& U);
 managed_ptr<Context> operator+(const managed_ptr<Context>& C,
                                const managed_ptr<Env>& E);
-
+managed_ptr<Context> operator+(const managed_ptr<Context>& C,
+                               const managed_ptr<ValEnv>& E);
 managed_ptr<Basis> operator+(const managed_ptr<Basis>& B,
                              const managed_ptr<Env>& E);
 managed_ptr<Basis> operator+(const managed_ptr<Basis>& B,
