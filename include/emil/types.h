@@ -667,6 +667,9 @@ class Env : public TypeObj {
   managed_ptr<TypeEnv> type_env() const { return type_env_; }
   managed_ptr<ValEnv> val_env() const { return val_env_; }
 
+  managed_ptr<Env> apply_substitutions(
+      typing::Substitutions substitutions) const;
+
  private:
   const managed_ptr<StrEnv> str_env_;
   const managed_ptr<TypeEnv> type_env_;

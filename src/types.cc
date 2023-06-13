@@ -774,6 +774,12 @@ std::optional<managed_ptr<TypeStructure>> Env::lookup_type(
 
 managed_ptr<StrEnv> Env::str_env() const { return str_env_; }
 
+managed_ptr<Env> Env::apply_substitutions(
+    typing::Substitutions substitutions) const {
+  return make_managed<Env>(str_env_, type_env_,
+                           val_env_->apply_substitutions(substitutions));
+}
+
 void Env::visit_additional_subobjects(const ManagedVisitor& visitor) {
   str_env_.accept(visitor);
   type_env_.accept(visitor);
