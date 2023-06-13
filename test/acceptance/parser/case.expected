@@ -115,4 +115,5 @@
                          :val
                          -1))
              )))
-0005 (EndOfFileTopDecl)
+0005 ERROR
+0006 (EndOfFileTopDecl)

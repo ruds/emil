@@ -2,3 +2,4 @@ case {foo=waldo, bar=baz 2} : quux
  of {foo=2, bar=5} => 23
   | {foo=3, ...} => (+) 42 1
   | _ => -1;
+case foo of 2.3 => 0;
