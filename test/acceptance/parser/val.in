@@ -20,3 +20,10 @@ val (_, 2.3) = foo; (* error - fp literals not allowed *)
 val;;
 val foo;
 val foo =;;
+val foo : bigint = baz;
+val foo : (bigint * string) as (num, str) = baz;
+val foo as (num : bigint, str : string) = baz;
+val { foo : bigint,
+      bar : (bigint * string) as (baz, quux),
+      waldo = 2 : bigint,
+      ... } = xyzzy;

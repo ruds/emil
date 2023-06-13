@@ -1,0 +1,19 @@
+val tail = fn nil => nil | ((::) (_, t)) => t;
+fn (a, b) => (a, tail b);
+fn (a, b) : ('a * 'b list) => (a, tail b);
+fn (a, b) : ('a * 'a list) => (a, tail b);
+fn (a, b) : ('a * 'b) => (a, tail b);
+fn (a, 2) => a
+ | (_, 3) => 0
+ | (a, _) => a;
+fn (a, 2) => a
+ | (_, 3) => 0;
+fn (a, 2) => a
+ | (_, 3) => 0
+ | (a, _) => a
+ | _ => 12;
+ fn {a, b=5, ...} => a | {b=7, c, ...} => c | {a, b, c} => a;
+ fn {a, b=5, ...} => a | {b=7, c, ...} => c | {a, ...} => a;
+ fn {a, b=5, ...} : {a: 'a, b: bigint, c: 'a} => a
+  | {b=7, c, ...} => c
+  | {a, ...} => a;

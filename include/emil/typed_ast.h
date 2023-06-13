@@ -567,8 +567,9 @@ class TValDecl;
 class TDecl {
  public:
   const Location location;
+  const managed_ptr<typing::Env> env;
 
-  explicit TDecl(const Location& location);
+  explicit TDecl(const Location& location, managed_ptr<typing::Env> env);
   virtual ~TDecl();
 
   class Visitor {
@@ -585,10 +586,11 @@ class TDecl {
 
 class TValDecl : public TDecl {
  public:
-  std::vector<std::pair<match_t, std::unique_ptr<TExpr>>> bindings;
+  const std::vector<std::pair<match_t, std::unique_ptr<TExpr>>> bindings;
 
   TValDecl(const Location& location,
-           std::vector<std::pair<match_t, std::unique_ptr<TExpr>>> bindings);
+           std::vector<std::pair<match_t, std::unique_ptr<TExpr>>> bindings,
+           managed_ptr<typing::Env> env);
 
   std::unique_ptr<TDecl> apply_substitutions(
       typing::Substitutions substitutions) const override;

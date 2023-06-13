@@ -46,11 +46,11 @@ val a : bigint
 val b : bigint list
 @0015: WARNING
 @0015:
-val a : '~0
-val b : '~0 list
+val a : 'a
+val b : 'a list
 @0016: WARNING
 @0016:
-val a : '~0
+val a : 'a
 @0017: WARNING
 @0017:
 val a : bigint
@@ -60,4 +60,5 @@ val a : bigint
 @0019: ERROR
 @0020:
 val a : bigint
-@0021:
+@0021: ERROR
+@0022:

@@ -76,15 +76,11 @@ class DeclChangeDescriber : public TDecl::Visitor {
 
   void visit(const TValDecl &decl) override {
     auto it = back_inserter(out_);
-    for (const auto &m : decl.bindings) {
-      for (const auto &o : m.first.outcomes) {
-        for (const auto &b : *o.bindings->env()) {
-          fmt::format_to(it, "val {} : {}\n", to_std_string(*b.first),
-                         to_std_string(print_type(
-                             b.second->scheme()->t(),
-                             typing::CanonicalizeUndeterminedTypes::YES)));
-        }
-      }
+    for (const auto &b : *decl.env->val_env()->env()) {
+      fmt::format_to(it, "val {} : {}\n", to_std_string(*b.first),
+                     to_std_string(print_type(
+                         b.second->scheme()->t(),
+                         typing::CanonicalizeUndeterminedTypes::YES)));
     }
   }
 
@@ -289,10 +285,43 @@ void TopDeclElaborator::visitEndOfFileTopDecl(const EndOfFileTopDecl &node) {
   typed = std::make_unique<TEndOfFileTopDecl>(node.location);
 }
 
+managed_ptr<typing::TypeScheme> generalize_for_valbind(
+    const Location &location, managed_ptr<typing::Context> C,
+    typing::TypePtr type, const TExpr &expr) {
+  if (expr.is_nonexpansive) {
+    try {
+      return typing::TypeScheme::generalize(C, type);
+    } catch (typing::UnificationError &err) {
+      throw ElaborationError(err, location);
+    }
+  }
+  auto free_vars = type->free_variables() - C->free_variables();
+  if (!free_vars->empty()) {
+    std::string msg =
+        "explicit type variables cannot be generalized at binding "
+        "declaration: ";
+    for (auto it = free_vars->begin(); it != free_vars->end(); ++it) {
+      msg += to_std_string(**it);
+      if (it != free_vars->end()) msg += ", ";
+    }
+
+    throw ElaborationError(msg, location);
+  }
+  auto free_uts = type->undetermined_types() - C->undetermined_types();
+  if (!free_uts->empty()) {
+    throw ElaborationError(
+        "Type variables not generalized because of value restriction.",
+        location);
+  }
+  return make_managed<typing::TypeScheme>(
+      type, collections::make_array<ManagedString>({}));
+}
+
 void TopDeclElaborator::visitExprTopDecl(const ExprTopDecl &node) {
   auto expr = typer_.elaborate(B->as_context(), *node.expr);
   auto env = B->env();
-  auto sigma = typing::TypeScheme::generalize(B->as_context(), expr->type);
+  managed_ptr<typing::TypeScheme> sigma =
+      generalize_for_valbind(node.location, B->as_context(), expr->type, *expr);
   B = B + typing::ValEnv::empty()->add_binding(
               u8"it", sigma, typing::IdStatus::Variable, true);
   typed = std::make_unique<TExprTopDecl>(node.location, std::move(expr), sigma);
@@ -345,16 +374,15 @@ class DeclElaborator : public Decl::Visitor {
  * expansive, then the type of the bound variable is monomorphic.
  */
 managed_ptr<typing::ValEnv> close_for_valbind(managed_ptr<typing::Context> C,
-                                              const match_t &match) {
+                                              const match_t &match,
+                                              const TExpr &expr) {
   auto closed =
       collections::managed_map<ManagedString, typing::ValueBinding>({});
   for (const auto &outcome : match.outcomes) {
     for (const auto &binding : *outcome.bindings->env()) {
       managed_ptr<typing::TypeScheme> scheme = binding.second->scheme();
       assert(scheme->bound()->empty());
-      if (outcome.result->is_nonexpansive) {
-        scheme = typing::TypeScheme::generalize(C, scheme->t());
-      }
+      scheme = generalize_for_valbind(match.location, C, scheme->t(), expr);
       closed =
           closed
               ->insert(binding.first, make_managed<typing::ValueBinding>(
@@ -396,10 +424,10 @@ void DeclElaborator::visitValDecl(const ValDecl &node) {
       }
       new_substitutions = new_substitutions | new_subs;
     }
-    env = env + close_for_valbind(C, m.match);
+    env = env + close_for_valbind(C, m.match, *e.expr);
     bindings.emplace_back(std::move(m.match), std::move(e.expr));
   }
-  decl = std::make_unique<TValDecl>(node.location, std::move(bindings));
+  decl = std::make_unique<TValDecl>(node.location, std::move(bindings), env);
 }
 
 }  // namespace
@@ -754,6 +782,23 @@ void PatternElaborator::visitLayeredPattern(const LayeredPattern &node) {
   bind_rule.names.push_back(node.identifier);
 }
 
+void PatternElaborator::visitTypedPattern(const TypedPattern &node) {
+  node.pattern->accept(*this);
+  auto t = typer_.elaborate_type_expr(C, *node.type);
+  auto subs = collections::managed_map<typing::Stamp, typing::Type>({});
+  typing::unification_t u;
+  try {
+    u = typing::unify(type, t, subs);
+  } catch (typing::UnificationError &err) {
+    throw ElaborationError(err, node.location);
+  }
+  type = u.unified_type;
+  if (!u.new_substitutions->empty()) {
+    pattern.apply_substitutions(u.new_substitutions);
+    bindings = bindings->apply_substitutions(u.new_substitutions);
+  }
+}
+
 std::pair<std::u8string, std::optional<managed_ptr<typing::ValueBinding>>>
 PatternElaborator::lookup_val(const IdentifierPattern &pat) const {
   auto id =
@@ -1074,7 +1119,7 @@ bool is_nonexpansive_application(
       assert(gf.new_substitutions->empty());
       auto name = get_type_name(gf.fn->result());
       assert(name);
-      return name->stamp() != typer.builtins().ref_name()->stamp();
+      return name->stamp()->id() != typer.builtins().ref_name()->stamp()->id();
     }
   }
 }
@@ -1406,11 +1451,15 @@ Typer::elaborate_match_t elaborate_match_impl(
     typing::unification_t mu;
     try {
       mu = typing::unify(match_type, tpat->type, substitutions);
-    } catch (typing::UnificationError &e) {
-      throw ElaborationError(e, c.first->location);
+    } catch (typing::UnificationError &err) {
+      throw ElaborationError(err, c.first->location);
     }
     match_type = mu.unified_type;
     auto new_subs = mu.new_substitutions;
+
+    if (!mu.new_substitutions->empty()) {
+      tpat = tpat->apply_substitutions(mu.new_substitutions);
+    }
 
     auto e = typer.elaborate(C + tpat->bindings, *c.second, substitutions,
                              maximum_type_name_id);
@@ -1424,8 +1473,8 @@ Typer::elaborate_match_t elaborate_match_impl(
     try {
       ru = typing::unify(result_type, e.expr->type, substitutions,
                          maximum_type_name_id, maximum_type_name_id);
-    } catch (typing::UnificationError &e) {
-      throw ElaborationError(e, c.second->location);
+    } catch (typing::UnificationError &err) {
+      throw ElaborationError(err, c.second->location);
     }
     result_type = ru.unified_type;
 

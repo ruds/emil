@@ -29,21 +29,23 @@ macro(add_golden_test DRIVER TESTNAME)
   add_test(
     NAME "${DRIVER} ${TESTNAME}-create-output"
     COMMAND
-    "${DRIVER}" "${CMAKE_CURRENT_SOURCE_DIR}/${TESTNAME}.in" "${TESTNAME}.out"
+    "${DRIVER}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/${TESTNAME}.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/${TESTNAME}.out"
   )
   add_test(
     NAME "${DRIVER} ${TESTNAME}"
     COMMAND
     "${CMAKE_COMMAND}" -E compare_files
-    "${TESTNAME}.out"
+    "${CMAKE_CURRENT_BINARY_DIR}/${TESTNAME}.out"
     "${CMAKE_CURRENT_SOURCE_DIR}/${TESTNAME}.expected"
   )
   set_tests_properties("${DRIVER} ${TESTNAME}-create-output"
     PROPERTIES FIXTURES_REQUIRED "${DRIVER}_fixture")
   set_tests_properties("${DRIVER} ${TESTNAME}-create-output"
-    PROPERTIES FIXTURES_SETUP "${TESTNAME}_fixture")
+    PROPERTIES FIXTURES_SETUP "${DRIVER}_${TESTNAME}_fixture")
   set_tests_properties("${DRIVER} ${TESTNAME}"
-    PROPERTIES FIXTURES_REQUIRED "${TESTNAME}_fixture")
+    PROPERTIES FIXTURES_REQUIRED "${DRIVER}_${TESTNAME}_fixture")
 endmacro()
 
 add_subdirectory(lexer)

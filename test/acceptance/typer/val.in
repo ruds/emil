@@ -18,3 +18,4 @@ val (::) (a, nil) = [1];
 val (::) (a, nil) = [1, 2];
 val (a, ref) = (1, 2);
 val ref a = ref 2;
+val ref a = ref [];

@@ -207,19 +207,88 @@ ExprPtr Parser::match_expr(Token& first) {
 
 DeclPtr Parser::match_decl(Token& first) { return match_val_decl(first); }
 
+namespace {
+bool can_start_atomic_pattern(const Token* t) {
+  if (!t) return false;
+  switch (t->type) {
+    case TokenType::KW_UNDERSCORE:
+    case TokenType::STRING:
+    case TokenType::FSTRING:
+    case TokenType::ILITERAL:
+    case TokenType::ID_WORD:
+    case TokenType::QUAL_ID_WORD:
+    case TokenType::LBRACE:
+    case TokenType::LBRACKET:
+    case TokenType::LPAREN:
+      return true;
+
+    default:
+      return false;
+  }
+}
+
+std::unique_ptr<IdentifierPattern> make_id_pattern(
+    const Location& location, std::vector<std::u8string> qualifiers,
+    std::u8string id, bool is_op, bool is_prefix) {
+  return std::make_unique<IdentifierPattern>(location, std::move(qualifiers),
+                                             std::move(id), is_op, is_prefix);
+}
+
+std::unique_ptr<IdentifierPattern> make_id_pattern(Token& t,
+                                                   bool is_prefix = false) {
+  switch (t.type) {
+    case TokenType::QUAL_ID_OP:
+    case TokenType::QUAL_ID_WORD: {
+      auto& qid = get<QualifiedIdentifier>(t.aux);
+      const bool is_op = t.type == TokenType::QUAL_ID_OP;
+      return make_id_pattern(t.location, std::move(qid.qualifiers),
+                             std::move(qid.id), is_op, is_prefix && is_op);
+    }
+
+    case TokenType::ID_OP:
+    case TokenType::EQUALS:
+    case TokenType::ASTERISK:
+      return make_id_pattern(t.location, {}, move_string(t), true, is_prefix);
+
+    case TokenType::ID_WORD:
+      return make_id_pattern(t.location, {}, move_string(t), false, false);
+
+    default:
+      throw std::logic_error(
+          fmt::format("This token shouldn't make it here: {}.", t));
+  }
+}
+
+}  // namespace
+
 PatternPtr Parser::match_pattern(Token& first) {
   if (first.type == TokenType::ID_WORD) {
-    // match type annotation
+    TypeExprPtr type;
+    if (match(TokenType::COLON)) {
+      type = match_type(advance_safe("typed pattern"));
+    }
     if (match(TokenType::KW_AS)) {
-      // TODO: support type annotation
-      return std::make_unique<LayeredPattern>(
+      auto pattern = std::make_unique<LayeredPattern>(
           first.location, move_string(first),
           match_pattern(advance_safe("layered pattern")));
+      if (type) {
+        return std::make_unique<TypedPattern>(
+            first.location, std::move(pattern), std::move(type));
+      }
+      return pattern;
+    }
+    if (type) {
+      return std::make_unique<TypedPattern>(
+          first.location, make_id_pattern(first), std::move(type));
     }
   }
   auto pattern = match_left_pattern(first);
   // TODO: support infix precendence
-  // TODO: support type annotation
+  if (match(TokenType::COLON)) {
+    return std::make_unique<TypedPattern>(
+        first.location, std::move(pattern),
+        match_type(advance_safe("typed pattern")));
+  }
   return pattern;
 }
 
@@ -500,60 +569,6 @@ std::unique_ptr<LetExpr> Parser::match_let_expr(const Location& location) {
                                    std::move(exprs));
 }
 
-namespace {
-bool can_start_atomic_pattern(const Token* t) {
-  if (!t) return false;
-  switch (t->type) {
-    case TokenType::KW_UNDERSCORE:
-    case TokenType::STRING:
-    case TokenType::FSTRING:
-    case TokenType::ILITERAL:
-    case TokenType::ID_WORD:
-    case TokenType::QUAL_ID_WORD:
-    case TokenType::LBRACE:
-    case TokenType::LBRACKET:
-    case TokenType::LPAREN:
-      return true;
-
-    default:
-      return false;
-  }
-}
-
-std::unique_ptr<IdentifierPattern> make_id_pattern(
-    const Location& location, std::vector<std::u8string> qualifiers,
-    std::u8string id, bool is_op, bool is_prefix) {
-  return std::make_unique<IdentifierPattern>(location, std::move(qualifiers),
-                                             std::move(id), is_op, is_prefix);
-}
-
-std::unique_ptr<IdentifierPattern> make_id_pattern(Token& t,
-                                                   bool is_prefix = false) {
-  switch (t.type) {
-    case TokenType::QUAL_ID_OP:
-    case TokenType::QUAL_ID_WORD: {
-      auto& qid = get<QualifiedIdentifier>(t.aux);
-      const bool is_op = t.type == TokenType::QUAL_ID_OP;
-      return make_id_pattern(t.location, std::move(qid.qualifiers),
-                             std::move(qid.id), is_op, is_prefix && is_op);
-    }
-
-    case TokenType::ID_OP:
-    case TokenType::EQUALS:
-    case TokenType::ASTERISK:
-      return make_id_pattern(t.location, {}, move_string(t), true, is_prefix);
-
-    case TokenType::ID_WORD:
-      return make_id_pattern(t.location, {}, move_string(t), false, false);
-
-    default:
-      throw std::logic_error(
-          fmt::format("This token shouldn't make it here: {}.", t));
-  }
-}
-
-}  // namespace
-
 PatternPtr Parser::match_left_pattern(Token& first) {
   auto maybe_id =
       maybe_match_parenthesized_op_pattern(first, AllowQualified::YES);
@@ -625,13 +640,26 @@ PatternPtr Parser::match_record_pattern(const Location& location) {
         PatternPtr pattern;
         if (match(TokenType::EQUALS)) {
           pattern = match_pattern(advance_safe("record row pattern"));
-        } else if (match(TokenType::KW_AS)) {
-          pattern = std::make_unique<LayeredPattern>(
-              label.location, label_name,
-              match_pattern(advance_safe("record row layered pattern")));
         } else {
-          pattern =
-              make_id_pattern(label.location, {}, label_name, false, false);
+          TypeExprPtr type;
+          if (match(TokenType::COLON)) {
+            type = match_type(advance_safe("record row label type expression"));
+          }
+          if (match(TokenType::KW_AS)) {
+            pattern = std::make_unique<LayeredPattern>(
+                label.location, label_name,
+                match_pattern(advance_safe("record row layered pattern")));
+            if (type)
+              pattern = std::make_unique<TypedPattern>(
+                  label.location, std::move(pattern), std::move(type));
+          } else {
+            pattern =
+                make_id_pattern(label.location, {}, label_name, false, false);
+            if (type) {
+              pattern = std::make_unique<TypedPattern>(
+                  label.location, std::move(pattern), std::move(type));
+            }
+          }
         }
         auto insres = labels.insert(label_name);
         if (!insres.second) {

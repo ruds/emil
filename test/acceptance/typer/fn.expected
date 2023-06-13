@@ -1,0 +1,21 @@
+@0001:
+val tail : 'a list -> 'a list
+@0002:
+val it : ('a * 'b list) -> ('a * 'b list)
+@0003:
+val it : ('a * 'b list) -> ('a * 'b list)
+@0004:
+val it : ('a * 'a list) -> ('a * 'a list)
+@0005: ERROR
+@0006:
+val it : (bigint * bigint) -> bigint
+@0009: WARNING
+@0009:
+val it : (bigint * bigint) -> bigint
+@0011: ERROR
+@0015:
+val it : {a: 'a, b: bigint, c: 'a} -> 'a
+@0016: ERROR
+@0017:
+val it : {a: 'a, b: bigint, c: 'a} -> 'a
+@0020:

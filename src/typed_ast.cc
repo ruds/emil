@@ -235,6 +235,7 @@ TExpr::Visitor::~Visitor() = default;
 match_t match_t::apply_substitutions(
     typing::Substitutions substitutions) const {
   match_t result{
+      .location = location,
       .match_type = match_type,
       .result_type = typing::apply_substitutions(result_type, substitutions),
       .outcomes{},
@@ -481,12 +482,14 @@ std::unique_ptr<TExpr> TFnExpr::apply_substitutions(
 TDecl::~TDecl() = default;
 TDecl::Visitor::~Visitor() = default;
 
-TDecl::TDecl(const Location& location) : location(location) {}
+TDecl::TDecl(const Location& location, managed_ptr<typing::Env> env)
+    : location(location), env(env) {}
 
 TValDecl::TValDecl(
     const Location& location,
-    std::vector<std::pair<match_t, std::unique_ptr<TExpr>>> bindings)
-    : TDecl(location), bindings(std::move(bindings)) {}
+    std::vector<std::pair<match_t, std::unique_ptr<TExpr>>> bindings,
+    managed_ptr<typing::Env> env)
+    : TDecl(location, env), bindings(std::move(bindings)) {}
 
 std::unique_ptr<TDecl> TValDecl::apply_substitutions(
     typing::Substitutions substitutions) const {
@@ -498,7 +501,8 @@ std::unique_ptr<TDecl> TValDecl::apply_substitutions(
                        p.first.apply_substitutions(substitutions),
                        p.second->apply_substitutions(substitutions));
                  });
-  return std::make_unique<TValDecl>(location, std::move(new_bindings));
+  return std::make_unique<TValDecl>(location, std::move(new_bindings),
+                                    env->apply_substitutions(substitutions));
 }
 
 TTopDecl::TTopDecl(const Location& location) : location(location) {}
