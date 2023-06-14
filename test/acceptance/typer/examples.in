@@ -1,0 +1,50 @@
+(* Examples from various other places. *)
+
+(* The next few are from
+ * https://www.smlnj.org/doc/Conversion/types.html
+ *)
+
+(* dummy definitions *)
+val ar = fn (_ : 'a ref, a : 'a) => ref a;
+val dr = fn (ref a) => a;
+val hd = fn ((::) (a, _)) => a;
+
+(* Expansive: can't generalize *)
+val x = ref nil;
+val x : int list ref = ref nil;
+
+(* Unifies *)
+let val x = ref nil
+ in ar (x, [3]);
+    hd (dr x)
+end;
+
+(* Generalizes *)
+val f = fn y => let val x = ref nil in x end;
+
+(* Instantiates *)
+let val y = let val x = ref nil in x end
+ in ar (y, [true]);
+    hd (dr y)
+end;
+
+val f = fn x => fn y => y;
+val g = f 3;
+val g = (fn y => (f 3) y);
+val g = fn y => f 3 y;
+
+val f = fn ((::) (x, l)) => (fn y => y);
+val g = f nil;
+val g = fn y => f nil y;
+
+val counter = ref(ref 0);
+val mkCountF = fn f =>
+    let val x = ref 0
+        val f2 = fn z => (ar (x, dr x); f z)
+     in ar (counter, x);
+        f2
+     end;
+val pair = fn x => (x, x);
+val cpair = mkCountF pair;
+val cpairCalls = dr counter;
+val cpair' = (fn y => mkCountF pair y);

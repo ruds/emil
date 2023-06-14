@@ -188,21 +188,26 @@ void pattern_t::expand(std::vector<const pattern_t*>& out,
   match_type.accept(v);
 }
 
-void pattern_t::apply_substitutions(typing::Substitutions substitutions) {
-  std::visit(overloaded{[substitutions](auto& r) {
-                          for (auto& p : r.subpatterns)
-                            p.apply_substitutions(substitutions);
-                        },
-                        [](wildcard_t&) {},
-                        [substitutions](constructed_t& c) {
-                          c.arg_type = c.arg_type
-                                           ? typing::apply_substitutions(
-                                                 c.arg_type, substitutions)
-                                           : nullptr;
-                          for (auto& p : c.subpatterns)
-                            p.apply_substitutions(substitutions);
-                        }},
-             repr_);
+void pattern_t::apply_substitutions(typing::Substitutions substitutions,
+                                    bool enforce_timing_constraints) {
+  std::visit(
+      overloaded{
+          [&](auto& r) {
+            for (auto& p : r.subpatterns)
+              p.apply_substitutions(substitutions, enforce_timing_constraints);
+          },
+          [](wildcard_t&) {},
+          [&](constructed_t& c) {
+            c.arg_type = c.arg_type
+                             ? typing::apply_substitutions(
+                                   c.arg_type, substitutions,
+                                   typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                   enforce_timing_constraints)
+                             : nullptr;
+            for (auto& p : c.subpatterns)
+              p.apply_substitutions(substitutions, enforce_timing_constraints);
+          }},
+      repr_);
 }
 
 TPattern::TPattern(const Location& location, typing::TypePtr type,
@@ -215,12 +220,18 @@ TPattern::TPattern(const Location& location, typing::TypePtr type,
       bind_rule(std::move(bind_rule)) {}
 
 std::unique_ptr<TPattern> TPattern::apply_substitutions(
-    typing::Substitutions substitutions) const {
+    typing::Substitutions substitutions,
+    bool enforce_timing_constraints) const {
   auto new_pat = pat;
-  new_pat.apply_substitutions(substitutions);
+  new_pat.apply_substitutions(substitutions, enforce_timing_constraints);
   return std::make_unique<TPattern>(
-      location, typing::apply_substitutions(type, substitutions), new_pat,
-      bindings->apply_substitutions(substitutions), bind_rule);
+      location,
+      typing::apply_substitutions(type, substitutions,
+                                  typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                  enforce_timing_constraints),
+      new_pat,
+      bindings->apply_substitutions(substitutions, enforce_timing_constraints),
+      bind_rule);
 }
 
 const std::u8string dt_switch_t::DEFAULT_KEY = u8"_";
@@ -232,22 +243,26 @@ TExpr::TExpr(const Location& location, typing::TypePtr type,
 TExpr::~TExpr() = default;
 TExpr::Visitor::~Visitor() = default;
 
-match_t match_t::apply_substitutions(
-    typing::Substitutions substitutions) const {
-  match_t result{
-      .location = location,
-      .match_type = match_type,
-      .result_type = typing::apply_substitutions(result_type, substitutions),
-      .outcomes{},
-      .decision_tree = decision_tree,
-      .nonexhaustive = nonexhaustive};
+match_t match_t::apply_substitutions(typing::Substitutions substitutions,
+                                     bool enforce_timing_constraints) const {
+  match_t result{.location = location,
+                 .match_type = match_type,
+                 .result_type = typing::apply_substitutions(
+                     result_type, substitutions,
+                     typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                     enforce_timing_constraints),
+                 .outcomes{},
+                 .decision_tree = decision_tree,
+                 .nonexhaustive = nonexhaustive};
   result.outcomes.reserve(outcomes.size());
   std::transform(outcomes.begin(), outcomes.end(),
                  back_inserter(result.outcomes), [&](const outcome_t& o) {
                    return outcome_t{
-                       o.bindings->apply_substitutions(substitutions),
+                       o.bindings->apply_substitutions(
+                           substitutions, enforce_timing_constraints),
                        o.bind_rule,
-                       o.result->apply_substitutions(substitutions)};
+                       o.result->apply_substitutions(
+                           substitutions, enforce_timing_constraints)};
                  });
   return result;
 }
@@ -263,12 +278,14 @@ bool all_nonexp(const T& types) {
 template <typename T>
 std::vector<std::unique_ptr<T>> apply_substitutions_to_list(
     const std::vector<std::unique_ptr<T>>& exprs,
-    typing::Substitutions substitutions) {
+    typing::Substitutions substitutions, bool enforce_timing_constraints) {
   std::vector<std::unique_ptr<T>> new_exprs;
   new_exprs.reserve(exprs.size());
-  std::transform(
-      exprs.begin(), exprs.end(), back_inserter(new_exprs),
-      [&](const auto& e) { return e->apply_substitutions(substitutions); });
+  std::transform(exprs.begin(), exprs.end(), back_inserter(new_exprs),
+                 [&](const auto& e) {
+                   return e->apply_substitutions(substitutions,
+                                                 enforce_timing_constraints);
+                 });
   return new_exprs;
 }
 
@@ -276,13 +293,15 @@ template <typename T, typename U>
 std::vector<std::pair<std::unique_ptr<T>, std::unique_ptr<U>>>
 apply_substitutions_to_pairs(
     const std::vector<std::pair<std::unique_ptr<T>, std::unique_ptr<U>>>& pairs,
-    typing::Substitutions substitutions) {
+    typing::Substitutions substitutions, bool enforce_timing_constraints) {
   std::vector<std::pair<std::unique_ptr<T>, std::unique_ptr<U>>> new_pairs;
   new_pairs.reserve(pairs.size());
   std::transform(
       pairs.begin(), pairs.end(), back_inserter(new_pairs), [&](const auto& p) {
-        return std::make_pair(p.first->apply_substitutions(substitutions),
-                              p.second->apply_substitutions(substitutions));
+        return std::make_pair(p.first->apply_substitutions(
+                                  substitutions, enforce_timing_constraints),
+                              p.second->apply_substitutions(
+                                  substitutions, enforce_timing_constraints));
       });
   return new_pairs;
 }
@@ -295,7 +314,7 @@ TBigintLiteralExpr::TBigintLiteralExpr(const Location& location,
     : TExpr(location, type, true), value(value) {}
 
 std::unique_ptr<TExpr> TBigintLiteralExpr::apply_substitutions(
-    typing::Substitutions) const {
+    typing::Substitutions, bool) const {
   return std::make_unique<TBigintLiteralExpr>(location, type, value);
 }
 
@@ -304,7 +323,7 @@ TIntLiteralExpr::TIntLiteralExpr(const Location& location, typing::TypePtr type,
     : TExpr(location, type, true), value(value) {}
 
 std::unique_ptr<TExpr> TIntLiteralExpr::apply_substitutions(
-    typing::Substitutions) const {
+    typing::Substitutions, bool) const {
   return std::make_unique<TIntLiteralExpr>(location, type, value);
 }
 
@@ -313,7 +332,7 @@ TFpLiteralExpr::TFpLiteralExpr(const Location& location, typing::TypePtr type,
     : TExpr(location, type, true), value(value) {}
 
 std::unique_ptr<TExpr> TFpLiteralExpr::apply_substitutions(
-    typing::Substitutions) const {
+    typing::Substitutions, bool) const {
   return std::make_unique<TFpLiteralExpr>(location, type, value);
 }
 
@@ -322,7 +341,7 @@ TStringLiteralExpr::TStringLiteralExpr(const Location& location,
     : TExpr(location, type, true), value(value) {}
 
 std::unique_ptr<TExpr> TStringLiteralExpr::apply_substitutions(
-    typing::Substitutions) const {
+    typing::Substitutions, bool) const {
   return std::make_unique<TStringLiteralExpr>(location, type, value);
 }
 
@@ -331,7 +350,7 @@ TCharLiteralExpr::TCharLiteralExpr(const Location& location,
     : TExpr(location, type, true), value(value) {}
 
 std::unique_ptr<TExpr> TCharLiteralExpr::apply_substitutions(
-    typing::Substitutions) const {
+    typing::Substitutions, bool) const {
   return std::make_unique<TCharLiteralExpr>(location, type, value);
 }
 
@@ -344,10 +363,12 @@ TFstringLiteralExpr::TFstringLiteralExpr(
       substitutions(std::move(substitutions)) {}
 
 std::unique_ptr<TExpr> TFstringLiteralExpr::apply_substitutions(
-    typing::Substitutions var_substitutions) const {
+    typing::Substitutions var_substitutions,
+    bool enforce_timing_constraints) const {
   return std::make_unique<TFstringLiteralExpr>(
       location, type, segments,
-      apply_substitutions_to_list(substitutions, var_substitutions));
+      apply_substitutions_to_list(substitutions, var_substitutions,
+                                  enforce_timing_constraints));
 }
 
 TIdentifierExpr::TIdentifierExpr(const Location& location, typing::TypePtr type,
@@ -360,10 +381,14 @@ TIdentifierExpr::TIdentifierExpr(const Location& location, typing::TypePtr type,
       canonical_identifier(canonical_identifier) {}
 
 std::unique_ptr<TExpr> TIdentifierExpr::apply_substitutions(
-    typing::Substitutions substitutions) const {
+    typing::Substitutions substitutions,
+    bool enforce_timing_constraints) const {
   return std::make_unique<TIdentifierExpr>(
-      location, typing::apply_substitutions(type, substitutions), status,
-      qualifiers, canonical_identifier);
+      location,
+      typing::apply_substitutions(type, substitutions,
+                                  typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                  enforce_timing_constraints),
+      status, qualifiers, canonical_identifier);
 }
 
 TRecRowExpr::TRecRowExpr(const Location& location, typing::TypePtr type,
@@ -373,10 +398,15 @@ TRecRowExpr::TRecRowExpr(const Location& location, typing::TypePtr type,
       value(std::move(value)) {}
 
 std::unique_ptr<TRecRowExpr> TRecRowExpr::apply_substitutions_as_rec_row(
-    typing::Substitutions substitutions) const {
+    typing::Substitutions substitutions,
+    bool enforce_timing_constraints) const {
   return std::make_unique<TRecRowExpr>(
-      location, typing::apply_substitutions(type, substitutions), label,
-      value->apply_substitutions(substitutions));
+      location,
+      typing::apply_substitutions(type, substitutions,
+                                  typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                  enforce_timing_constraints),
+      label,
+      value->apply_substitutions(substitutions, enforce_timing_constraints));
 }
 
 TRecordExpr::TRecordExpr(const Location& location, typing::TypePtr type,
@@ -384,15 +414,20 @@ TRecordExpr::TRecordExpr(const Location& location, typing::TypePtr type,
     : TExpr(location, type, all_nonexp(rows)), rows(std::move(rows)) {}
 
 std::unique_ptr<TExpr> TRecordExpr::apply_substitutions(
-    typing::Substitutions substitutions) const {
+    typing::Substitutions substitutions,
+    bool enforce_timing_constraints) const {
   std::vector<std::unique_ptr<TRecRowExpr>> new_rows;
   new_rows.reserve(rows.size());
   std::transform(rows.begin(), rows.end(), back_inserter(new_rows),
                  [&](const auto& r) {
-                   return r->apply_substitutions_as_rec_row(substitutions);
+                   return r->apply_substitutions_as_rec_row(
+                       substitutions, enforce_timing_constraints);
                  });
   return std::make_unique<TRecordExpr>(
-      location, typing::apply_substitutions(type, substitutions),
+      location,
+      typing::apply_substitutions(type, substitutions,
+                                  typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                  enforce_timing_constraints),
       std::move(new_rows));
 }
 
@@ -401,10 +436,15 @@ TTupleExpr::TTupleExpr(const Location& location, typing::TypePtr type,
     : TExpr(location, type, all_nonexp(exprs)), exprs(std::move(exprs)) {}
 
 std::unique_ptr<TExpr> TTupleExpr::apply_substitutions(
-    typing::Substitutions substitutions) const {
+    typing::Substitutions substitutions,
+    bool enforce_timing_constraints) const {
   return std::make_unique<TTupleExpr>(
-      location, typing::apply_substitutions(type, substitutions),
-      apply_substitutions_to_list(exprs, substitutions));
+      location,
+      typing::apply_substitutions(type, substitutions,
+                                  typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                  enforce_timing_constraints),
+      apply_substitutions_to_list(exprs, substitutions,
+                                  enforce_timing_constraints));
 }
 
 TSequencedExpr::TSequencedExpr(const Location& location, typing::TypePtr type,
@@ -412,10 +452,15 @@ TSequencedExpr::TSequencedExpr(const Location& location, typing::TypePtr type,
     : TExpr(location, type, false), exprs(std::move(exprs)) {}
 
 std::unique_ptr<TExpr> TSequencedExpr::apply_substitutions(
-    typing::Substitutions substitutions) const {
+    typing::Substitutions substitutions,
+    bool enforce_timing_constraints) const {
   return std::make_unique<TSequencedExpr>(
-      location, typing::apply_substitutions(type, substitutions),
-      apply_substitutions_to_list(exprs, substitutions));
+      location,
+      typing::apply_substitutions(type, substitutions,
+                                  typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                  enforce_timing_constraints),
+      apply_substitutions_to_list(exprs, substitutions,
+                                  enforce_timing_constraints));
 }
 
 TListExpr::TListExpr(const Location& location, typing::TypePtr type,
@@ -423,10 +468,15 @@ TListExpr::TListExpr(const Location& location, typing::TypePtr type,
     : TExpr(location, type, all_nonexp(exprs)), exprs(std::move(exprs)) {}
 
 std::unique_ptr<TExpr> TListExpr::apply_substitutions(
-    typing::Substitutions substitutions) const {
+    typing::Substitutions substitutions,
+    bool enforce_timing_constraints) const {
   return std::make_unique<TListExpr>(
-      location, typing::apply_substitutions(type, substitutions),
-      apply_substitutions_to_list(exprs, substitutions));
+      location,
+      typing::apply_substitutions(type, substitutions,
+                                  typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                  enforce_timing_constraints),
+      apply_substitutions_to_list(exprs, substitutions,
+                                  enforce_timing_constraints));
 }
 
 TLetExpr::TLetExpr(const Location& location, typing::TypePtr type,
@@ -437,11 +487,17 @@ TLetExpr::TLetExpr(const Location& location, typing::TypePtr type,
       exprs(std::move(exprs)) {}
 
 std::unique_ptr<TExpr> TLetExpr::apply_substitutions(
-    typing::Substitutions substitutions) const {
+    typing::Substitutions substitutions,
+    bool enforce_timing_constraints) const {
   return std::make_unique<TLetExpr>(
-      location, typing::apply_substitutions(type, substitutions),
-      apply_substitutions_to_list(decls, substitutions),
-      apply_substitutions_to_list(exprs, substitutions));
+      location,
+      typing::apply_substitutions(type, substitutions,
+                                  typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                  enforce_timing_constraints),
+      apply_substitutions_to_list(decls, substitutions,
+                                  enforce_timing_constraints),
+      apply_substitutions_to_list(exprs, substitutions,
+                                  enforce_timing_constraints));
 }
 
 TApplicationExpr::TApplicationExpr(const Location& location,
@@ -450,10 +506,16 @@ TApplicationExpr::TApplicationExpr(const Location& location,
     : TExpr(location, type, is_nonexpansive), exprs(std::move(exprs)) {}
 
 std::unique_ptr<TExpr> TApplicationExpr::apply_substitutions(
-    typing::Substitutions substitutions) const {
+    typing::Substitutions substitutions,
+    bool enforce_timing_constraints) const {
   return std::make_unique<TApplicationExpr>(
-      location, typing::apply_substitutions(type, substitutions),
-      is_nonexpansive, apply_substitutions_to_list(exprs, substitutions));
+      location,
+      typing::apply_substitutions(type, substitutions,
+                                  typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                  enforce_timing_constraints),
+      is_nonexpansive,
+      apply_substitutions_to_list(exprs, substitutions,
+                                  enforce_timing_constraints));
 }
 
 TCaseExpr::TCaseExpr(const Location& location, std::unique_ptr<TExpr> expr,
@@ -463,20 +525,26 @@ TCaseExpr::TCaseExpr(const Location& location, std::unique_ptr<TExpr> expr,
       match(std::move(match)) {}
 
 std::unique_ptr<TExpr> TCaseExpr::apply_substitutions(
-    typing::Substitutions substitutions) const {
-  return std::make_unique<TCaseExpr>(location,
-                                     expr->apply_substitutions(substitutions),
-                                     match.apply_substitutions(substitutions));
+    typing::Substitutions substitutions,
+    bool enforce_timing_constraints) const {
+  return std::make_unique<TCaseExpr>(
+      location,
+      expr->apply_substitutions(substitutions, enforce_timing_constraints),
+      match.apply_substitutions(substitutions, enforce_timing_constraints));
 }
 
 TFnExpr::TFnExpr(const Location& location, typing::TypePtr type, match_t match)
     : TExpr(location, type, true), match(std::move(match)) {}
 
 std::unique_ptr<TExpr> TFnExpr::apply_substitutions(
-    typing::Substitutions substitutions) const {
+    typing::Substitutions substitutions,
+    bool enforce_timing_constraints) const {
   return std::make_unique<TFnExpr>(
-      location, typing::apply_substitutions(type, substitutions),
-      match.apply_substitutions(substitutions));
+      location,
+      typing::apply_substitutions(type, substitutions,
+                                  typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                  enforce_timing_constraints),
+      match.apply_substitutions(substitutions, enforce_timing_constraints));
 }
 
 TDecl::~TDecl() = default;
@@ -492,17 +560,21 @@ TValDecl::TValDecl(
     : TDecl(location, env), bindings(std::move(bindings)) {}
 
 std::unique_ptr<TDecl> TValDecl::apply_substitutions(
-    typing::Substitutions substitutions) const {
+    typing::Substitutions substitutions,
+    bool enforce_timing_constraints) const {
   std::vector<std::pair<match_t, std::unique_ptr<TExpr>>> new_bindings;
   new_bindings.reserve(bindings.size());
   std::transform(bindings.begin(), bindings.end(), back_inserter(new_bindings),
                  [&](const auto& p) {
                    return std::make_pair(
-                       p.first.apply_substitutions(substitutions),
-                       p.second->apply_substitutions(substitutions));
+                       p.first.apply_substitutions(substitutions,
+                                                   enforce_timing_constraints),
+                       p.second->apply_substitutions(
+                           substitutions, enforce_timing_constraints));
                  });
-  return std::make_unique<TValDecl>(location, std::move(new_bindings),
-                                    env->apply_substitutions(substitutions));
+  return std::make_unique<TValDecl>(
+      location, std::move(new_bindings),
+      env->apply_substitutions(substitutions, enforce_timing_constraints));
 }
 
 TTopDecl::TTopDecl(const Location& location) : location(location) {}

@@ -131,7 +131,8 @@ struct pattern_t {
               const typing::Type& match_type) const;
 
   /** Apply substitutions to types stored in this pattern. */
-  void apply_substitutions(typing::Substitutions substitutions);
+  void apply_substitutions(typing::Substitutions substitutions,
+                           bool enforce_timing_constraints);
 
  private:
   struct wildcard_t {};
@@ -171,7 +172,8 @@ class TPattern {
            managed_ptr<typing::ValEnv> bindings, bind_rule_t bind_rule);
 
   std::unique_ptr<TPattern> apply_substitutions(
-      typing::Substitutions substitutions) const;
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const;
 };
 
 struct dt_leaf_t {
@@ -271,7 +273,8 @@ class TExpr {
   /** Apply substitutions for undetermined types in this expression
    * and all its subexpressions. */
   virtual std::unique_ptr<TExpr> apply_substitutions(
-      typing::Substitutions substitutions) const = 0;
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const = 0;
 };
 
 /** The elaboration of a pattern match. */
@@ -306,7 +309,8 @@ struct match_t {
   bool nonexhaustive;
 
   /** Applies substitutions to the result_type and outcomes. */
-  match_t apply_substitutions(typing::Substitutions substitutions) const;
+  match_t apply_substitutions(typing::Substitutions substitutions,
+                              bool enforce_timing_constraints) const;
 };
 
 /** A bigint literal. Nonexpansive. */
@@ -319,7 +323,8 @@ class TBigintLiteralExpr : public TExpr {
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
   std::unique_ptr<TExpr> apply_substitutions(
-      typing::Substitutions substitutions) const override;
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const override;
 };
 
 /** An int literal. Nonexpansive. */
@@ -332,7 +337,8 @@ class TIntLiteralExpr : public TExpr {
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
   std::unique_ptr<TExpr> apply_substitutions(
-      typing::Substitutions substitutions) const override;
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const override;
 };
 
 /** A floating point literal. Nonexpansive. */
@@ -344,7 +350,8 @@ class TFpLiteralExpr : public TExpr {
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
   std::unique_ptr<TExpr> apply_substitutions(
-      typing::Substitutions substitutions) const override;
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const override;
 };
 
 /** A string literal. Nonexpansive. */
@@ -358,7 +365,8 @@ class TStringLiteralExpr : public TExpr {
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<TExpr> apply_substitutions(
-      typing::Substitutions substitutions) const override;
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const override;
 };
 
 /** A character literal. Nonexpansive. */
@@ -372,7 +380,8 @@ class TCharLiteralExpr : public TExpr {
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<TExpr> apply_substitutions(
-      typing::Substitutions substitutions) const override;
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const override;
 };
 
 /** A formatted string literal. Nonexpansive iff all substitutions are
@@ -389,7 +398,8 @@ class TFstringLiteralExpr : public TExpr {
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<TExpr> apply_substitutions(
-      typing::Substitutions substitutions) const override;
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const override;
 };
 
 /** An identifier expression. Nonexpansive. */
@@ -407,7 +417,8 @@ class TIdentifierExpr : public TExpr {
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<TExpr> apply_substitutions(
-      typing::Substitutions substitutions) const override;
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const override;
 };
 
 /**
@@ -428,9 +439,10 @@ class TRecRowExpr : public TExpr {
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<TRecRowExpr> apply_substitutions_as_rec_row(
-      typing::Substitutions substitutions) const;
-  std::unique_ptr<TExpr> apply_substitutions(
-      typing::Substitutions) const override {
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const;
+  std::unique_ptr<TExpr> apply_substitutions(typing::Substitutions,
+                                             bool) const override {
     throw std::logic_error("unreachable");
   }
 };
@@ -446,7 +458,8 @@ class TRecordExpr : public TExpr {
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<TExpr> apply_substitutions(
-      typing::Substitutions substitutions) const override;
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const override;
 };
 
 /** A tuple expression. Nonexpansive iff all its elements are nonexpansive. */
@@ -460,7 +473,8 @@ class TTupleExpr : public TExpr {
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<TExpr> apply_substitutions(
-      typing::Substitutions substitutions) const override;
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const override;
 };
 
 /** A sequenced expression. Expansive. */
@@ -474,7 +488,8 @@ class TSequencedExpr : public TExpr {
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<TExpr> apply_substitutions(
-      typing::Substitutions substitutions) const override;
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const override;
 };
 
 /** A list expression. Nonexpansive iff all its elements are nonexpansive. */
@@ -488,7 +503,8 @@ class TListExpr : public TExpr {
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<TExpr> apply_substitutions(
-      typing::Substitutions substitutions) const override;
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const override;
 };
 
 /** A let expression. Expansive. */
@@ -504,7 +520,8 @@ class TLetExpr : public TExpr {
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<TExpr> apply_substitutions(
-      typing::Substitutions substitutions) const override;
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const override;
 };
 
 /**
@@ -530,7 +547,8 @@ class TApplicationExpr : public TExpr {
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<TExpr> apply_substitutions(
-      typing::Substitutions substitutions) const override;
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const override;
 };
 
 /** A case expression. Expansive. */
@@ -545,7 +563,8 @@ class TCaseExpr : public TExpr {
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<TExpr> apply_substitutions(
-      typing::Substitutions substitutions) const override;
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const override;
 };
 
 /** A function literal expression. Nonexpansive. */
@@ -558,7 +577,8 @@ class TFnExpr : public TExpr {
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
   std::unique_ptr<TExpr> apply_substitutions(
-      typing::Substitutions substitutions) const override;
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const override;
 };
 
 class TValDecl;
@@ -581,7 +601,8 @@ class TDecl {
 
   virtual void accept(Visitor& visitor) const = 0;
   virtual std::unique_ptr<TDecl> apply_substitutions(
-      typing::Substitutions substitutions) const = 0;
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const = 0;
 };
 
 class TValDecl : public TDecl {
@@ -593,7 +614,8 @@ class TValDecl : public TDecl {
            managed_ptr<typing::Env> env);
 
   std::unique_ptr<TDecl> apply_substitutions(
-      typing::Substitutions substitutions) const override;
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const override;
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 };

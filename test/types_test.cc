@@ -172,8 +172,8 @@ TEST_F(TypeFunctionTest, Instantiate) {
 
   EXPECT_THAT(
       instance,
-      PrintsAs(u8"{k0: int list, k1: ('~0 -> 'c * 'c), k2: {bar: '~1, foo: int "
-               u8"list, ...} list -> ('~0 -> 'c * '~2 * '~3)}"));
+      PrintsAs(u8"{k0: int list, k1: (('~0 -> 'c) * 'c), k2: {bar: '~1, foo: "
+               u8"int list, ...} list -> (('~0 -> 'c) * '~2 * '~3)}"));
   EXPECT_THROW(apply_substitutions(instance, managed_map<Stamp, Type>(
                                                  {{ut0->stamp(), contype}})),
                UnificationError);
@@ -353,6 +353,9 @@ TEST_F(PrintTypeTest, BasicOperation) {
               PrintsCorrectly(std::ref(tc), u8"'~5 -> '~4", u8"'~0 -> '~1"));
   EXPECT_THAT(function_type(b, record_type({}, true)),
               PrintsCorrectly(std::ref(tc), u8"'b -> {...}", u8"'b -> {...}"));
+  EXPECT_THAT(function_type(function_type(ut2, ut1), function_type(a, b)),
+              PrintsCorrectly(std::ref(tc), u8"('~5 -> '~4) -> 'a -> 'b",
+                              u8"('~0 -> '~1) -> 'a -> 'b"));
   EXPECT_THAT(
       function_type(list_type(int_type), ut1),
       PrintsCorrectly(std::ref(tc), u8"int list -> '~4", u8"int list -> '~0"));

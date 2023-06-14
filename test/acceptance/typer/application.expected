@@ -1,0 +1,14 @@
+@0001:
+val tail : 'a list -> 'a list
+@0002:
+val it : (bigint list * bigint list)
+@0003:
+val it : (bigint list * string list)
+@0004:
+val both : ('a -> 'b) -> ('a * 'a) -> ('b * 'b)
+@0005:
+val it : (bigint list * bigint list)
+@0006:
+val it : (bigint list * bigint list)
+@0007: ERROR
+@0008:

@@ -1,0 +1,7 @@
+val tail = fn nil => nil | (::) (_, l) => l;
+(tail [1, 2, 3], tail [4, 5, 6]);
+(tail [1, 2, 3], tail ["foo", "bar", "baz"]);
+val both = fn f => fn (a, b) => (f a, f b);
+both tail ([1, 2, 3], [4, 5, 6]);
+(both tail) ([1, 2, 3], [4, 5, 6]);
+both tail ([1, 2, 3], ["foo", "bar", "baz"]);

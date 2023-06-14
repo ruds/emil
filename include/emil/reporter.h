@@ -18,7 +18,12 @@
 
 namespace emil {
 
+class Expr;
 struct Location;
+
+namespace typing {
+class Type;
+}
 
 class Reporter {
  public:
@@ -28,6 +33,8 @@ class Reporter {
                             std::string_view text) = 0;
   virtual void report_warning(const Location& location,
                               std::string_view text) = 0;
+  virtual void report_type_judgement(const Location& location, const Expr& expr,
+                                     const typing::Type& type) = 0;
 };
 
 }  // namespace emil

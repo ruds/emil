@@ -634,7 +634,8 @@ class ValEnv : public TypeObj {
                                   IdStatus status, bool allow_rebinding) const;
 
   /** Apply the given substitutions to each binding's type scheme. */
-  managed_ptr<ValEnv> apply_substitutions(Substitutions subs) const;
+  managed_ptr<ValEnv> apply_substitutions(
+      Substitutions subs, bool enforce_timing_constraints = true) const;
 
   const StringMap<ValueBinding>& env() const { return env_; }
 
@@ -668,7 +669,8 @@ class Env : public TypeObj {
   managed_ptr<ValEnv> val_env() const { return val_env_; }
 
   managed_ptr<Env> apply_substitutions(
-      typing::Substitutions substitutions) const;
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints = true) const;
 
  private:
   const managed_ptr<StrEnv> str_env_;
@@ -709,6 +711,8 @@ class Context : public TypeObj {
 
   const StringSet& explicit_type_variables() const { return vars_; }
   const managed_ptr<Env>& env() const { return env_; }
+
+  managed_ptr<Context> apply_substitutions(Substitutions substitutions) const;
 
  private:
   const StringSet vars_;
@@ -799,12 +803,15 @@ inline constexpr std::uint64_t NO_ADDITIONAL_TYPE_NAME_RESTRICTION =
 /**
  * Apply the given substitutions to the given type.
  *
- * Throws a UnificationError if an illegal substitution is attempted (i.e. a
- * too-young typename is substituted for an older undetermined type).
+ * If enforce_timing_constraints is true, throws a UnificationError if
+ * an illegal substitution is attempted (i.e. a too-young typename is
+ * substituted for an older undetermined type). Otherwise, removes
+ * TypeWithAgeRestriction from the type.
  */
 TypePtr apply_substitutions(
     TypePtr t, Substitutions substitutions,
-    std::uint64_t maximum_type_name_id = NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
+    std::uint64_t maximum_type_name_id = NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+    bool enforce_timing_constraints = true);
 
 /**
  * The result of a unification.

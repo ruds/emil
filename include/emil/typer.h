@@ -20,7 +20,6 @@
 #include <exception>
 #include <memory>
 #include <string>
-#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -141,7 +140,7 @@ class Typer {
   typing::StampGenerator& stamper() { return stamp_generator_; }
   const typing::BuiltinTypes& builtins() const;
 
-  void issue_warning(const Location& location, std::string_view text);
+  Reporter& reporter() { return reporter_; }
 
  private:
   typing::StampGenerator stamp_generator_;

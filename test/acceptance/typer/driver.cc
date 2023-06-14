@@ -15,24 +15,24 @@
 #include <fmt/core.h>
 
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <iterator>
 #include <memory>
 #include <string>
 #include <string_view>
 
+#include "emil/ast.h"
 #include "emil/gc.h"
 #include "emil/lexer.h"
 #include "emil/parser.h"
 #include "emil/reporter.h"
 #include "emil/runtime.h"
+#include "emil/strconvert.h"
 #include "emil/token.h"
 #include "emil/typed_ast.h"
 #include "emil/typer.h"
-
-namespace emil::typing {
-class Basis;
-}
+#include "emil/types.h"
 
 namespace emil::testing {
 
@@ -52,7 +52,8 @@ class DriverContextAccessor {
 
 class TestReporter : public Reporter {
  public:
-  explicit TestReporter(OutIt& out) : out_(out) {}
+  explicit TestReporter(OutIt& out, bool enable_type_judgements)
+      : out_(out), enable_type_judgements_(enable_type_judgements) {}
 
   void report_error(const Location& location, std::string_view text) override {
     fmt::format_to(out_, "@{:04}: ERROR\n", location.line);
@@ -67,8 +68,18 @@ class TestReporter : public Reporter {
                text);
   }
 
+  void report_type_judgement(const Location& location, const Expr& expr,
+                             const typing::Type& type) override {
+    if (enable_type_judgements_) {
+      fmt::print(stderr, "{}:{}: TYPE JUDGEMENT: {} for {}\n",
+                 location.filename, location.line,
+                 to_std_string(typing::print_type(type)), print_ast(expr));
+    }
+  }
+
  private:
   OutIt& out_;
+  const bool enable_type_judgements_;
 };
 
 void process_next_topdecl(managed_ptr<typing::Basis>& B, Typer& typer,
@@ -80,7 +91,8 @@ void process_next_topdecl(managed_ptr<typing::Basis>& B, Typer& typer,
                  describe_basis_updates(*e.topdecl));
 }
 
-void process_file(std::string_view infile, const std::string& outfile) {
+void process_file(std::string_view infile, const std::string& outfile,
+                  bool enable_type_judgement) {
   DriverRoot root;
   MemoryManager mgr{root};
   RuntimeContext rc{.mgr = &mgr};
@@ -91,7 +103,7 @@ void process_file(std::string_view infile, const std::string& outfile) {
 
   std::ofstream outstream(outfile);
   std::ostreambuf_iterator<char> out(outstream);
-  TestReporter reporter{out};
+  TestReporter reporter{out, enable_type_judgement};
   Typer typer{reporter};
 
   auto B = typer.initial_basis();
@@ -108,14 +120,32 @@ void process_file(std::string_view infile, const std::string& outfile) {
 
 }  // namespace emil::testing
 
+void print_usage(std::string_view progname) {
+  fmt::print(stderr, "Usage: {} [-t] INFILE OUTFILE", progname);
+}
+
 int main(int argc, char* argv[]) {
-  if (argc != 3) {
-    fmt::print(stderr, "Usage: {} INFILE OUTFILE", argv[0]);
+  bool enable_type_judgement = false;
+  std::string infile;
+  std::string outfile;
+
+  for (int i = 1; i < argc; ++i) {
+    if (!std::strcmp(argv[i], "-t")) {
+      enable_type_judgement = true;
+    } else if (infile.empty()) {
+      infile = argv[i];
+    } else if (outfile.empty()) {
+      outfile = argv[i];
+    } else {
+      print_usage(argv[0]);
+      return 1;
+    }
+  }
+
+  if (infile.empty() || outfile.empty()) {
+    print_usage(argv[0]);
     return 1;
   }
 
-  const std::string infile(argv[1]);
-  const std::string outfile(argv[2]);
-
-  emil::testing::process_file(infile, outfile);
+  emil::testing::process_file(infile, outfile, enable_type_judgement);
 }

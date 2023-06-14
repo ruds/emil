@@ -708,18 +708,21 @@ managed_ptr<ValEnv> ValEnv::add_binding(std::u8string_view id,
 }
 
 managed_ptr<ValEnv> ValEnv::apply_substitutions(
-    Substitutions substitutions) const {
+    Substitutions substitutions, bool enforce_timing_constraints) const {
   StringMap<ValueBinding> e =
       collections::managed_map<ManagedString, ValueBinding>({});
   for (const auto& binding : *env_) {
     auto scheme = binding.second->scheme();
     auto t = scheme->t();
-    e = e->insert(binding.first,
-                  make_managed<ValueBinding>(
-                      make_managed<TypeScheme>(
-                          typing::apply_substitutions(t, substitutions),
-                          scheme->bound()),
-                      binding.second->status()))
+    e = e->insert(
+             binding.first,
+             make_managed<ValueBinding>(
+                 make_managed<TypeScheme>(
+                     typing::apply_substitutions(
+                         t, substitutions, NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                         enforce_timing_constraints),
+                     scheme->bound()),
+                 binding.second->status()))
             .first;
   }
   return make_managed<ValEnv>(e);
@@ -775,9 +778,11 @@ std::optional<managed_ptr<TypeStructure>> Env::lookup_type(
 managed_ptr<StrEnv> Env::str_env() const { return str_env_; }
 
 managed_ptr<Env> Env::apply_substitutions(
-    typing::Substitutions substitutions) const {
-  return make_managed<Env>(str_env_, type_env_,
-                           val_env_->apply_substitutions(substitutions));
+    typing::Substitutions substitutions,
+    bool enforce_timing_constraints) const {
+  return make_managed<Env>(
+      str_env_, type_env_,
+      val_env_->apply_substitutions(substitutions, enforce_timing_constraints));
 }
 
 void Env::visit_additional_subobjects(const ManagedVisitor& visitor) {
@@ -816,6 +821,12 @@ Context::Context(StampSet type_names, StringSet explicit_type_variables,
 
 managed_ptr<Context> Context::empty() {
   return make_managed<Context>(stamp_set(), string_set(), Env::empty());
+}
+
+managed_ptr<Context> Context::apply_substitutions(
+    Substitutions substitutions) const {
+  return make_managed<Context>(type_names(), vars_,
+                               env_->apply_substitutions(substitutions, true));
 }
 
 void Context::visit_additional_subobjects(const ManagedVisitor& visitor) {
@@ -956,6 +967,8 @@ class TypePrinter : public TypeVisitor {
   void visit(const TupleType& t) override {
     contents_ += u8"(";
     bool first = true;
+    const bool save = subordinate_;
+    subordinate_ = true;
     for (const auto& type : *t.types()) {
       if (first)
         first = false;
@@ -963,12 +976,15 @@ class TypePrinter : public TypeVisitor {
         contents_ += u8" * ";
       type->accept(*this);
     }
+    subordinate_ = save;
     contents_ += u8")";
   }
 
   void visit(const RecordType& t) override {
     contents_ += u8"{";
     bool first = true;
+    const bool save = subordinate_;
+    subordinate_ = false;
     for (const auto& entry : *t.rows()) {
       if (first)
         first = false;
@@ -982,13 +998,20 @@ class TypePrinter : public TypeVisitor {
       if (!first) contents_ += u8", ";
       contents_ += u8"...";
     }
+    subordinate_ = save;
     contents_ += u8"}";
   }
 
   void visit(const FunctionType& t) override {
+    const bool save = subordinate_;
+    if (save) contents_ += u8"(";
+    subordinate_ = true;
     t.param()->accept(*this);
     contents_ += u8" -> ";
+    subordinate_ = false;
     t.result()->accept(*this);
+    if (save) contents_ += u8")";
+    subordinate_ = save;
   }
 
   void visit(const ConstructedType& t) override {
@@ -1022,6 +1045,7 @@ class TypePrinter : public TypeVisitor {
   const CanonicalizeUndeterminedTypes c_;
   std::unordered_map<std::uint64_t, std::uint64_t> mappings_;
   std::u8string contents_;
+  bool subordinate_ = false;
 };
 
 }  // namespace
@@ -1063,16 +1087,18 @@ namespace {
  * too-young typename).
  */
 TypePtr compute_single_substitution(const UndeterminedType& var, TypePtr type,
-                                    std::uint64_t max_id) {
+                                    std::uint64_t max_id,
+                                    bool enforce_timing_constraints) {
   const auto id = var.stamp()->id();
-  if (type->id_of_youngest_typename() > std::min(max_id, id)) {
+  if (enforce_timing_constraints &&
+      type->id_of_youngest_typename() > std::min(max_id, id)) {
     throw UnificationError(fmt::format(
         "Illegal substitution. {} (with constraint {}) can't be "
         "substituted by {} (with youngest type id {})",
         to_std_string(var.name()), max_id, to_std_string(print_type(type)),
         type->id_of_youngest_typename()));
   }
-  return type->undetermined_types()->empty()
+  return (type->undetermined_types()->empty() || !enforce_timing_constraints)
              ? type
              : make_managed<TypeWithAgeRestriction>(type, id);
 }
@@ -1082,16 +1108,20 @@ class Substitutor : public TypeVisitor {
   TypePtr result;
 
   Substitutor(TypePtr orig, Substitutions substitutions,
-              std::uint64_t maximum_type_name_id)
+              std::uint64_t maximum_type_name_id,
+              bool enforce_timing_constraints)
       : result(std::move(orig)),
         substitutions_(std::move(substitutions)),
-        maximum_type_name_id_(maximum_type_name_id) {}
+        maximum_type_name_id_(maximum_type_name_id),
+        enforce_timing_constraints_(enforce_timing_constraints) {}
 
   void visit(const TypeWithAgeRestriction& t) override {
-    result = make_managed<TypeWithAgeRestriction>(
-        apply_substitutions(t.type(), substitutions_,
-                            std::min(maximum_type_name_id_, t.birthdate())),
-        t.birthdate());
+    auto s = apply_substitutions(t.type(), substitutions_,
+                                 std::min(maximum_type_name_id_, t.birthdate()),
+                                 enforce_timing_constraints_);
+    result = enforce_timing_constraints_
+                 ? make_managed<TypeWithAgeRestriction>(s, t.birthdate())
+                 : s;
   }
 
   void visit(const TypeVar&) override {}
@@ -1099,7 +1129,8 @@ class Substitutor : public TypeVisitor {
   void visit(const UndeterminedType& t) override {
     const auto it = substitutions_->find(*t.stamp());
     if (it == substitutions_->cend()) return;
-    result = compute_single_substitution(t, it->second, maximum_type_name_id_);
+    result = compute_single_substitution(t, it->second, maximum_type_name_id_,
+                                         enforce_timing_constraints_);
   }
 
   void visit(const TupleType& t) override {
@@ -1113,7 +1144,8 @@ class Substitutor : public TypeVisitor {
       new_rows = new_rows
                      ->insert(entry.first,
                               apply_substitutions(entry.second, substitutions_,
-                                                  maximum_type_name_id_))
+                                                  maximum_type_name_id_,
+                                                  enforce_timing_constraints_))
                      .first;
     }
     result = make_managed<RecordType>(std::move(new_rows), t.has_wildcard());
@@ -1121,8 +1153,10 @@ class Substitutor : public TypeVisitor {
 
   void visit(const FunctionType& t) override {
     result = make_managed<FunctionType>(
-        apply_substitutions(t.param(), substitutions_, maximum_type_name_id_),
-        apply_substitutions(t.result(), substitutions_, maximum_type_name_id_));
+        apply_substitutions(t.param(), substitutions_, maximum_type_name_id_,
+                            enforce_timing_constraints_),
+        apply_substitutions(t.result(), substitutions_, maximum_type_name_id_,
+                            enforce_timing_constraints_));
   }
 
   void visit(const ConstructedType& t) override {
@@ -1133,12 +1167,14 @@ class Substitutor : public TypeVisitor {
  private:
   Substitutions substitutions_;
   std::uint64_t maximum_type_name_id_;
+  bool enforce_timing_constraints_;
 
   TypeList apply_substitutions_to_list(const TypeList& l) const {
     return make_managed<collections::ManagedArray<Type>>(
         l->size(), [&l, this](std::size_t i) {
           return apply_substitutions(l->at(i), substitutions_,
-                                     maximum_type_name_id_);
+                                     maximum_type_name_id_,
+                                     enforce_timing_constraints_);
         });
   }
 };
@@ -1146,11 +1182,13 @@ class Substitutor : public TypeVisitor {
 }  // namespace
 
 TypePtr apply_substitutions(TypePtr t, Substitutions substitutions,
-                            std::uint64_t maximum_type_name_id) {
+                            std::uint64_t maximum_type_name_id,
+                            bool enforce_timing_constraints) {
   auto hold = ctx().mgr->acquire_hold();
   auto filtered_subs = substitutions->filter_keys(t->undetermined_types());
-  if (filtered_subs->empty()) return t;
-  Substitutor s{t, std::move(filtered_subs), maximum_type_name_id};
+  if (filtered_subs->empty() && enforce_timing_constraints) return t;
+  Substitutor s{t, std::move(filtered_subs), maximum_type_name_id,
+                enforce_timing_constraints};
   t->accept(s);
   return std::move(s.result);
 }
@@ -1226,7 +1264,7 @@ class UnifierBase : public TypeVisitor {
       try {
         subbed_l = apply_substitutions(orig_l_, substitutions(), max_id_l());
         result.unified_type =
-            compute_single_substitution(r, subbed_l, max_id_r_);
+            compute_single_substitution(r, subbed_l, max_id_r_, true);
       } catch (UnificationError& e) {
         e.add_context(orig_l_, orig_r_);
         throw;
@@ -1235,7 +1273,7 @@ class UnifierBase : public TypeVisitor {
       return;
     }
     try {
-      orig_r_ = compute_single_substitution(r, it->second, max_id_r_);
+      orig_r_ = compute_single_substitution(r, it->second, max_id_r_, true);
     } catch (UnificationError& e) {
       e.add_context(orig_l_, orig_r_);
       throw;
@@ -1356,7 +1394,7 @@ class UndeterminedUnifier : public TypeVisitor {
       return;
     }
     try {
-      orig_r_ = compute_single_substitution(r, it->second, max_id_r_);
+      orig_r_ = compute_single_substitution(r, it->second, max_id_r_, true);
     } catch (UnificationError& e) {
       e.add_context(orig_l_, orig_r_);
       throw;
@@ -1384,7 +1422,7 @@ class UndeterminedUnifier : public TypeVisitor {
     TypePtr r;
     try {
       r = apply_substitutions(orig_r_, substitutions_, max_id_r_);
-      result.unified_type = compute_single_substitution(l_, r, max_id_l_);
+      result.unified_type = compute_single_substitution(l_, r, max_id_l_, true);
     } catch (UnificationError& e) {
       e.add_context(orig_l_, orig_r_);
       throw;
@@ -1582,7 +1620,7 @@ class UnifyDispatcher : public TypeVisitor {
     const auto it = substitutions_->find(*l.stamp());
     if (it != substitutions_->cend()) {
       try {
-        orig_l_ = compute_single_substitution(l, it->second, max_id_l_);
+        orig_l_ = compute_single_substitution(l, it->second, max_id_l_, true);
       } catch (UnificationError& e) {
         e.add_context(orig_l_, orig_r_);
         throw;

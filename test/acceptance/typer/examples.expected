@@ -1,0 +1,49 @@
+@0008:
+val ar : ('a ref * 'a) -> 'a ref
+@0009:
+val dr : 'a ref -> 'a
+@0010: WARNING
+@0010:
+val hd : 'a list -> 'a
+@0013: WARNING
+@0013:
+val x : X1 list ref
+@0014:
+val x : int list ref
+@0017:
+val it : bigint
+@0023:
+val f : 'a -> 'b list ref
+@0026:
+val it : bool
+@0031:
+val f : 'a -> 'b -> 'b
+@0032: WARNING
+@0032:
+val g : X1 -> X1
+@0033:
+val g : 'a -> 'a
+@0034:
+val g : 'a -> 'a
+@0036: WARNING
+@0036:
+val f : 'a list -> 'b -> 'b
+@0037: WARNING
+@0037:
+val g : X1 -> X1
+@0038:
+val g : 'a -> 'a
+@0040:
+val counter : bigint ref ref
+@0041:
+val mkCountF : ('a -> 'b) -> 'a -> 'b
+@0047:
+val pair : 'a -> ('a * 'a)
+@0048: WARNING
+@0048:
+val cpair : X1 -> (X1 * X1)
+@0049:
+val cpairCalls : bigint ref
+@0050:
+val cpair' : 'a -> ('a * 'a)
+@0051:

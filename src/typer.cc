@@ -307,12 +307,6 @@ managed_ptr<typing::TypeScheme> generalize_for_valbind(
 
     throw ElaborationError(msg, location);
   }
-  auto free_uts = type->undetermined_types() - C->undetermined_types();
-  if (!free_uts->empty()) {
-    throw ElaborationError(
-        "Type variables not generalized because of value restriction.",
-        location);
-  }
   return make_managed<typing::TypeScheme>(
       type, collections::make_array<ManagedString>({}));
 }
@@ -327,9 +321,37 @@ void TopDeclElaborator::visitExprTopDecl(const ExprTopDecl &node) {
   typed = std::make_unique<TExprTopDecl>(node.location, std::move(expr), sigma);
 }
 
+namespace {
+
+typing::Substitutions compute_dummy_substitutions(
+    Typer &typer, managed_ptr<typing::Env> env) {
+  auto subs = collections::managed_map<typing::Stamp, typing::Type>({});
+  std::uint64_t counter = 0;
+  for (const auto &stamp : *env->undetermined_types()) {
+    subs = subs->insert(stamp,
+                        make_managed<typing::ConstructedType>(
+                            make_managed<typing::TypeName>(
+                                u8"X" + to_u8string(std::to_string(++counter)),
+                                typer.new_stamp(), 0, 0),
+                            collections::make_array<typing::Type>({})))
+               .first;
+  }
+  return subs;
+}
+
+}  // namespace
+
 void TopDeclElaborator::visitDeclTopDecl(const DeclTopDecl &node) {
   auto r = typer_.elaborate(B->as_context(), *node.decl);
-  B = B + r.env;
+  auto subs = compute_dummy_substitutions(typer_, r.env);
+  if (!subs->empty()) {
+    typer_.reporter().report_warning(
+        node.location,
+        "undetermined types not generalized because of value restriction are "
+        "instantiated to dummy types (X1, X2,....)");
+    r.decl = r.decl->apply_substitutions(subs, false);
+  }
+  B = B + r.decl->env;
   typed = std::make_unique<TDeclTopDecl>(node.location, std::move(r.decl));
 }
 
@@ -403,7 +425,7 @@ void DeclElaborator::visitValDecl(const ValDecl &node) {
     auto e = typer_.elaborate(C, *it->second, substitutions_,
                               typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
     if (!e.new_substitutions->empty()) {
-      m.match = m.match.apply_substitutions(e.new_substitutions);
+      m.match = m.match.apply_substitutions(e.new_substitutions, true);
       new_subs = new_subs | e.new_substitutions;
     }
     typing::unification_t u;
@@ -413,15 +435,16 @@ void DeclElaborator::visitValDecl(const ValDecl &node) {
       throw ElaborationError(e, it->first->location);
     }
     if (!u.new_substitutions->empty()) {
-      m.match = m.match.apply_substitutions(u.new_substitutions);
-      e.expr = e.expr->apply_substitutions(u.new_substitutions);
+      m.match = m.match.apply_substitutions(u.new_substitutions, true);
+      e.expr = e.expr->apply_substitutions(u.new_substitutions, true);
       new_subs = new_subs | u.new_substitutions;
     }
     if (!new_subs->empty()) {
       for (auto &b : bindings) {
-        b.first = b.first.apply_substitutions(m.new_substitutions);
-        b.second = b.second->apply_substitutions(m.new_substitutions);
+        b.first = b.first.apply_substitutions(m.new_substitutions, true);
+        b.second = b.second->apply_substitutions(m.new_substitutions, true);
       }
+      C = C->apply_substitutions(new_subs);
       new_substitutions = new_substitutions | new_subs;
     }
     env = env + close_for_valbind(C, m.match, *e.expr);
@@ -682,8 +705,8 @@ void PatternElaborator::visitListPattern(const ListPattern &node) {
   }
 
   if (!subs->empty()) {
-    bindings = bindings->apply_substitutions(subs);
-    cons_pattern.apply_substitutions(subs);
+    bindings = bindings->apply_substitutions(subs, true);
+    cons_pattern.apply_substitutions(subs, true);
   }
   type = typer_.builtins().list_type(el_type);
   pattern = std::move(cons_pattern);
@@ -744,7 +767,7 @@ void PatternElaborator::visitDatatypePattern(const DatatypePattern &node) {
   type = gf.fn->result();
   if (!u.new_substitutions->empty()) {
     type = typing::apply_substitutions(type, u.new_substitutions);
-    bindings = bindings->apply_substitutions(u.new_substitutions);
+    bindings = bindings->apply_substitutions(u.new_substitutions, true);
   }
   auto name = get_type_name(type);
   if (!name) {
@@ -794,8 +817,8 @@ void PatternElaborator::visitTypedPattern(const TypedPattern &node) {
   }
   type = u.unified_type;
   if (!u.new_substitutions->empty()) {
-    pattern.apply_substitutions(u.new_substitutions);
-    bindings = bindings->apply_substitutions(u.new_substitutions);
+    pattern.apply_substitutions(u.new_substitutions, true);
+    bindings = bindings->apply_substitutions(u.new_substitutions, true);
   }
 }
 
@@ -887,7 +910,7 @@ void ExprElaborator::visitFstringLiteralExpr(const FstringLiteralExpr &node) {
     if (!e.new_substitutions->empty()) {
       new_substitutions = new_substitutions | e.new_substitutions;
       for (auto &ss : str_substitutions) {
-        ss = ss->apply_substitutions(e.new_substitutions);
+        ss = ss->apply_substitutions(e.new_substitutions, true);
       }
     }
     str_substitutions.push_back(std::move(e.expr));
@@ -907,7 +930,9 @@ void ExprElaborator::visitIdentifierExpr(const IdentifierExpr &node) {
         fmt::format("{} is not defined", id_to_string(node.qualifiers, id)),
         node.location);
   typed = std::make_unique<TIdentifierExpr>(
-      node.location, (*val)->scheme()->instantiate(typer_.stamper()),
+      node.location,
+      typing::apply_substitutions(
+          (*val)->scheme()->instantiate(typer_.stamper()), substitutions_),
       (*val)->status(), consify(node.qualifiers), make_string(id));
 }
 
@@ -934,7 +959,7 @@ void ExprElaborator::visitRecordExpr(const RecordExpr &node) {
     if (!e.new_substitutions->empty()) {
       new_substitutions = new_substitutions | e.new_substitutions;
       for (auto &expr : exprs) {
-        expr = expr->apply_substitutions_as_rec_row(e.new_substitutions);
+        expr = expr->apply_substitutions_as_rec_row(e.new_substitutions, true);
       }
     }
     exprs.push_back(std::move(e.elaborated_row));
@@ -963,7 +988,7 @@ void ExprElaborator::visitTupleExpr(const TupleExpr &node) {
     if (!e.new_substitutions->empty()) {
       new_substitutions = new_substitutions | e.new_substitutions;
       for (auto &expr : exprs) {
-        expr = expr->apply_substitutions(e.new_substitutions);
+        expr = expr->apply_substitutions(e.new_substitutions, true);
       }
     }
     exprs.push_back(std::move(e.expr));
@@ -983,7 +1008,7 @@ void ExprElaborator::visitSequencedExpr(const SequencedExpr &node) {
     if (!e.new_substitutions->empty()) {
       new_substitutions = new_substitutions | e.new_substitutions;
       for (auto &expr : exprs) {
-        expr = expr->apply_substitutions(e.new_substitutions);
+        expr = expr->apply_substitutions(e.new_substitutions, true);
       }
     }
     exprs.push_back(std::move(e.expr));
@@ -1014,13 +1039,13 @@ void ExprElaborator::visitListExpr(const ListExpr &node) {
     }
     type = u.unified_type;
     if (!u.new_substitutions->empty()) {
-      e.expr = e.expr->apply_substitutions(u.new_substitutions);
+      e.expr = e.expr->apply_substitutions(u.new_substitutions, true);
     }
     if (!u.new_substitutions->empty() || !e.new_substitutions->empty()) {
       auto new_subs = e.new_substitutions | u.new_substitutions;
       new_substitutions = new_substitutions | new_subs;
       for (auto &expr : exprs) {
-        expr = expr->apply_substitutions(new_subs);
+        expr = expr->apply_substitutions(new_subs, true);
       }
     }
     exprs.push_back(std::move(e.expr));
@@ -1038,7 +1063,7 @@ void ExprElaborator::visitLetExpr(const LetExpr &node) {
     if (!e.new_substitutions->empty()) {
       new_substitutions = new_substitutions | e.new_substitutions;
       for (auto &decl : decls) {
-        decl = decl->apply_substitutions(e.new_substitutions);
+        decl = decl->apply_substitutions(e.new_substitutions, true);
       }
     }
     Cprime = Cprime + e.env;
@@ -1053,10 +1078,10 @@ void ExprElaborator::visitLetExpr(const LetExpr &node) {
     if (!e.new_substitutions->empty()) {
       new_substitutions = new_substitutions | e.new_substitutions;
       for (auto &decl : decls) {
-        decl = decl->apply_substitutions(e.new_substitutions);
+        decl = decl->apply_substitutions(e.new_substitutions, true);
       }
       for (auto &expr : exprs) {
-        expr = expr->apply_substitutions(e.new_substitutions);
+        expr = expr->apply_substitutions(e.new_substitutions, true);
       }
     }
     exprs.push_back(std::move(e.expr));
@@ -1148,7 +1173,7 @@ void ExprElaborator::visitApplicationExpr(const ApplicationExpr &node) {
       }
       substitutions_ = substitutions_ | gf.new_substitutions;
       if (!gf.new_substitutions->empty()) {
-        e.expr = e.expr->apply_substitutions(gf.new_substitutions);
+        e.expr = e.expr->apply_substitutions(gf.new_substitutions, true);
         new_subs = new_subs | gf.new_substitutions;
       }
       type = gf.fn->result();
@@ -1160,13 +1185,13 @@ void ExprElaborator::visitApplicationExpr(const ApplicationExpr &node) {
       }
       if (!u.new_substitutions->empty()) {
         type = typing::apply_substitutions(type, u.new_substitutions);
-        e.expr = e.expr->apply_substitutions(u.new_substitutions);
+        e.expr = e.expr->apply_substitutions(u.new_substitutions, true);
         new_subs = new_subs | u.new_substitutions;
       }
     }
     if (!new_subs->empty()) {
       for (auto &expr : exprs) {
-        expr = expr->apply_substitutions(new_subs);
+        expr = expr->apply_substitutions(new_subs, true);
       }
       new_substitutions = new_substitutions | new_subs;
     }
@@ -1192,7 +1217,7 @@ void ExprElaborator::visitCaseExpr(const CaseExpr &node) {
   auto e = typer_.elaborate(C, *node.expr, substitutions_,
                             typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
   if (!e.new_substitutions->empty()) {
-    m.match = m.match.apply_substitutions(e.new_substitutions);
+    m.match = m.match.apply_substitutions(e.new_substitutions, true);
     new_substitutions = new_substitutions | e.new_substitutions;
   }
   typing::unification_t u;
@@ -1202,8 +1227,8 @@ void ExprElaborator::visitCaseExpr(const CaseExpr &node) {
     throw ElaborationError(e, node.location);
   }
   if (!u.new_substitutions->empty()) {
-    m.match = m.match.apply_substitutions(u.new_substitutions);
-    e.expr = e.expr->apply_substitutions(u.new_substitutions);
+    m.match = m.match.apply_substitutions(u.new_substitutions, true);
+    e.expr = e.expr->apply_substitutions(u.new_substitutions, true);
     new_substitutions = new_substitutions | u.new_substitutions;
   }
   if (m.match.result_type->id_of_youngest_typename() > maximum_type_name_id_) {
@@ -1243,7 +1268,7 @@ void ExprElaborator::visitTypedExpr(const TypedExpr &node) {
     throw ElaborationError(e, node.location);
   }
   if (!u.new_substitutions->empty()) {
-    e.expr = e.expr->apply_substitutions(u.new_substitutions);
+    e.expr = e.expr->apply_substitutions(u.new_substitutions, true);
     new_substitutions = new_substitutions | u.new_substitutions;
   }
   typed = std::move(e.expr);
@@ -1264,6 +1289,7 @@ Typer::elaborate_expr_with_substitutions_t Typer::elaborate(
     typing::Substitutions &substitutions, std::uint64_t maximum_type_name_id) {
   ExprElaborator v{*this, C, substitutions, maximum_type_name_id};
   exp.accept(v);
+  reporter_.report_type_judgement(exp.location, exp, *v.typed->type);
   return {std::move(v.typed), v.new_substitutions};
 }
 
@@ -1458,14 +1484,14 @@ Typer::elaborate_match_t elaborate_match_impl(
     auto new_subs = mu.new_substitutions;
 
     if (!mu.new_substitutions->empty()) {
-      tpat = tpat->apply_substitutions(mu.new_substitutions);
+      tpat = tpat->apply_substitutions(mu.new_substitutions, true);
     }
 
     auto e = typer.elaborate(C + tpat->bindings, *c.second, substitutions,
                              maximum_type_name_id);
     if (!e.new_substitutions->empty()) {
       match_type = typing::apply_substitutions(match_type, e.new_substitutions);
-      tpat = tpat->apply_substitutions(e.new_substitutions);
+      tpat = tpat->apply_substitutions(e.new_substitutions, true);
       new_subs = new_subs | e.new_substitutions;
     }
 
@@ -1481,15 +1507,15 @@ Typer::elaborate_match_t elaborate_match_impl(
     if (!ru.new_substitutions->empty()) {
       match_type =
           typing::apply_substitutions(match_type, ru.new_substitutions);
-      tpat = tpat->apply_substitutions(ru.new_substitutions);
-      e.expr = e.expr->apply_substitutions(ru.new_substitutions);
+      tpat = tpat->apply_substitutions(ru.new_substitutions, true);
+      e.expr = e.expr->apply_substitutions(ru.new_substitutions, true);
       new_subs = new_subs | ru.new_substitutions;
     }
 
     if (!new_subs->empty()) {
       for (auto &tc : tcases) {
-        tc.first = tc.first->apply_substitutions(mu.new_substitutions);
-        tc.second = tc.second->apply_substitutions(mu.new_substitutions);
+        tc.first = tc.first->apply_substitutions(mu.new_substitutions, true);
+        tc.second = tc.second->apply_substitutions(mu.new_substitutions, true);
       }
       result.new_substitutions = result.new_substitutions | new_subs;
     }
@@ -1502,7 +1528,7 @@ Typer::elaborate_match_t elaborate_match_impl(
                   .result_type = result_type};
   compile_match(result.match, std::move(tcases));
   if (result.match.nonexhaustive) {
-    typer.issue_warning(location, "match nonexhaustive");
+    typer.reporter().report_warning(location, "match nonexhaustive");
   }
   return result;
 }
@@ -1606,9 +1632,5 @@ typing::TypePtr Typer::elaborate_type_expr(managed_ptr<typing::Context> C,
 managed_ptr<typing::Stamp> Typer::new_stamp() { return stamp_generator_(); }
 
 const typing::BuiltinTypes &Typer::builtins() const { return builtins_; }
-
-void Typer::issue_warning(const Location &location, std::string_view text) {
-  reporter_.report_warning(location, text);
-}
 
 }  // namespace emil

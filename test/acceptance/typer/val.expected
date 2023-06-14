@@ -60,5 +60,7 @@ val a : bigint
 @0019: ERROR
 @0020:
 val a : bigint
-@0021: ERROR
+@0021: WARNING
+@0021:
+val a : X1 list
 @0022:
