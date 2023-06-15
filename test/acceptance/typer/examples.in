@@ -48,3 +48,24 @@ val pair = fn x => (x, x);
 val cpair = mkCountF pair;
 val cpairCalls = dr counter;
 val cpair' = (fn y => mkCountF pair y);
+
+let val r = ref(fn x => x)
+ in (dr r) 5
+end;
+
+let val r = ref(fn x => x)
+ in (dr r) 5; (dr r) true
+end;
+
+val f = fn () =>
+    let val r = ref(fn x => x)
+     in (dr r)
+    end;
+
+val x = ref(fn x => x);
+
+val x = (let val id : 'a -> 'a = fn z => z in id id end,
+         fn y => y);
+val x = (let val id : 'a -> 'a = fn z => z in id id end,
+         fn (y: 'a) => y);
+(* TODO: add explicit type variable binding examples *)

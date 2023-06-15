@@ -46,4 +46,16 @@ val cpair : X1 -> (X1 * X1)
 val cpairCalls : bigint ref
 @0050:
 val cpair' : 'a -> ('a * 'a)
-@0051:
+@0052:
+val it : bigint
+@0057: ERROR
+@0060:
+val f : () -> 'a -> 'a
+@0065: WARNING
+@0065:
+val x : (X1 -> X1) ref
+@0067: WARNING
+@0067:
+val x : ((X1 -> X1) * (X2 -> X2))
+@0069: ERROR
+@0072:

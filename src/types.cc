@@ -1015,6 +1015,8 @@ class TypePrinter : public TypeVisitor {
   }
 
   void visit(const ConstructedType& t) override {
+    bool save = subordinate_;
+    subordinate_ = true;
     switch (t.types()->size()) {
       case 0:
         break;
@@ -1037,6 +1039,7 @@ class TypePrinter : public TypeVisitor {
         contents_ += u8") ";
       }
     }
+    subordinate_ = save;
     contents_ += t.name_str();
   }
 
