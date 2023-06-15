@@ -28,3 +28,6 @@ val { foo : bigint,
       waldo = 2 : bigint,
       ... } = xyzzy;
 val foo = 1 and bar = 2 and (baz, quux) = waldo;
+val rec f = fn 0 => 1
+             | 1 => 1
+             | x => (+) (f ((-) x 1)) (f ((-) x 2));

@@ -55,7 +55,9 @@
                          :expr
                          (BigintLiteralExpr
                              :val
-                             1)))))
+                             1)
+                         :rec
+                         false))))
                  :exprs
                  ((IdentifierExpr
                      :qualifiers

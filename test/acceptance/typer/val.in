@@ -19,3 +19,20 @@ val (::) (a, nil) = [1, 2];
 val (a, ref) = (1, 2);
 val ref a = ref 2;
 val ref a = ref [];
+(*dummy definitions*)
+val (+) = fn (a : bigint, _ : bigint) => a;
+val (-) = fn (a : bigint, _ : bigint) => a;
+val rec f = fn 0 => 1
+             | 1 => 1
+             | x => (+) (f ((-) (x, 1)), f ((-) (x, 2)));
+val map = fn f =>
+    let
+        val rec g = fn nil => nil
+                     | ((::) (el, rest)) => (::) (f el, g rest)
+    in
+        g
+    end;
+val rec foldl = fn f => fn z =>
+            fn nil => z
+             | ((::) (x, xs)) => foldl f (f (z, x)) xs;
+val sum = foldl (+) 0;

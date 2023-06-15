@@ -419,10 +419,15 @@ void DeclElaborator::visitValDecl(const ValDecl &node) {
   std::vector<std::pair<match_t, std::unique_ptr<TExpr>>> bindings;
   bindings.reserve(node.bindings.size());
   for (auto it = node.bindings.begin(); it != node.bindings.end(); ++it) {
-    auto m = typer_.elaborate_match((*it)->pat->location, C, *(*it)->pat,
+    const auto &binding = **it;
+    auto m = typer_.elaborate_match(binding.pat->location, C, *binding.pat,
                                     substitutions_, typer_.new_stamp()->id());
     auto new_subs = m.new_substitutions;
-    auto e = typer_.elaborate(C, *(*it)->expr, substitutions_,
+    auto C_expr = C;
+    if (binding.rec) {
+      C_expr = C_expr + m.match.outcomes.front().bindings;
+    }
+    auto e = typer_.elaborate(C_expr, *(*it)->expr, substitutions_,
                               typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION);
     if (!e.new_substitutions->empty()) {
       m.match = m.match.apply_substitutions(e.new_substitutions, true);

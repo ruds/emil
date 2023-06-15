@@ -70,7 +70,9 @@
                                  false
                                  :is_prefix_op
                                  false))
-                     ))))))
+                     ))
+                 :rec
+                 false))))
 0002 (ExprTopDecl
          :expr
          (TupleExpr
@@ -285,7 +287,9 @@
                                                      :is_prefix_op
                                                      false)
                                              ))
-                                     ))))))))))))
+                                     ))))))))
+                 :rec
+                 false))))
 0005 (ExprTopDecl
          :expr
          (ApplicationExpr

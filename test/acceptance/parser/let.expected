@@ -19,7 +19,9 @@
                          :expr
                          (BigintLiteralExpr
                              :val
-                             1))))
+                             1)
+                         :rec
+                         false)))
                  (ValDecl
                      :bindings
                      ((ValBind
@@ -42,7 +44,9 @@
                              :is_op
                              false
                              :is_prefix_op
-                             false))))
+                             false)
+                         :rec
+                         false)))
              )
              :exprs
              ((IdentifierExpr
@@ -75,7 +79,9 @@
                          :expr
                          (BigintLiteralExpr
                              :val
-                             1))))
+                             1)
+                         :rec
+                         false)))
                  (ValDecl
                      :bindings
                      ((ValBind
@@ -98,7 +104,9 @@
                              :is_op
                              false
                              :is_prefix_op
-                             false))))
+                             false)
+                         :rec
+                         false)))
              )
              :exprs
              (

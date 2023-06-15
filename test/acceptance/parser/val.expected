@@ -22,7 +22,9 @@
                      :is_op
                      false
                      :is_prefix_op
-                     false)))))
+                     false)
+                 :rec
+                 false))))
 0002 (DeclTopDecl
          :decl
          (ValDecl
@@ -47,7 +49,9 @@
                      :is_op
                      false
                      :is_prefix_op
-                     false)))))
+                     false)
+                 :rec
+                 false))))
 0003 (DeclTopDecl
          :decl
          (ValDecl
@@ -90,7 +94,9 @@
                          (StringLiteralExpr
                              :val
                              "626172")
-                     ))))))
+                     ))
+                 :rec
+                 false))))
 0004 (DeclTopDecl
          :decl
          (ValDecl
@@ -121,7 +127,9 @@
                          (StringLiteralExpr
                              :val
                              "626172")
-                     ))))))
+                     ))
+                 :rec
+                 false))))
 0005 (DeclTopDecl
          :decl
          (ValDecl
@@ -138,7 +146,9 @@
                      :is_op
                      false
                      :is_prefix_op
-                     false)))))
+                     false)
+                 :rec
+                 false))))
 0006 (DeclTopDecl
          :decl
          (ValDecl
@@ -163,7 +173,9 @@
                      :is_op
                      true
                      :is_prefix_op
-                     false)))))
+                     false)
+                 :rec
+                 false))))
 0007 (DeclTopDecl
          :decl
          (ValDecl
@@ -199,7 +211,9 @@
                              :is_op
                              false
                              :is_prefix_op
-                             false))))))))
+                             false))))
+                 :rec
+                 false))))
 0008 (DeclTopDecl
          :decl
          (ValDecl
@@ -227,7 +241,9 @@
                      :is_op
                      false
                      :is_prefix_op
-                     false)))))
+                     false)
+                 :rec
+                 false))))
 0009 (DeclTopDecl
          :decl
          (ValDecl
@@ -301,7 +317,9 @@
                      :is_op
                      false
                      :is_prefix_op
-                     false)))))
+                     false)
+                 :rec
+                 false))))
 0010 (DeclTopDecl
          :decl
          (ValDecl
@@ -320,7 +338,9 @@
                      :is_op
                      false
                      :is_prefix_op
-                     false)))))
+                     false)
+                 :rec
+                 false))))
 0011 (DeclTopDecl
          :decl
          (ValDecl
@@ -386,7 +406,9 @@
                      :is_op
                      false
                      :is_prefix_op
-                     false)))))
+                     false)
+                 :rec
+                 false))))
 0012 (DeclTopDecl
          :decl
          (ValDecl
@@ -405,7 +427,9 @@
                      :is_op
                      false
                      :is_prefix_op
-                     false)))))
+                     false)
+                 :rec
+                 false))))
 0013 (DeclTopDecl
          :decl
          (ValDecl
@@ -498,7 +522,9 @@
                      :is_op
                      false
                      :is_prefix_op
-                     false)))))
+                     false)
+                 :rec
+                 false))))
 0014 (DeclTopDecl
          :decl
          (ValDecl
@@ -535,7 +561,9 @@
                      :is_op
                      false
                      :is_prefix_op
-                     false)))))
+                     false)
+                 :rec
+                 false))))
 0015 (DeclTopDecl
          :decl
          (ValDecl
@@ -585,7 +613,9 @@
                      :is_op
                      false
                      :is_prefix_op
-                     false)))))
+                     false)
+                 :rec
+                 false))))
 0016 (DeclTopDecl
          :decl
          (ValDecl
@@ -622,7 +652,9 @@
                      :is_op
                      false
                      :is_prefix_op
-                     false)))))
+                     false)
+                 :rec
+                 false))))
 0018 ERROR
 0019 ERROR
 0020 ERROR
@@ -662,7 +694,9 @@
                      :is_op
                      false
                      :is_prefix_op
-                     false)))))
+                     false)
+                 :rec
+                 false))))
 0024 (DeclTopDecl
          :decl
          (ValDecl
@@ -725,7 +759,9 @@
                      :is_op
                      false
                      :is_prefix_op
-                     false)))))
+                     false)
+                 :rec
+                 false))))
 0025 (DeclTopDecl
          :decl
          (ValDecl
@@ -787,7 +823,9 @@
                      :is_op
                      false
                      :is_prefix_op
-                     false)))))
+                     false)
+                 :rec
+                 false))))
 0026 (DeclTopDecl
          :decl
          (ValDecl
@@ -902,7 +940,9 @@
                      :is_op
                      false
                      :is_prefix_op
-                     false)))))
+                     false)
+                 :rec
+                 false))))
 0030 (DeclTopDecl
          :decl
          (ValDecl
@@ -922,7 +962,9 @@
                      :expr
                      (BigintLiteralExpr
                          :val
-                         1))
+                         1)
+                     :rec
+                     false)
                  (ValBind
                      :pat
                      (IdentifierPattern
@@ -937,7 +979,9 @@
                      :expr
                      (BigintLiteralExpr
                          :val
-                         2))
+                         2)
+                     :rec
+                     false)
                  (ValBind
                      :pat
                      (TuplePattern
@@ -971,6 +1015,144 @@
                          :is_op
                          false
                          :is_prefix_op
-                         false))
+                         false)
+                     :rec
+                     false)
              )))
-0031 (EndOfFileTopDecl)
+0031 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
+                     :qualifiers
+                     ()
+                     :identifier
+                     "66"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false)
+                 :expr
+                 (FnExpr
+                     :cases
+                     (
+                         ((LiteralPattern
+                             :val
+                             (BigintLiteralExpr
+                                 :val
+                                 0))
+                           . (BigintLiteralExpr
+                                 :val
+                                 1))
+                         ((LiteralPattern
+                             :val
+                             (BigintLiteralExpr
+                                 :val
+                                 1))
+                           . (BigintLiteralExpr
+                                 :val
+                                 1))
+                         ((IdentifierPattern
+                             :qualifiers
+                             ()
+                             :identifier
+                             "78"
+                             :is_op
+                             false
+                             :is_prefix_op
+                             false)
+                           . (ApplicationExpr
+                                 :exprs
+                                 (
+                                     (IdentifierExpr
+                                         :qualifiers
+                                         ()
+                                         :identifier
+                                         "2B"
+                                         :is_op
+                                         true
+                                         :is_prefix_op
+                                         false)
+                                     (ApplicationExpr
+                                         :exprs
+                                         (
+                                             (IdentifierExpr
+                                                 :qualifiers
+                                                 ()
+                                                 :identifier
+                                                 "66"
+                                                 :is_op
+                                                 false
+                                                 :is_prefix_op
+                                                 false)
+                                             (ApplicationExpr
+                                                 :exprs
+                                                 (
+                                                     (IdentifierExpr
+                                                         :qualifiers
+                                                         ()
+                                                         :identifier
+                                                         "2D"
+                                                         :is_op
+                                                         true
+                                                         :is_prefix_op
+                                                         false)
+                                                     (IdentifierExpr
+                                                         :qualifiers
+                                                         ()
+                                                         :identifier
+                                                         "78"
+                                                         :is_op
+                                                         false
+                                                         :is_prefix_op
+                                                         false)
+                                                     (BigintLiteralExpr
+                                                         :val
+                                                         1)
+                                                 ))
+                                         ))
+                                     (ApplicationExpr
+                                         :exprs
+                                         (
+                                             (IdentifierExpr
+                                                 :qualifiers
+                                                 ()
+                                                 :identifier
+                                                 "66"
+                                                 :is_op
+                                                 false
+                                                 :is_prefix_op
+                                                 false)
+                                             (ApplicationExpr
+                                                 :exprs
+                                                 (
+                                                     (IdentifierExpr
+                                                         :qualifiers
+                                                         ()
+                                                         :identifier
+                                                         "2D"
+                                                         :is_op
+                                                         true
+                                                         :is_prefix_op
+                                                         false)
+                                                     (IdentifierExpr
+                                                         :qualifiers
+                                                         ()
+                                                         :identifier
+                                                         "78"
+                                                         :is_op
+                                                         false
+                                                         :is_prefix_op
+                                                         false)
+                                                     (BigintLiteralExpr
+                                                         :val
+                                                         2)
+                                                 ))
+                                         ))
+                                 )))
+                     ))
+                 :rec
+                 true))))
+0034 (EndOfFileTopDecl)

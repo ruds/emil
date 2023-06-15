@@ -119,7 +119,7 @@ const std::vector<Category> CATEGORIES{
     {"Bind",
      "BIND",
      {
-         {"Val", {"Pattern* pat", "Expr* expr"}},
+         {"Val", {"Pattern* pat", "Expr* expr", "bool rec"}},
      }},
     {"Decl",
      "DECL",

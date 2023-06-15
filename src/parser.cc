@@ -553,11 +553,13 @@ std::unique_ptr<ValDecl> Parser::match_val_decl(Token& first) {
 }
 
 std::unique_ptr<ValBind> Parser::match_val_bind(Token& first) {
-  auto pattern = match_pattern(first);
+  const bool rec = first.type == TokenType::KW_REC;
+  auto& token = rec ? advance_safe("valbind declaration") : first;
+  auto pattern = match_pattern(token);
   consume(TokenType::EQUALS, "valbind declaration");
   auto expr = match_expr(advance_safe("valbind declaration"));
   return std::make_unique<ValBind>(first.location, std::move(pattern),
-                                   std::move(expr));
+                                   std::move(expr), rec);
 }
 
 std::unique_ptr<LetExpr> Parser::match_let_expr(const Location& location) {

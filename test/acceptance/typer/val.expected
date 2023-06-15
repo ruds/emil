@@ -63,4 +63,16 @@ val a : bigint
 @0021: WARNING
 @0021:
 val a : X1 list
-@0022:
+@0023:
+val (+) : (bigint * bigint) -> bigint
+@0024:
+val (-) : (bigint * bigint) -> bigint
+@0025:
+val f : bigint -> bigint
+@0028:
+val map : ('a -> 'b) -> 'a list -> 'b list
+@0035:
+val foldl : (('a * 'b) -> 'a) -> 'a -> 'b list -> 'a
+@0038:
+val sum : bigint list -> bigint
+@0039:
