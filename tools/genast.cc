@@ -116,10 +116,15 @@ const std::vector<Category> CATEGORIES{
          {"Fn", {"[Pattern*->Expr*] cases"}},
          {"Typed", {"Expr* expr", "TypeExpr* type"}},
      }},
+    {"Bind",
+     "BIND",
+     {
+         {"Val", {"Pattern* pat", "Expr* expr"}},
+     }},
     {"Decl",
      "DECL",
      {
-         {"Val", {"[Pattern*->Expr*] bindings"}},
+         {"Val", {"[ValBind*] bindings"}},
      }},
     {"TopDecl",
      "TOPDECL",

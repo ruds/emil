@@ -41,16 +41,19 @@
                  :decls
                  ((ValDecl
                      :bindings
-                     (((IdentifierPattern
-                         :qualifiers
-                         ()
-                         :identifier
-                         "61"
-                         :is_op
-                         false
-                         :is_prefix_op
-                         false)
-                       . (BigintLiteralExpr
+                     ((ValBind
+                         :pat
+                         (IdentifierPattern
+                             :qualifiers
+                             ()
+                             :identifier
+                             "61"
+                             :is_op
+                             false
+                             :is_prefix_op
+                             false)
+                         :expr
+                         (BigintLiteralExpr
                              :val
                              1)))))
                  :exprs

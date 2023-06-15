@@ -545,14 +545,19 @@ std::unique_ptr<ValDecl> Parser::match_val_decl(Token& first) {
   if (first.type != TokenType::KW_VAL)
     error(fmt::format("Expected 'val' but got token of type {}", first.type),
           first);
-  std::vector<std::pair<PatternPtr, ExprPtr>> bindings;
+  std::vector<std::unique_ptr<ValBind>> bindings;
   do {
-    auto pattern = match_pattern(advance_safe("val declaration"));
-    consume(TokenType::EQUALS, "val declaration");
-    auto expr = match_expr(advance_safe("val declaration"));
-    bindings.emplace_back(std::move(pattern), std::move(expr));
+    bindings.push_back(match_val_bind(advance_safe("valbind declaration")));
   } while (match(TokenType::KW_AND));
   return std::make_unique<ValDecl>(first.location, std::move(bindings));
+}
+
+std::unique_ptr<ValBind> Parser::match_val_bind(Token& first) {
+  auto pattern = match_pattern(first);
+  consume(TokenType::EQUALS, "valbind declaration");
+  auto expr = match_expr(advance_safe("valbind declaration"));
+  return std::make_unique<ValBind>(first.location, std::move(pattern),
+                                   std::move(expr));
 }
 
 std::unique_ptr<LetExpr> Parser::match_let_expr(const Location& location) {

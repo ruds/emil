@@ -27,3 +27,4 @@ val { foo : bigint,
       bar : (bigint * string) as (baz, quux),
       waldo = 2 : bigint,
       ... } = xyzzy;
+val foo = 1 and bar = 2 and (baz, quux) = waldo;

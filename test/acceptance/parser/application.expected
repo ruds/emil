@@ -2,16 +2,19 @@
          :decl
          (ValDecl
              :bindings
-             (((IdentifierPattern
-                 :qualifiers
-                 ()
-                 :identifier
-                 "7461696C"
-                 :is_op
-                 false
-                 :is_prefix_op
-                 false)
-               . (FnExpr
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
+                     :qualifiers
+                     ()
+                     :identifier
+                     "7461696C"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false)
+                 :expr
+                 (FnExpr
                      :cases
                      (
                          ((IdentifierPattern
@@ -188,16 +191,19 @@
          :decl
          (ValDecl
              :bindings
-             (((IdentifierPattern
-                 :qualifiers
-                 ()
-                 :identifier
-                 "626F7468"
-                 :is_op
-                 false
-                 :is_prefix_op
-                 false)
-               . (FnExpr
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
+                     :qualifiers
+                     ()
+                     :identifier
+                     "626F7468"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false)
+                 :expr
+                 (FnExpr
                      :cases
                      (((IdentifierPattern
                          :qualifiers

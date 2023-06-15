@@ -44,6 +44,7 @@ class RecRowExpr;
 class RecordExpr;
 class TopDecl;
 class TypeExpr;
+class ValBind;
 class ValDecl;
 
 class ParsingError : public std::exception {
@@ -120,6 +121,8 @@ class Parser {
   match_cases();
 
   std::unique_ptr<ValDecl> match_val_decl(Token& first);
+
+  std::unique_ptr<ValBind> match_val_bind(Token& first);
 
   std::unique_ptr<Pattern> match_left_pattern(Token& first);
 
