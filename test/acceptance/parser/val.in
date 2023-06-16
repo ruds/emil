@@ -31,3 +31,12 @@ val foo = 1 and bar = 2 and (baz, quux) = waldo;
 val rec f = fn 0 => 1
              | 1 => 1
              | x => (+) (f ((-) x 1)) (f ((-) x 2));
+val rec even = fn 0 => true | n => odd ((-) (n, 1))
+    and odd  = fn 0 => false | n => even ((-) (n, 1));
+val 'a id = fn (z: 'a) => z;
+val ('a) id = fn (z: 'a) => z;
+val ('a, 'b) pair = fn (x: 'a, y: 'b) => (x, y);
+val ('b, 'a) pair = fn (x: 'a, y: 'b) => (x, y);
+val 'a rec f = fn nil : 'a => [] | ((::) (x, xs)) => f xs
+       and foo = fn () => nil : 'a;
+val ('a, 'a) foo = bar;

@@ -78,7 +78,7 @@ add_library(runtime STATIC gc.cc reporter.cc runtime.cc string.cc types.cc)
 add_emil_options(runtime)
 target_include_directories(runtime
   PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/include" ../include)
-target_link_libraries(runtime PRIVATE util fmt::fmt utf8cpp)
+target_link_libraries(runtime PUBLIC util fmt::fmt PRIVATE utf8cpp)
 
 add_library(typed_ast STATIC typed_ast.cc)
 add_emil_options(typed_ast)

@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <initializer_list>
+#include <iterator>
 #include <memory>
 #include <set>
 #include <stdexcept>
@@ -29,6 +30,8 @@
 #include "emil/ast.h"
 #include "emil/strconvert.h"
 #include "emil/token.h"
+
+// IWYU pragma: no_include <__tree>
 
 namespace emil {
 
@@ -545,11 +548,37 @@ std::unique_ptr<ValDecl> Parser::match_val_decl(Token& first) {
   if (first.type != TokenType::KW_VAL)
     error(fmt::format("Expected 'val' but got token of type {}", first.type),
           first);
+  auto explicit_type_vars = match_type_id_seq();
   std::vector<std::unique_ptr<ValBind>> bindings;
   do {
     bindings.push_back(match_val_bind(advance_safe("valbind declaration")));
   } while (match(TokenType::KW_AND));
-  return std::make_unique<ValDecl>(first.location, std::move(bindings));
+  return std::make_unique<ValDecl>(first.location, std::move(bindings),
+                                   std::move(explicit_type_vars));
+}
+
+std::vector<std::u8string> Parser::match_type_id_seq() {
+  std::set<std::u8string> types;
+  if (match(TokenType::ID_TYPE)) {
+    types.insert(move_string(current_.back()));
+  } else if (peek() && peek()->type == TokenType::LPAREN && peek(1) &&
+             peek(1)->type == TokenType::ID_TYPE) {
+    advance();
+    do {
+      auto s = move_string(consume(TokenType::ID_TYPE, "type id sequence"));
+      if (!types.insert(s).second) {
+        error("type id sequence contains duplicate type ids", current_.back());
+      }
+    } while (match(TokenType::COMMA));
+    if (types.size() == 1) {
+      error("Illegal type id sequence with single type id in parentheses",
+            current_.back());
+    }
+    consume(TokenType::RPAREN, "type id sequence");
+  }
+  std::vector<std::u8string> out(std::move_iterator(types.begin()),
+                                 std::move_iterator(types.end()));
+  return out;
 }
 
 std::unique_ptr<ValBind> Parser::match_val_bind(Token& first) {

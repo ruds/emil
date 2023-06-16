@@ -57,7 +57,9 @@
                              :val
                              1)
                          :rec
-                         false))))
+                         false))
+                     :explicit_type_vars
+                     ()))
                  :exprs
                  ((IdentifierExpr
                      :qualifiers

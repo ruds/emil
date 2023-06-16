@@ -5,4 +5,7 @@ val it : (string * (bigint * string * bigint))
 @0014:
 val it : (bigint * string * bigint)
 @0020: ERROR
+@0026: WARNING
 @0026:
+val it : ((X1 -> X1) * (X2 -> X2))
+@0028:

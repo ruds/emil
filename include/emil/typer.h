@@ -18,7 +18,9 @@
 
 #include <cstdint>
 #include <exception>
+#include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -72,13 +74,16 @@ class Typer {
   elaborate_topdecl_t elaborate(managed_ptr<typing::Basis> B,
                                 const TopDecl& topdecl);
 
+  using ImplicitlyScopedVars = std::map<const Decl*, std::set<std::u8string>>;
+
   struct elaborate_decl_t {
     managed_ptr<typing::Env> env;
     std::unique_ptr<TDecl> decl;
   };
 
   /** Do typing analysis of a declaration. */
-  elaborate_decl_t elaborate(managed_ptr<typing::Context> C, const Decl& dec);
+  elaborate_decl_t elaborate(managed_ptr<typing::Context> C, const Decl& dec,
+                             const ImplicitlyScopedVars& scopes);
 
   struct elaborate_decl_with_substitutions_t {
     managed_ptr<typing::Env> env;
@@ -89,11 +94,12 @@ class Typer {
   /** Do typing analysis of a declaration. */
   elaborate_decl_with_substitutions_t elaborate(
       managed_ptr<typing::Context> C, const Decl& dec,
-      typing::Substitutions& substitutions);
+      typing::Substitutions& substitutions, const ImplicitlyScopedVars& scopes);
 
   /** Do typing analysis of an expression. */
   std::unique_ptr<TExpr> elaborate(managed_ptr<typing::Context> C,
-                                   const Expr& exp);
+                                   const Expr& exp,
+                                   const ImplicitlyScopedVars& scopes);
 
   struct elaborate_expr_with_substitutions_t {
     std::unique_ptr<TExpr> expr;
@@ -110,7 +116,8 @@ class Typer {
    */
   elaborate_expr_with_substitutions_t elaborate(
       managed_ptr<typing::Context> C, const Expr& exp,
-      typing::Substitutions& substitutions, std::uint64_t maximum_type_name_id);
+      typing::Substitutions& substitutions, std::uint64_t maximum_type_name_id,
+      const ImplicitlyScopedVars& scopes);
 
   struct elaborate_match_t {
     match_t match;
@@ -122,7 +129,8 @@ class Typer {
       const Location& location, managed_ptr<typing::Context> C,
       const std::vector<
           std::pair<std::unique_ptr<Pattern>, std::unique_ptr<Expr>>>& cases,
-      typing::Substitutions& substitutions, std::uint64_t maximum_type_name_id);
+      typing::Substitutions& substitutions, std::uint64_t maximum_type_name_id,
+      const ImplicitlyScopedVars& scopes);
 
   elaborate_match_t elaborate_match(const Location& location,
                                     managed_ptr<typing::Context> C,

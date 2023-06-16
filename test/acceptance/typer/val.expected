@@ -63,16 +63,30 @@ val a : bigint
 @0021: WARNING
 @0021:
 val a : X1 list
-@0023:
-val (+) : (bigint * bigint) -> bigint
+@0022: WARNING
+@0022:
+val it : X1 list
 @0024:
-val (-) : (bigint * bigint) -> bigint
+val (+) : (bigint * bigint) -> bigint
 @0025:
+val (-) : (bigint * bigint) -> bigint
+@0026:
 val f : bigint -> bigint
-@0028:
+@0029:
 val map : ('a -> 'b) -> 'a list -> 'b list
-@0035:
+@0036:
 val foldl : (('a * 'b) -> 'a) -> 'a -> 'b list -> 'a
-@0038:
-val sum : bigint list -> bigint
 @0039:
+val sum : bigint list -> bigint
+@0040:
+val even : bigint -> bool
+val odd : bigint -> bool
+@0042:
+val id : 'a -> 'a
+@0043:
+val pair : ('a * 'b) -> ('a * 'b)
+@0044:
+val f : 'a list -> 'a list
+val foo : 'a list
+@0046: ERROR
+@0047:

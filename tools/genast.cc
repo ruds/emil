@@ -124,7 +124,7 @@ const std::vector<Category> CATEGORIES{
     {"Decl",
      "DECL",
      {
-         {"Val", {"[ValBind*] bindings"}},
+         {"Val", {"[ValBind*] bindings", "[str] explicit_type_vars"}},
      }},
     {"TopDecl",
      "TOPDECL",

@@ -68,4 +68,30 @@ val x = (let val id : 'a -> 'a = fn z => z in id id end,
          fn y => y);
 val x = (let val id : 'a -> 'a = fn z => z in id id end,
          fn (y: 'a) => y);
-(* TODO: add explicit type variable binding examples *)
+val x = let val 'a id : 'a -> 'a = fn z => z in id id end;
+val 'a x = let val id : 'a -> 'a = fn z => z in id id end;
+val 'a x = let val 'a id : 'a -> 'a = fn z => z in id id end;
+val x = (let val 'a id : 'a -> 'a = fn z => z in id id end,
+         fn (y: 'a) => y);
+
+(* From http://mlton.org/TypeVariableScope *)
+val f = fn x =>
+  let
+    val g = fn (y: 'a) => case true of true => x | false => y
+  in
+    g x
+  end;
+
+val f = fn x =>
+  let
+    val 'a g = fn (y: 'a) => case true of true => x | false => y
+  in
+    g x
+  end;
+
+val 'a f = fn x =>
+  let
+    val g = fn (y: 'a) => case true of true => x | false => y
+  in
+    g x
+  end;

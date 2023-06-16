@@ -72,7 +72,9 @@
                                  false))
                      ))
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0002 (ExprTopDecl
          :expr
          (TupleExpr
@@ -289,7 +291,9 @@
                                              ))
                                      ))))))))
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0005 (ExprTopDecl
          :expr
          (ApplicationExpr

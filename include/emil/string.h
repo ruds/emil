@@ -14,6 +14,9 @@
 
 #pragma once
 
+#include <fmt/core.h>
+#include <fmt/format.h>
+
 #include <bit>
 #include <compare>
 #include <cstddef>
@@ -21,6 +24,7 @@
 #include <string_view>
 
 #include "emil/gc.h"
+#include "emil/strconvert.h"
 
 namespace emil {
 
@@ -111,3 +115,18 @@ std::strong_ordering operator<=>(const ManagedString& l,
                                  const std::u8string_view& r) noexcept;
 
 }  // namespace emil
+
+template <>
+struct fmt::formatter<emil::managed_ptr<emil::ManagedString>> {
+  constexpr auto parse(format_parse_context& ctx) -> decltype(ctx.begin()) {
+    auto it = ctx.begin(), end = ctx.end();
+    if (it != end) throw format_error("invalid format");
+    return it;
+  }
+
+  template <typename FormatContext>
+  auto format(const emil::managed_ptr<emil::ManagedString>& d,
+              FormatContext& ctx) const -> decltype(ctx.out()) {
+    return fmt::format_to(ctx.out(), "{}", emil::to_std_string(*d));
+  }
+};

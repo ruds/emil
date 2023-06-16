@@ -23,3 +23,5 @@ let
 in
   (a, b, 20)
 end : bigint * string;
+(let val 'a id : 'a -> 'a = fn z => z in id id end,
+ let val f = fn (y: 'a) => y in f end);

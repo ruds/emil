@@ -58,4 +58,14 @@ val x : (X1 -> X1) ref
 @0067:
 val x : ((X1 -> X1) * (X2 -> X2))
 @0069: ERROR
-@0072:
+@0071: WARNING
+@0071:
+val x : X1 -> X1
+@0072: ERROR
+@0073: ERROR
+@0074: ERROR
+@0080: ERROR
+@0087: ERROR
+@0092:
+val f : 'a -> 'a
+@0098:

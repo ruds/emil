@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <fmt/core.h>
+#include <fmt/format.h>
 
 #include <cstdio>
 #include <cstring>
@@ -23,6 +24,7 @@
 #include <string_view>
 
 #include "emil/ast.h"
+#include "emil/collections.h"
 #include "emil/gc.h"
 #include "emil/lexer.h"
 #include "emil/parser.h"
@@ -71,9 +73,20 @@ class TestReporter : public Reporter {
   void report_type_judgement(const Location& location, const Expr& expr,
                              const typing::Type& type) override {
     if (enable_type_judgements_) {
-      fmt::print(stderr, "{}:{}: TYPE JUDGEMENT: {} for {}\n",
+      fmt::print(stderr, "{}:{}: TYPE JUDGEMENT (expr): {} for {}\n",
                  location.filename, location.line,
                  to_std_string(typing::print_type(type)), print_ast(expr));
+    }
+  }
+
+  void report_type_judgement(const Location& location,
+                             std::string_view identifier,
+                             const typing::TypeScheme& sigma) override {
+    if (enable_type_judgements_) {
+      fmt::print(stderr, "{}:{}: TYPE JUDGEMENT (binding): {}: ∀({}).{}\n",
+                 location.filename, location.line, identifier,
+                 fmt::join(*sigma.bound(), ", "),
+                 to_std_string(typing::print_type(sigma.t())));
     }
   }
 

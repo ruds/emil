@@ -23,7 +23,8 @@ struct Location;
 
 namespace typing {
 class Type;
-}
+class TypeScheme;
+}  // namespace typing
 
 class Reporter {
  public:
@@ -35,6 +36,9 @@ class Reporter {
                               std::string_view text) = 0;
   virtual void report_type_judgement(const Location& location, const Expr& expr,
                                      const typing::Type& type) = 0;
+  virtual void report_type_judgement(const Location& location,
+                                     std::string_view id,
+                                     const typing::TypeScheme& sigma) = 0;
 };
 
 }  // namespace emil

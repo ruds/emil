@@ -19,6 +19,7 @@ val (::) (a, nil) = [1, 2];
 val (a, ref) = (1, 2);
 val ref a = ref 2;
 val ref a = ref [];
+let val ref a = ref [] in a end;
 (*dummy definitions*)
 val (+) = fn (a : bigint, _ : bigint) => a;
 val (-) = fn (a : bigint, _ : bigint) => a;
@@ -36,3 +37,10 @@ val rec foldl = fn f => fn z =>
             fn nil => z
              | ((::) (x, xs)) => foldl f (f (z, x)) xs;
 val sum = foldl (+) 0;
+val rec even = fn 0 => true | n => odd ((-) (n, 1))
+    and odd  = fn 0 => false | n => even ((-) (n, 1));
+val 'a id = fn (z: 'a) => z;
+val ('a, 'b) pair = fn (x: 'a, y: 'b) => (x, y);
+val 'a rec f = fn nil : 'a list => [] : 'a list | ((::) (x, xs)) => f xs
+       and foo = nil : 'a list;
+val 'a foo = let val 'a bar = baz in bar end;

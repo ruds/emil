@@ -21,7 +21,9 @@
                              :val
                              1)
                          :rec
-                         false)))
+                         false))
+                     :explicit_type_vars
+                     ())
                  (ValDecl
                      :bindings
                      ((ValBind
@@ -46,7 +48,9 @@
                              :is_prefix_op
                              false)
                          :rec
-                         false)))
+                         false))
+                     :explicit_type_vars
+                     ())
              )
              :exprs
              ((IdentifierExpr
@@ -81,7 +85,9 @@
                              :val
                              1)
                          :rec
-                         false)))
+                         false))
+                     :explicit_type_vars
+                     ())
                  (ValDecl
                      :bindings
                      ((ValBind
@@ -106,7 +112,9 @@
                              :is_prefix_op
                              false)
                          :rec
-                         false)))
+                         false))
+                     :explicit_type_vars
+                     ())
              )
              :exprs
              (

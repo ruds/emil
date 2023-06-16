@@ -122,6 +122,8 @@ class Parser {
 
   std::unique_ptr<ValDecl> match_val_decl(Token& first);
 
+  std::vector<std::u8string> match_type_id_seq();
+
   std::unique_ptr<ValBind> match_val_bind(Token& first);
 
   std::unique_ptr<Pattern> match_left_pattern(Token& first);

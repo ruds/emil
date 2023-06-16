@@ -24,7 +24,9 @@
                      :is_prefix_op
                      false)
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0002 (DeclTopDecl
          :decl
          (ValDecl
@@ -51,7 +53,9 @@
                      :is_prefix_op
                      false)
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0003 (DeclTopDecl
          :decl
          (ValDecl
@@ -96,7 +100,9 @@
                              "626172")
                      ))
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0004 (DeclTopDecl
          :decl
          (ValDecl
@@ -129,7 +135,9 @@
                              "626172")
                      ))
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0005 (DeclTopDecl
          :decl
          (ValDecl
@@ -148,7 +156,9 @@
                      :is_prefix_op
                      false)
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0006 (DeclTopDecl
          :decl
          (ValDecl
@@ -175,7 +185,9 @@
                      :is_prefix_op
                      false)
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0007 (DeclTopDecl
          :decl
          (ValDecl
@@ -213,7 +225,9 @@
                              :is_prefix_op
                              false))))
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0008 (DeclTopDecl
          :decl
          (ValDecl
@@ -243,7 +257,9 @@
                      :is_prefix_op
                      false)
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0009 (DeclTopDecl
          :decl
          (ValDecl
@@ -319,7 +335,9 @@
                      :is_prefix_op
                      false)
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0010 (DeclTopDecl
          :decl
          (ValDecl
@@ -340,7 +358,9 @@
                      :is_prefix_op
                      false)
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0011 (DeclTopDecl
          :decl
          (ValDecl
@@ -408,7 +428,9 @@
                      :is_prefix_op
                      false)
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0012 (DeclTopDecl
          :decl
          (ValDecl
@@ -429,7 +451,9 @@
                      :is_prefix_op
                      false)
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0013 (DeclTopDecl
          :decl
          (ValDecl
@@ -524,7 +548,9 @@
                      :is_prefix_op
                      false)
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0014 (DeclTopDecl
          :decl
          (ValDecl
@@ -563,7 +589,9 @@
                      :is_prefix_op
                      false)
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0015 (DeclTopDecl
          :decl
          (ValDecl
@@ -615,7 +643,9 @@
                      :is_prefix_op
                      false)
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0016 (DeclTopDecl
          :decl
          (ValDecl
@@ -654,7 +684,9 @@
                      :is_prefix_op
                      false)
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0018 ERROR
 0019 ERROR
 0020 ERROR
@@ -696,7 +728,9 @@
                      :is_prefix_op
                      false)
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0024 (DeclTopDecl
          :decl
          (ValDecl
@@ -761,7 +795,9 @@
                      :is_prefix_op
                      false)
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0025 (DeclTopDecl
          :decl
          (ValDecl
@@ -825,7 +861,9 @@
                      :is_prefix_op
                      false)
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0026 (DeclTopDecl
          :decl
          (ValDecl
@@ -942,7 +980,9 @@
                      :is_prefix_op
                      false)
                  :rec
-                 false))))
+                 false))
+             :explicit_type_vars
+             ()))
 0030 (DeclTopDecl
          :decl
          (ValDecl
@@ -1018,7 +1058,9 @@
                          false)
                      :rec
                      false)
-             )))
+             )
+             :explicit_type_vars
+             ()))
 0031 (DeclTopDecl
          :decl
          (ValDecl
@@ -1154,5 +1196,525 @@
                                  )))
                      ))
                  :rec
-                 true))))
-0034 (EndOfFileTopDecl)
+                 true))
+             :explicit_type_vars
+             ()))
+0034 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             (
+                 (ValBind
+                     :pat
+                     (IdentifierPattern
+                         :qualifiers
+                         ()
+                         :identifier
+                         "6576656E"
+                         :is_op
+                         false
+                         :is_prefix_op
+                         false)
+                     :expr
+                     (FnExpr
+                         :cases
+                         (
+                             ((LiteralPattern
+                                 :val
+                                 (BigintLiteralExpr
+                                     :val
+                                     0))
+                               . (IdentifierExpr
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "74727565"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false))
+                             ((IdentifierPattern
+                                 :qualifiers
+                                 ()
+                                 :identifier
+                                 "6E"
+                                 :is_op
+                                 false
+                                 :is_prefix_op
+                                 false)
+                               . (ApplicationExpr
+                                     :exprs
+                                     (
+                                         (IdentifierExpr
+                                             :qualifiers
+                                             ()
+                                             :identifier
+                                             "6F6464"
+                                             :is_op
+                                             false
+                                             :is_prefix_op
+                                             false)
+                                         (ApplicationExpr
+                                             :exprs
+                                             (
+                                                 (IdentifierExpr
+                                                     :qualifiers
+                                                     ()
+                                                     :identifier
+                                                     "2D"
+                                                     :is_op
+                                                     true
+                                                     :is_prefix_op
+                                                     false)
+                                                 (TupleExpr
+                                                     :exprs
+                                                     (
+                                                         (IdentifierExpr
+                                                             :qualifiers
+                                                             ()
+                                                             :identifier
+                                                             "6E"
+                                                             :is_op
+                                                             false
+                                                             :is_prefix_op
+                                                             false)
+                                                         (BigintLiteralExpr
+                                                             :val
+                                                             1)
+                                                     ))
+                                             ))
+                                     )))
+                         ))
+                     :rec
+                     true)
+                 (ValBind
+                     :pat
+                     (IdentifierPattern
+                         :qualifiers
+                         ()
+                         :identifier
+                         "6F6464"
+                         :is_op
+                         false
+                         :is_prefix_op
+                         false)
+                     :expr
+                     (FnExpr
+                         :cases
+                         (
+                             ((LiteralPattern
+                                 :val
+                                 (BigintLiteralExpr
+                                     :val
+                                     0))
+                               . (IdentifierExpr
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "66616C7365"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false))
+                             ((IdentifierPattern
+                                 :qualifiers
+                                 ()
+                                 :identifier
+                                 "6E"
+                                 :is_op
+                                 false
+                                 :is_prefix_op
+                                 false)
+                               . (ApplicationExpr
+                                     :exprs
+                                     (
+                                         (IdentifierExpr
+                                             :qualifiers
+                                             ()
+                                             :identifier
+                                             "6576656E"
+                                             :is_op
+                                             false
+                                             :is_prefix_op
+                                             false)
+                                         (ApplicationExpr
+                                             :exprs
+                                             (
+                                                 (IdentifierExpr
+                                                     :qualifiers
+                                                     ()
+                                                     :identifier
+                                                     "2D"
+                                                     :is_op
+                                                     true
+                                                     :is_prefix_op
+                                                     false)
+                                                 (TupleExpr
+                                                     :exprs
+                                                     (
+                                                         (IdentifierExpr
+                                                             :qualifiers
+                                                             ()
+                                                             :identifier
+                                                             "6E"
+                                                             :is_op
+                                                             false
+                                                             :is_prefix_op
+                                                             false)
+                                                         (BigintLiteralExpr
+                                                             :val
+                                                             1)
+                                                     ))
+                                             ))
+                                     )))
+                         ))
+                     :rec
+                     false)
+             )
+             :explicit_type_vars
+             ()))
+0036 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
+                     :qualifiers
+                     ()
+                     :identifier
+                     "6964"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false)
+                 :expr
+                 (FnExpr
+                     :cases
+                     (((TypedPattern
+                         :pattern
+                         (IdentifierPattern
+                             :qualifiers
+                             ()
+                             :identifier
+                             "7A"
+                             :is_op
+                             false
+                             :is_prefix_op
+                             false)
+                         :type
+                         (VarTypeExpr
+                             :id
+                             "2761"))
+                       . (IdentifierExpr
+                             :qualifiers
+                             ()
+                             :identifier
+                             "7A"
+                             :is_op
+                             false
+                             :is_prefix_op
+                             false))))
+                 :rec
+                 false))
+             :explicit_type_vars
+             ("2761")))
+0037 ERROR
+0038 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
+                     :qualifiers
+                     ()
+                     :identifier
+                     "70616972"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false)
+                 :expr
+                 (FnExpr
+                     :cases
+                     (((TuplePattern
+                         :patterns
+                         (
+                             (TypedPattern
+                                 :pattern
+                                 (IdentifierPattern
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "78"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                                 :type
+                                 (VarTypeExpr
+                                     :id
+                                     "2761"))
+                             (TypedPattern
+                                 :pattern
+                                 (IdentifierPattern
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "79"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                                 :type
+                                 (VarTypeExpr
+                                     :id
+                                     "2762"))
+                         ))
+                       . (TupleExpr
+                             :exprs
+                             (
+                                 (IdentifierExpr
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "78"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                                 (IdentifierExpr
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "79"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                             )))))
+                 :rec
+                 false))
+             :explicit_type_vars
+             (
+                 "2761"
+                 "2762"
+             )))
+0039 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
+                     :qualifiers
+                     ()
+                     :identifier
+                     "70616972"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false)
+                 :expr
+                 (FnExpr
+                     :cases
+                     (((TuplePattern
+                         :patterns
+                         (
+                             (TypedPattern
+                                 :pattern
+                                 (IdentifierPattern
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "78"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                                 :type
+                                 (VarTypeExpr
+                                     :id
+                                     "2761"))
+                             (TypedPattern
+                                 :pattern
+                                 (IdentifierPattern
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "79"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                                 :type
+                                 (VarTypeExpr
+                                     :id
+                                     "2762"))
+                         ))
+                       . (TupleExpr
+                             :exprs
+                             (
+                                 (IdentifierExpr
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "78"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                                 (IdentifierExpr
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "79"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                             )))))
+                 :rec
+                 false))
+             :explicit_type_vars
+             (
+                 "2761"
+                 "2762"
+             )))
+0040 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             (
+                 (ValBind
+                     :pat
+                     (IdentifierPattern
+                         :qualifiers
+                         ()
+                         :identifier
+                         "66"
+                         :is_op
+                         false
+                         :is_prefix_op
+                         false)
+                     :expr
+                     (FnExpr
+                         :cases
+                         (
+                             ((TypedPattern
+                                 :pattern
+                                 (IdentifierPattern
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "6E696C"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                                 :type
+                                 (VarTypeExpr
+                                     :id
+                                     "2761"))
+                               . (ListExpr
+                                     :exprs
+                                     ()))
+                             ((DatatypePattern
+                                 :constructor
+                                 (IdentifierPattern
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "3A3A"
+                                     :is_op
+                                     true
+                                     :is_prefix_op
+                                     false)
+                                 :arg
+                                 (TuplePattern
+                                     :patterns
+                                     (
+                                         (IdentifierPattern
+                                             :qualifiers
+                                             ()
+                                             :identifier
+                                             "78"
+                                             :is_op
+                                             false
+                                             :is_prefix_op
+                                             false)
+                                         (IdentifierPattern
+                                             :qualifiers
+                                             ()
+                                             :identifier
+                                             "7873"
+                                             :is_op
+                                             false
+                                             :is_prefix_op
+                                             false)
+                                     )))
+                               . (ApplicationExpr
+                                     :exprs
+                                     (
+                                         (IdentifierExpr
+                                             :qualifiers
+                                             ()
+                                             :identifier
+                                             "66"
+                                             :is_op
+                                             false
+                                             :is_prefix_op
+                                             false)
+                                         (IdentifierExpr
+                                             :qualifiers
+                                             ()
+                                             :identifier
+                                             "7873"
+                                             :is_op
+                                             false
+                                             :is_prefix_op
+                                             false)
+                                     )))
+                         ))
+                     :rec
+                     true)
+                 (ValBind
+                     :pat
+                     (IdentifierPattern
+                         :qualifiers
+                         ()
+                         :identifier
+                         "666F6F"
+                         :is_op
+                         false
+                         :is_prefix_op
+                         false)
+                     :expr
+                     (FnExpr
+                         :cases
+                         (((TuplePattern
+                             :patterns
+                             ())
+                           . (TypedExpr
+                                 :expr
+                                 (IdentifierExpr
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "6E696C"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                                 :type
+                                 (VarTypeExpr
+                                     :id
+                                     "2761")))))
+                     :rec
+                     false)
+             )
+             :explicit_type_vars
+             ("2761")))
+0042 ERROR
+0043 (EndOfFileTopDecl)
