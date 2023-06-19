@@ -64,8 +64,19 @@ val x : X1 -> X1
 @0072: ERROR
 @0073: ERROR
 @0074: ERROR
+@0077:
+datatype t1 = C1
+val C1 : t1
+@0078:
+val it : t1
 @0080: ERROR
-@0087: ERROR
-@0092:
+@0081: ERROR
+@0084: ERROR
+@0091: ERROR
+@0098: ERROR
+@0103:
 val f : 'a -> 'a
-@0098:
+@0113:
+val it : t1 list ref
+@0118: ERROR
+@0120:

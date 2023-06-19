@@ -378,12 +378,13 @@ in a record value are evaluated in the order they appear.
   one-type-bind -> [type-id-seq] word-id '=' type
 
   dtype-bind -> one-dtype-bind ('and' one-dtype-bind)*
-  one-dtype-bind -> [type-id-seq] word-id '=' con-bind
+  one-dtype-bind -> [type-id-seq] word-id '=' con-bind (| con-bind)*
 
-  con-bind -> one-con-bind ('|' one-con-bind)*
-  one-con-bind -> word-id ['of' type]
-                | op-id type
-                | type op-id type
+  ;; In con-bind, op-id may not be '*'.
+  con-bind -> word-id ['of' type]
+              | op-id type
+              | '(' ['prefix'] op-id ')' ['of' type]
+              | type op-id type
 #+end_src
 
 Types may be defined by users in three ways.
@@ -411,14 +412,15 @@ can be joined with the ~and~ keyword. A few examples:
 #+end_src
 
 A datatype declaration introduces a type constructor for a new sum
-type along with one or more value constructors. Value constructors are
-word-like identifiers and they conventionally start with capital
-letters. After being declared in a datatype declaration, value
-constructors behave like functions; when they are called, they
-evaluate to a value of the new type. Mutually dependent datatypes can
-be joined with the ~and~ keyword; datatypes can be joined with
-mutually dependent type aliases with the ~withtype~ keyword. A few
-examples:
+type along with one or more value constructors. Type constructors are
+word-like identifiers. Value constructors may be word-like or operator
+identifiers. When value constructors are word-like identifiers, they
+conventionally start with capital letters (but this is not required).
+After being declared in a datatype declaration, value constructors
+behave like functions; when they are called, they evaluate to a value
+of the new type. Mutually dependent datatypes can be joined with the
+~and~ keyword; datatypes can be joined with mutually dependent type
+aliases with the ~withtype~ keyword. A few examples:
 
 #+begin_src sml
   datatype suit = Spades | Hearts | Diamonds | Clubs
@@ -429,10 +431,10 @@ examples:
   datatype 'a StreamCell = Nil | Cons of 'a * 'a Stream
   withtype 'a Stream = 'a StreamCell susp
 
-  datatype arith_expr = Number bigint
-         | bigint ~+ bigint
-         | bigint ~- bigint
-         | ~- bigint
+  datatype arith_expr = Number of bigint
+                      | arith_expr ~+ arith_expr
+                      | arith_expr ~- arith_expr
+                      | ~- arith_expr
 
   datatype declaration = Val of var * expression
                        | Func of var list * expression
@@ -691,6 +693,7 @@ corresponding to that pattern.
 
 #+begin_src bnf
   decl -> val-decl
+          | dtype-decl
 
   val-decl -> 'val' [type-id-seq] val-bind ('and' val-bind)*
 

@@ -170,6 +170,8 @@ class DeclVarScoper : public Decl::Visitor {
     vars[&d] = std::move(scoped_vars);
     vars.erase(nullptr);
   }
+
+  void visitDtypeDecl(const DtypeDecl &) override {}
 };
 
 ImplicitlyScopedVars scope_explicit_type_variables(const Decl &dec) {
@@ -348,49 +350,146 @@ ImplicitlyScopedVars scope_explicit_type_variables(const TypeExpr &ty) {
   return std::move(v.vars);
 }
 
+class GetFunctionVisitor : public typing::TypeVisitor {
+ public:
+  const typing::FunctionType *fn = nullptr;
+  typing::Substitutions new_substitutions =
+      collections::managed_map<typing::Stamp, typing::Type>({});
+
+  explicit GetFunctionVisitor(Typer &typer) : typer_(typer) {}
+
+  void visit(const typing::TypeWithAgeRestriction &t) override {
+    t.type()->accept(*this);
+  }
+
+  void visit(const typing::UndeterminedType &t) override {
+    auto p = make_managed<typing::UndeterminedType>(typer_.new_stamp());
+    auto r = make_managed<typing::UndeterminedType>(typer_.new_stamp());
+    auto fnptr = make_managed<typing::FunctionType>(p, r);
+    new_substitutions =
+        new_substitutions
+            ->insert(t.stamp(), make_managed<typing::TypeWithAgeRestriction>(
+                                    fnptr, t.stamp()->id()))
+            .first;
+    fn = &*fnptr;
+  }
+
+  void visit(const typing::FunctionType &t) override { fn = &t; }
+
+  void visit(const typing::TypeVar &) override {}
+  void visit(const typing::TupleType &) override {}
+  void visit(const typing::RecordType &) override {}
+  void visit(const typing::ConstructedType &) override {}
+
+ private:
+  Typer &typer_;
+};
+
+struct get_function_t {
+  const typing::FunctionType *fn;
+  typing::Substitutions new_substitutions;
+};
+
+/**
+ * Gets a pointer to a function type from t.
+ *
+ * If t is an undetermined type, introduces a substitution. If t
+ * cannot be unified with a function type, the result's fn field will
+ * be null.
+ */
+get_function_t get_function(typing::TypePtr t, Typer &typer) {
+  GetFunctionVisitor v{typer};
+  t->accept(v);
+  return {v.fn, v.new_substitutions};
+}
+
 class DeclChangeDescriber : public TDecl::Visitor {
  public:
-  explicit DeclChangeDescriber(std::string &out) : out_(out) {}
+  DeclChangeDescriber(Typer &typer, std::string &out)
+      : typer_(typer), out_(out) {}
 
   void visit(const TValDecl &decl) override {
+    print_vals(*decl.env->val_env());
+  }
+
+  void visit(const TDtypeDecl &decl) override {
+    auto it = std::back_inserter(out_);
+    for (const auto &t : *decl.env->type_env()->env()) {
+      out_ += "datatype ";
+      const auto &bound = *t.second->fn()->bound();
+      if (bound.size() == 1) {
+        out_ += to_std_string(*bound[0]);
+        out_ += " ";
+      } else if (bound.size() > 1) {
+        out_ += "(";
+        for (std::size_t i = 0; i < bound.size(); ++i) {
+          if (i) out_ += ", ";
+          out_ += to_std_string(*bound[i]);
+        }
+        out_ += ") ";
+      }
+      out_ += to_std_string(*t.first);
+      out_ += " = ";
+      const auto &constructors = t.second->env()->env();
+      for (auto cit = constructors->begin(); cit != constructors->end();
+           ++cit) {
+        if (cit != constructors->begin()) out_ += " | ";
+        auto c_type = cit->second->scheme()->instantiate(typer_.stamper());
+        auto gf = get_function(c_type, typer_);
+        if (gf.fn) {
+          typing::Substitutions subs =
+              collections::managed_map<typing::Stamp, typing::Type>({});
+          auto u = typing::unify(gf.fn->result(), t.second->fn()->t(), subs);
+          auto param_type = typing::apply_substitutions(gf.fn->param(), subs);
+          fmt::format_to(it, "{} of {}", cit->first,
+                         to_std_string(typing::print_type(param_type)));
+        } else {
+          out_ += to_std_string(*cit->first);
+        }
+      }
+      out_ += "\n";
+    }
+    print_vals(*decl.env->val_env());
+  }
+
+ private:
+  Typer &typer_;
+  std::string &out_;
+
+  void print_vals(const typing::ValEnv &VE) {
     auto it = back_inserter(out_);
-    for (const auto &b : *decl.env->val_env()->env()) {
+    for (const auto &b : *VE.env()) {
       fmt::format_to(it, "val {} : {}\n", to_std_string(*b.first),
                      to_std_string(print_type(
                          b.second->scheme()->t(),
                          typing::CanonicalizeUndeterminedTypes::YES)));
     }
   }
-
- private:
-  std::string &out_;
 };
 
 class TopDeclChangeDescriber : public TTopDecl::Visitor {
  public:
   std::string out;
 
+  explicit TopDeclChangeDescriber(Typer &typer) : typer_(typer) {}
+
   void visit(const TEmptyTopDecl &) override {}
 
   void visit(const TEndOfFileTopDecl &) override {}
 
-  void visit(const TExprTopDecl &d) override {
-    fmt::format_to(
-        back_inserter(out), "val it : {}\n",
-        to_std_string(typing::print_type(
-            d.sigma->t(), typing::CanonicalizeUndeterminedTypes::YES)));
-  }
-
   void visit(const TDeclTopDecl &d) override {
-    DeclChangeDescriber v{out};
+    DeclChangeDescriber v{typer_, out};
     d.decl->accept(v);
   }
+
+ private:
+  Typer &typer_;
 };
 
 }  // namespace
 
-std::string describe_basis_updates(const TTopDecl &topdecl) {
-  TopDeclChangeDescriber v;
+std::string describe_basis_updates(Typer &typer, const TTopDecl &topdecl) {
+  TopDeclChangeDescriber v{typer};
   topdecl.accept(v);
   return std::move(v.out);
 }
@@ -412,7 +511,7 @@ void add_type(managed_ptr<typing::TypeEnv> &TE, managed_ptr<typing::ValEnv> &VE,
                                    typing::IdStatus::Constructor, false);
   }
   VE = VE + type_VE;
-  TE = TE->add_binding(t->name()->name_ptr(), theta, type_VE);
+  TE = TE->add_binding(t->name()->name_ptr(), theta, type_VE, false);
 }
 
 }  // namespace
@@ -488,59 +587,6 @@ std::string id_to_string(const std::vector<std::u8string> &qualifiers,
   return out;
 }
 
-class GetFunctionVisitor : public typing::TypeVisitor {
- public:
-  const typing::FunctionType *fn = nullptr;
-  typing::Substitutions new_substitutions =
-      collections::managed_map<typing::Stamp, typing::Type>({});
-
-  explicit GetFunctionVisitor(Typer &typer) : typer_(typer) {}
-
-  void visit(const typing::TypeWithAgeRestriction &t) override {
-    t.type()->accept(*this);
-  }
-
-  void visit(const typing::UndeterminedType &t) override {
-    auto p = make_managed<typing::UndeterminedType>(typer_.new_stamp());
-    auto r = make_managed<typing::UndeterminedType>(typer_.new_stamp());
-    auto fnptr = make_managed<typing::FunctionType>(p, r);
-    new_substitutions =
-        new_substitutions
-            ->insert(t.stamp(), make_managed<typing::TypeWithAgeRestriction>(
-                                    fnptr, t.stamp()->id()))
-            .first;
-    fn = &*fnptr;
-  }
-
-  void visit(const typing::FunctionType &t) override { fn = &t; }
-
-  void visit(const typing::TypeVar &) override {}
-  void visit(const typing::TupleType &) override {}
-  void visit(const typing::RecordType &) override {}
-  void visit(const typing::ConstructedType &) override {}
-
- private:
-  Typer &typer_;
-};
-
-struct get_function_t {
-  const typing::FunctionType *fn;
-  typing::Substitutions new_substitutions;
-};
-
-/**
- * Gets a pointer to a function type from t.
- *
- * If t is an undetermined type, introduces a substitution. If t
- * cannot be unified with a function type, the result's fn field will
- * be null.
- */
-get_function_t get_function(typing::TypePtr t, Typer &typer) {
-  GetFunctionVisitor v{typer};
-  t->accept(v);
-  return {v.fn, v.new_substitutions};
-}
-
 class TopDeclElaborator : public TopDecl::Visitor {
  public:
   managed_ptr<typing::Basis> B;
@@ -612,40 +658,22 @@ typing::Substitutions compute_dummy_substitutions(Typer &typer,
   return subs;
 }
 
-void TopDeclElaborator::visitExprTopDecl(const ExprTopDecl &node) {
-  auto scopes = scope_explicit_type_variables(*node.expr);
-  remove_from_children(scopes, scopes[nullptr]);
-  auto vars = to_set(scopes[nullptr]);
-  auto expr = typer_.elaborate(B->as_context() + vars, *node.expr, scopes);
-
-  managed_ptr<typing::TypeScheme> sigma =
-      generalize_for_valbind(node.location, B->as_context(), expr->type, *expr);
-  auto env = typing::Env::empty() +
-             typing::ValEnv::empty()->add_binding(
-                 u8"it", sigma, typing::IdStatus::Variable, true);
-  auto subs = compute_dummy_substitutions(typer_, env, node.location);
-  if (!subs->empty()) {
-    env = env->apply_substitutions(subs, false);
-    sigma = make_managed<typing::TypeScheme>(
-        typing::apply_substitutions(sigma->t(), subs,
-                                    typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
-                                    false),
-        sigma->bound());
-  }
-
-  B = B + env;
-  typed = std::make_unique<TExprTopDecl>(node.location, std::move(expr), sigma);
-}
-
-void TopDeclElaborator::visitDeclTopDecl(const DeclTopDecl &node) {
-  auto scopes = scope_explicit_type_variables(*node.decl);
-  auto r = typer_.elaborate(B->as_context(), *node.decl, scopes);
-  auto subs = compute_dummy_substitutions(typer_, r.env, node.location);
+std::unique_ptr<TDecl> elaborate_decl(managed_ptr<typing::Basis> &B,
+                                      Typer &typer, const Location &location,
+                                      const Decl &decl) {
+  auto scopes = scope_explicit_type_variables(decl);
+  auto r = typer.elaborate(B->as_context(), decl, scopes);
+  auto subs = compute_dummy_substitutions(typer, r.env, location);
   if (!subs->empty()) {
     r.decl = r.decl->apply_substitutions(subs, false);
   }
   B = B + r.decl->env;
-  typed = std::make_unique<TDeclTopDecl>(node.location, std::move(r.decl));
+  return std::move(r.decl);
+}
+
+void TopDeclElaborator::visitDeclTopDecl(const DeclTopDecl &node) {
+  typed = std::make_unique<TDeclTopDecl>(
+      node.location, elaborate_decl(B, typer_, node.location, *node.decl));
 }
 
 }  // namespace
@@ -732,8 +760,16 @@ void DeclElaborator::visitValDecl(const ValDecl &node) {
   auto C_expr = C + type_vars;
   for (const auto &binding : node.bindings) {
     const auto &pat = binding->pat;
-    auto m = typer_.elaborate_match(pat->location, C, *pat, substitutions_,
-                                    typer_.new_stamp()->id());
+    Typer::elaborate_match_t m;
+    try {
+      m = typer_.elaborate_match(pat->location, C, *pat, substitutions_,
+                                 typer_.new_stamp()->id());
+    } catch (typing::BindingError &err) {
+      throw ElaborationError(
+          fmt::format("Bound identifier {} multiple times in val declaration",
+                      to_std_string(err.id)),
+          pat->location);
+    }
     if (!m.new_substitutions->empty()) {
       for (auto &b : bindings) {
         b.first = b.first.apply_substitutions(m.new_substitutions, true);
@@ -786,7 +822,16 @@ void DeclElaborator::visitValDecl(const ValDecl &node) {
       new_substitutions = new_substitutions | new_subs;
     }
 
-    env = env + close_for_valbind(C, match, *e.expr);
+    auto VE = close_for_valbind(C, match, *e.expr);
+    auto overlap = env->val_env()->env() & VE->env();
+    if (!overlap->empty()) {
+      throw ElaborationError(
+          fmt::format("Separate clauses of a val declaration bound the same "
+                      "identifier(s): {}",
+                      fmt::join(*overlap | std::views::keys, ", ")),
+          node.location);
+    }
+    env = env + VE;
     bindings[i].second = std::move(e.expr);
   }
   auto unbound_variables = env->free_variables() & type_vars;
@@ -801,6 +846,146 @@ void DeclElaborator::visitValDecl(const ValDecl &node) {
         node.location, to_std_string(*b.first), *b.second->scheme());
   }
   decl = std::make_unique<TValDecl>(node.location, std::move(bindings), env);
+}
+
+managed_ptr<typing::TypeEnv> seed_type_env(
+    Typer &typer, const std::vector<std::unique_ptr<DtypeBind>> &bindings) {
+  auto TE = typing::TypeEnv::empty();
+  for (const auto &db : bindings) {
+    auto name = make_string(db->identifier);
+    auto type_var_names =
+        make_managed<collections::ManagedArray<ManagedString>>(
+            db->types.size(),
+            [&](const std::size_t i) { return make_string(db->types[i]); });
+    auto type_vars = make_managed<collections::ManagedArray<typing::Type>>(
+        type_var_names->size(), [&](const std::size_t i) {
+          return make_managed<typing::TypeVar>((*type_var_names)[i]);
+        });
+    try {
+      TE =
+          TE->add_binding(name,
+                          make_managed<typing::TypeFunction>(
+                              make_managed<typing::ConstructedType>(
+                                  make_managed<typing::TypeName>(
+                                      name, typer.new_stamp(), db->types.size(),
+                                      db->constructors.size()),
+                                  type_vars),
+                              type_var_names),
+                          typing::ValEnv::empty(), false);
+    } catch (typing::BindingError &err) {
+      throw ElaborationError(
+          fmt::format(
+              "Datatype declaration bound type identifier multiple times: {}",
+              to_std_string(err.id)),
+          db->location);
+    }
+  }
+  return TE;
+}
+
+class Tuple0Extractor : public typing::TypeVisitor {
+ public:
+  typing::TypePtr type;
+
+  void visit(const typing::TupleType &t) override {
+    if (t.types()->empty()) throw std::logic_error("ugh");
+    type = (*t.types())[0];
+  }
+
+  void visit(const typing::TypeWithAgeRestriction &) override {
+    throw std::logic_error("ugh");
+  }
+  void visit(const typing::TypeVar &) override {
+    throw std::logic_error("ugh");
+  }
+  void visit(const typing::UndeterminedType &) override {
+    throw std::logic_error("ugh");
+  }
+  void visit(const typing::RecordType &) override {
+    throw std::logic_error("ugh");
+  }
+  void visit(const typing::FunctionType &) override {
+    throw std::logic_error("ugh");
+  }
+  void visit(const typing::ConstructedType &) override {
+    throw std::logic_error("ugh");
+  }
+};
+
+struct elaborate_dtype_bind_t {
+  managed_ptr<typing::TypeEnv> TE = typing::TypeEnv::empty();
+  managed_ptr<typing::ValEnv> VE = typing::ValEnv::empty();
+};
+
+elaborate_dtype_bind_t elaborate_dtype_bind(Typer &typer,
+                                            managed_ptr<typing::Context> C,
+                                            const DtypeBind &binding) {
+  elaborate_dtype_bind_t r;
+  const auto theta = (*C->env()->lookup_type({}, binding.identifier))->fn();
+  const auto type = theta->t();
+  const auto bound_set = collections::to_set(theta->bound());
+  std::vector<typing::TypePtr> params;
+  params.push_back(type);
+  for (const auto &con : binding.constructors) {
+    const auto id =
+        canonicalize_val_id(con->identifier, con->is_op, con->is_prefix_op);
+    typing::TypePtr con_type = type;
+    if (con->param) {
+      auto param_type = typer.elaborate_type_expr(C, *con->param);
+      auto extra_vars = param_type->free_variables() - bound_set;
+      if (!extra_vars->empty()) {
+        throw ElaborationError(
+            fmt::format("Value constructor uses type variable(s) not bound in "
+                        "datatype declaration: {}",
+                        fmt::join(*extra_vars, ", ")),
+            con->location);
+      }
+      params.push_back(param_type);
+      con_type = make_managed<typing::FunctionType>(param_type, type);
+    }
+    try {
+      r.VE = r.VE->add_binding(id, typing::TypeScheme::generalize(C, con_type),
+                               typing::IdStatus::Constructor, false);
+    } catch (typing::BindingError &err) {
+      throw ElaborationError(fmt::format("Datatype declaration bound value "
+                                         "constructor multiple times: {}",
+                                         to_std_string(err.id)),
+                             con->location);
+    }
+  }
+
+  typing::TypePtr theta_type;
+  collections::ArrayPtr<ManagedString> theta_bound;
+  if (params.size() == 1) {
+    auto g = typing::TypeScheme::generalize(C, type);
+    theta_type = g->t();
+    theta_bound = g->bound();
+  } else {
+    auto g = typing::TypeScheme::generalize(
+        C, make_managed<typing::TupleType>(collections::to_array(params)));
+    Tuple0Extractor v;
+    g->t()->accept(v);
+
+    theta_type = v.type;
+    theta_bound = g->bound();
+  }
+  r.TE = r.TE->add_binding(
+      make_string(binding.identifier),
+      make_managed<typing::TypeFunction>(theta_type, theta_bound), r.VE, false);
+  return r;
+}
+
+void DeclElaborator::visitDtypeDecl(const DtypeDecl &node) {
+  auto C_seed = C + seed_type_env(typer_, node.bindings);
+  auto VE = typing::ValEnv::empty();
+  auto TE = typing::TypeEnv::empty();
+  for (const auto &binding : node.bindings) {
+    auto r = elaborate_dtype_bind(typer_, C_seed, *binding);
+    VE = VE + r.VE;
+    TE = TE + r.TE;
+  }
+  env = env + make_managed<typing::Env>(typing::StrEnv::empty(), TE, VE);
+  decl = std::make_unique<TDtypeDecl>(node.location, env);
 }
 
 }  // namespace
@@ -1175,8 +1360,7 @@ void PatternElaborator::visitTypedPattern(const TypedPattern &node) {
 
 std::pair<std::u8string, std::optional<managed_ptr<typing::ValueBinding>>>
 PatternElaborator::lookup_val(const IdentifierPattern &pat) const {
-  auto id =
-      typing::canonicalize_val_id(pat.identifier, pat.is_op, pat.is_prefix_op);
+  auto id = canonicalize_val_id(pat.identifier, pat.is_op, pat.is_prefix_op);
   auto binding = C->env()->lookup_val(pat.qualifiers, id);
   return std::make_pair(std::move(id), std::move(binding));
 }
@@ -1277,8 +1461,8 @@ void ExprElaborator::visitFstringLiteralExpr(const FstringLiteralExpr &node) {
 }
 
 void ExprElaborator::visitIdentifierExpr(const IdentifierExpr &node) {
-  const auto id = typing::canonicalize_val_id(node.identifier, node.is_op,
-                                              node.is_prefix_op);
+  const auto id =
+      canonicalize_val_id(node.identifier, node.is_op, node.is_prefix_op);
   const auto val = C->env()->lookup_val(node.qualifiers, id);
   if (!val)
     throw ElaborationError(

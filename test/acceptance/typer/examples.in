@@ -74,6 +74,17 @@ val 'a x = let val 'a id : 'a -> 'a = fn z => z in id id end;
 val x = (let val 'a id : 'a -> 'a = fn z => z in id id end,
          fn (y: 'a) => y);
 
+datatype t1 = C1;
+C1;
+
+val x = let datatype t2 = C2 in C2 end;
+let datatype t2 = C2 in C2 end;
+
+fn x => let datatype t3 = C3
+            val _ = case true of true => x | _ => C3
+         in 5
+        end;
+
 (* From http://mlton.org/TypeVariableScope *)
 val f = fn x =>
   let
@@ -95,3 +106,14 @@ val 'a f = fn x =>
   in
     g x
   end;
+
+(* From HaMLet S: To Become Or  Not To Become Successor ML :-)
+ * Section 5.6 *)
+
+let val r = ref [] in (ar (r, [C1])) end;
+
+let val r = ref []
+    datatype t4 = C4
+ in
+    (ar (r, [C4]))
+end;

@@ -51,7 +51,9 @@ class ElaborationError : public std::exception {
   const std::string full_msg;
 };
 
-std::string describe_basis_updates(const TTopDecl& topdecl);
+class Typer;
+
+std::string describe_basis_updates(Typer& typer, const TTopDecl& topdecl);
 
 /**
  * Performs static elaboration of a program.

@@ -38,7 +38,10 @@ void print_ast(std::string& out, int, char32_t arg);
 
 template <typename T>
 void print_ast(std::string& out, int indent, const std::unique_ptr<T>& arg) {
-  print_ast(*arg, out, indent);
+  if (arg)
+    print_ast(*arg, out, indent);
+  else
+    print_ast(out, indent, std::string_view("nullptr"));
 }
 
 template <typename K, typename V>

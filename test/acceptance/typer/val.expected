@@ -89,4 +89,7 @@ val pair : ('a * 'b) -> ('a * 'b)
 val f : 'a list -> 'a list
 val foo : 'a list
 @0046: ERROR
-@0047:
+@0047: ERROR
+@0048: ERROR
+@0049: ERROR
+@0050:

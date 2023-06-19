@@ -53,7 +53,6 @@ struct AstNodeSpec {
    * 2. [KTYPE->VTYPE] -> std::vector<std::pair<KTYPE, VTYPE>>
    * 3. [ELTYPE] -> std::vector<ELTYPE>
    * 4. PTYPE* -> std::unique_ptr<PTYPE>
-   * 5. OPTTYPE? -> std::optional<OPTYPE>
    *
    * If NAME is =CNAME, then the field CNAME will be copied during
    * construction. Otherwise, the constructor will take an argument of
@@ -120,18 +119,23 @@ const std::vector<Category> CATEGORIES{
      "BIND",
      {
          {"Val", {"Pattern* pat", "Expr* expr", "bool rec"}},
+         {"Dtype",
+          {"str identifier", "[str] types", "[ConBind*] constructors"}},
+         {"Con",
+          {"str identifier", "TypeExpr* param", "bool is_op",
+           "bool is_prefix_op"}},
      }},
     {"Decl",
      "DECL",
      {
          {"Val", {"[ValBind*] bindings", "[str] explicit_type_vars"}},
+         {"Dtype", {"[DtypeBind*] bindings"}},
      }},
     {"TopDecl",
      "TOPDECL",
      {
          {"Empty", {}},
          {"EndOfFile", {}},
-         {"Expr", {"Expr* expr"}},
          {"Decl", {"Decl* decl"}},
      }},
 };
@@ -159,33 +163,59 @@ const std::string HEADER_TEMPLATE = R"(%COPYRIGHT%
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include "emil/token.h"
 
 namespace emil {
+
+/**
+ * Canonicalizes the name of a value identifier.
+ *
+ * Infix operators, prefix operators, and other value identifiers do not share a
+ * namespace. This function applies a canonical renaming to `id` so that they
+ * can share the same map.
+ */
+std::u8string canonicalize_val_id(std::u8string_view id, bool is_op,
+                                  bool is_prefix_op);
+
 %ALL_FWD_DECLS%
 %ALL_DECLS%
 }  // namespace emil
 )";
 
-const std::string CC_TEMPLATE = R"(%COPYRIGHT%
+const std::string CC_TEMPLATE = R"===(%COPYRIGHT%
 /* This file is generated. Do not hand-edit! */
 
 #include "emil/ast.h"
 
+#include <cassert>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <utility>
 
 #include "private/ast_printer.h"
 
 namespace emil {
+
+std::u8string canonicalize_val_id(std::u8string_view id, bool is_op,
+                                  bool is_prefix_op) {
+  assert(!is_prefix_op || is_op);
+  if (!is_op) return std::u8string(id);
+  std::u8string out = u8"(";
+  if (is_prefix_op) out += u8"prefix ";
+  out += id;
+  out += u8")";
+  return out;
+}
+
 %ALL_IMPLS%
 }  // namespace emil
-)";
+)===";
 
 const std::string CATEGORY_FWD_DECL_TEMPLATE = R"(
 class %BASE%;  // IWYU pragma: keep%FWD_DECLS%)";
@@ -310,14 +340,12 @@ const std::regex STR_RE(R"(\bstr\b)");
 const std::regex MAP_RE(R"(\[(.*)->(.*)\])");
 const std::regex VEC_RE(R"(\[(.*)\])");
 const std::regex PTR_RE(R"((\w*)\*)");
-const std::regex OPT_RE(R"((\w*)\?)");
 
 std::string transform_type(std::string t) {
   t = std::regex_replace(t, STR_RE, "std::u8string");
   t = std::regex_replace(t, MAP_RE, R"(std::vector<std::pair<$1, $2>>)");
   t = std::regex_replace(t, VEC_RE, R"(std::vector<$1>)");
-  t = std::regex_replace(t, PTR_RE, R"(std::unique_ptr<$1>)");
-  return std::regex_replace(t, OPT_RE, R"(std::optional<$1>)");
+  return std::regex_replace(t, PTR_RE, R"(std::unique_ptr<$1>)");
 }
 
 Dict build_node_dict(const std::string& base, const AstNodeSpec& spec) {

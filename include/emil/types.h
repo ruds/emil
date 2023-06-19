@@ -547,6 +547,18 @@ class TypeStructure : public TypeObj {
   }
 };
 
+class BindingError : public std::exception {
+ public:
+  std::u8string id;
+
+  explicit BindingError(std::u8string_view id);
+
+  const char* what() const noexcept override { return full_msg_.c_str(); }
+
+ private:
+  std::string full_msg_;
+};
+
 /** The mapping between type constructor names and type structures in an
  * environment. */
 class TypeEnv : public TypeObj {
@@ -559,12 +571,14 @@ class TypeEnv : public TypeObj {
 
   const StringMap<TypeStructure>& env() const { return env_; }
 
-  managed_ptr<TypeEnv> add_binding(StringPtr id,
-                                   managed_ptr<TypeFunction> theta,
-                                   managed_ptr<ValEnv> VE) const;
+  [[nodiscard]] managed_ptr<TypeEnv> add_binding(
+      StringPtr id, managed_ptr<TypeFunction> theta, managed_ptr<ValEnv> VE,
+      bool allow_rebinding) const;
 
-  managed_ptr<TypeEnv> add_binding(StringPtr id, managed_ptr<Type> theta,
-                                   managed_ptr<ValEnv> VE) const;
+  [[nodiscard]] managed_ptr<TypeEnv> add_binding(StringPtr id,
+                                                 managed_ptr<Type> theta,
+                                                 managed_ptr<ValEnv> VE,
+                                                 bool allow_rebinding) const;
 
  private:
   StringMap<TypeStructure> env_;
@@ -592,28 +606,6 @@ class ValueBinding : public TypeObj {
   }
 };
 
-/**
- * Canonicalizes the name of a value identifier.
- *
- * Infix operators, prefix operators, and other value identifiers do not share a
- * namespace. This function applies a canonical renaming to `id` so that they
- * can share the same map.
- */
-std::u8string canonicalize_val_id(std::u8string_view id, bool is_op,
-                                  bool is_prefix_op);
-
-class BindingError : public std::exception {
- public:
-  std::u8string id;
-
-  explicit BindingError(std::u8string_view id);
-
-  const char* what() const noexcept override { return full_msg_.c_str(); }
-
- private:
-  std::string full_msg_;
-};
-
 /** The mapping from value variable identifiers to their value bindings. */
 class ValEnv : public TypeObj {
  public:
@@ -629,9 +621,14 @@ class ValEnv : public TypeObj {
    * If allow_rebinding is false, throw BindingError if id was already bound in
    * this environment.
    */
-  managed_ptr<ValEnv> add_binding(std::u8string_view id,
-                                  managed_ptr<TypeScheme> scheme,
-                                  IdStatus status, bool allow_rebinding) const;
+  [[nodiscard]] managed_ptr<ValEnv> add_binding(std::u8string_view id,
+                                                managed_ptr<TypeScheme> scheme,
+                                                IdStatus status,
+                                                bool allow_rebinding) const;
+  [[nodiscard]] managed_ptr<ValEnv> add_binding(StringPtr id,
+                                                managed_ptr<TypeScheme> scheme,
+                                                IdStatus status,
+                                                bool allow_rebinding) const;
 
   /** Apply the given substitutions to each binding's type scheme. */
   managed_ptr<ValEnv> apply_substitutions(
@@ -748,12 +745,16 @@ managed_ptr<Env> operator+(const managed_ptr<Env>& l,
                            const managed_ptr<Env>& r);
 managed_ptr<Env> operator+(const managed_ptr<Env>& l,
                            const managed_ptr<ValEnv>& r);
+managed_ptr<Env> operator+(const managed_ptr<Env>& l,
+                           const managed_ptr<TypeEnv>& r);
 managed_ptr<Context> operator+(const managed_ptr<Context>& C,
                                const StringSet& U);
 managed_ptr<Context> operator+(const managed_ptr<Context>& C,
                                const managed_ptr<Env>& E);
 managed_ptr<Context> operator+(const managed_ptr<Context>& C,
-                               const managed_ptr<ValEnv>& E);
+                               const managed_ptr<ValEnv>& VE);
+managed_ptr<Context> operator+(const managed_ptr<Context>& C,
+                               const managed_ptr<TypeEnv>& TE);
 managed_ptr<Basis> operator+(const managed_ptr<Basis>& B,
                              const managed_ptr<Env>& E);
 managed_ptr<Basis> operator+(const managed_ptr<Basis>& B,

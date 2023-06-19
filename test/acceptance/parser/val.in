@@ -40,3 +40,5 @@ val ('b, 'a) pair = fn (x: 'a, y: 'b) => (x, y);
 val 'a rec f = fn nil : 'a => [] | ((::) (x, xs)) => f xs
        and foo = fn () => nil : 'a;
 val ('a, 'a) foo = bar;
+val it = foo;
+val (it, bar) = foo;

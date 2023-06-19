@@ -1,90 +1,162 @@
-0001 (ExprTopDecl
-         :expr
-         (FnExpr
-             :cases
-             (((IdentifierPattern
-                 :qualifiers
-                 ()
-                 :identifier
-                 "78"
-                 :is_op
-                 false
-                 :is_prefix_op
-                 false)
-               . (IdentifierExpr
+0001 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
                      :qualifiers
                      ()
                      :identifier
-                     "78"
+                     "6974"
                      :is_op
                      false
                      :is_prefix_op
-                     false)))))
-0002 (ExprTopDecl
-         :expr
-         (FnExpr
-             :cases
-             (
-                 ((TuplePattern
-                     :patterns
-                     (
-                         (LiteralPattern
-                             :val
-                             (BigintLiteralExpr
-                                 :val
-                                 0))
-                         (IdentifierPattern
-                             :qualifiers
-                             ()
-                             :identifier
-                             "626172"
-                             :is_op
-                             false
-                             :is_prefix_op
-                             false)
-                     ))
-                   . (IdentifierExpr
+                     false)
+                 :expr
+                 (FnExpr
+                     :cases
+                     (((IdentifierPattern
                          :qualifiers
                          ()
                          :identifier
-                         "626172"
+                         "78"
                          :is_op
                          false
                          :is_prefix_op
-                         false))
-                 ((TuplePattern
-                     :patterns
-                     (
-                         (LiteralPattern
-                             :val
-                             (BigintLiteralExpr
-                                 :val
-                                 1))
-                         (IdentifierPattern
+                         false)
+                       . (IdentifierExpr
                              :qualifiers
                              ()
                              :identifier
-                             "626172"
+                             "78"
                              :is_op
                              false
                              :is_prefix_op
-                             false)
-                     ))
-                   . (ApplicationExpr
-                         :exprs
-                         (
-                             (IdentifierExpr
+                             false))))
+                 :rec
+                 false))
+             :explicit_type_vars
+             ()))
+0002 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
+                     :qualifiers
+                     ()
+                     :identifier
+                     "6974"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false)
+                 :expr
+                 (FnExpr
+                     :cases
+                     (
+                         ((TuplePattern
+                             :patterns
+                             (
+                                 (LiteralPattern
+                                     :val
+                                     (BigintLiteralExpr
+                                         :val
+                                         0))
+                                 (IdentifierPattern
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "626172"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                             ))
+                           . (IdentifierExpr
                                  :qualifiers
                                  ()
                                  :identifier
-                                 "2D"
+                                 "626172"
                                  :is_op
-                                 true
+                                 false
                                  :is_prefix_op
-                                 false)
-                             (TupleExpr
+                                 false))
+                         ((TuplePattern
+                             :patterns
+                             (
+                                 (LiteralPattern
+                                     :val
+                                     (BigintLiteralExpr
+                                         :val
+                                         1))
+                                 (IdentifierPattern
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "626172"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                             ))
+                           . (ApplicationExpr
                                  :exprs
                                  (
+                                     (IdentifierExpr
+                                         :qualifiers
+                                         ()
+                                         :identifier
+                                         "2D"
+                                         :is_op
+                                         true
+                                         :is_prefix_op
+                                         false)
+                                     (TupleExpr
+                                         :exprs
+                                         (
+                                             (IdentifierExpr
+                                                 :qualifiers
+                                                 ()
+                                                 :identifier
+                                                 "626172"
+                                                 :is_op
+                                                 false
+                                                 :is_prefix_op
+                                                 false)
+                                             (BigintLiteralExpr
+                                                 :val
+                                                 1)
+                                         ))
+                                 )))
+                         ((TuplePattern
+                             :patterns
+                             (
+                                 (WildcardPattern)
+                                 (IdentifierPattern
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "626172"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                             ))
+                           . (ApplicationExpr
+                                 :exprs
+                                 (
+                                     (IdentifierExpr
+                                         :qualifiers
+                                         ("4D617468")
+                                         :identifier
+                                         "706F77"
+                                         :is_op
+                                         false
+                                         :is_prefix_op
+                                         false)
                                      (IdentifierExpr
                                          :qualifiers
                                          ()
@@ -96,47 +168,11 @@
                                          false)
                                      (BigintLiteralExpr
                                          :val
-                                         1)
-                                 ))
-                         )))
-                 ((TuplePattern
-                     :patterns
-                     (
-                         (WildcardPattern)
-                         (IdentifierPattern
-                             :qualifiers
-                             ()
-                             :identifier
-                             "626172"
-                             :is_op
-                             false
-                             :is_prefix_op
-                             false)
+                                         2)
+                                 )))
                      ))
-                   . (ApplicationExpr
-                         :exprs
-                         (
-                             (IdentifierExpr
-                                 :qualifiers
-                                 ("4D617468")
-                                 :identifier
-                                 "706F77"
-                                 :is_op
-                                 false
-                                 :is_prefix_op
-                                 false)
-                             (IdentifierExpr
-                                 :qualifiers
-                                 ()
-                                 :identifier
-                                 "626172"
-                                 :is_op
-                                 false
-                                 :is_prefix_op
-                                 false)
-                             (BigintLiteralExpr
-                                 :val
-                                 2)
-                         )))
-             )))
+                 :rec
+                 false))
+             :explicit_type_vars
+             ()))
 0005 (EndOfFileTopDecl)

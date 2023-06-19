@@ -1,54 +1,126 @@
-0001 (ExprTopDecl
-         :expr
-         (ListExpr
-             :exprs
+0001 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
+                     :qualifiers
+                     ()
+                     :identifier
+                     "6974"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false)
+                 :expr
+                 (ListExpr
+                     :exprs
+                     ())
+                 :rec
+                 false))
+             :explicit_type_vars
              ()))
-0002 (ExprTopDecl
-         :expr
-         (ListExpr
-             :exprs
-             (
-                 (BigintLiteralExpr
-                     :val
-                     1)
-                 (BigintLiteralExpr
-                     :val
-                     2)
-                 (IdentifierExpr
+0002 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
                      :qualifiers
                      ()
                      :identifier
-                     "666F6F"
+                     "6974"
                      :is_op
                      false
                      :is_prefix_op
                      false)
-             )))
-0003 (ExprTopDecl
-         :expr
-         (ListExpr
-             :exprs
-             (
-                 (StringLiteralExpr
-                     :val
-                     "626172")
-                 (IdentifierExpr
+                 :expr
+                 (ListExpr
+                     :exprs
+                     (
+                         (BigintLiteralExpr
+                             :val
+                             1)
+                         (BigintLiteralExpr
+                             :val
+                             2)
+                         (IdentifierExpr
+                             :qualifiers
+                             ()
+                             :identifier
+                             "666F6F"
+                             :is_op
+                             false
+                             :is_prefix_op
+                             false)
+                     ))
+                 :rec
+                 false))
+             :explicit_type_vars
+             ()))
+0003 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
                      :qualifiers
                      ()
                      :identifier
-                     "62617A"
+                     "6974"
                      :is_op
                      false
                      :is_prefix_op
                      false)
-             )))
-0004 (ExprTopDecl
-         :expr
-         (ListExpr
-             :exprs
-             ((StringLiteralExpr
-                 :val
-                 "626172"))))
+                 :expr
+                 (ListExpr
+                     :exprs
+                     (
+                         (StringLiteralExpr
+                             :val
+                             "626172")
+                         (IdentifierExpr
+                             :qualifiers
+                             ()
+                             :identifier
+                             "62617A"
+                             :is_op
+                             false
+                             :is_prefix_op
+                             false)
+                     ))
+                 :rec
+                 false))
+             :explicit_type_vars
+             ()))
+0004 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
+                     :qualifiers
+                     ()
+                     :identifier
+                     "6974"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false)
+                 :expr
+                 (ListExpr
+                     :exprs
+                     ((StringLiteralExpr
+                         :val
+                         "626172")))
+                 :rec
+                 false))
+             :explicit_type_vars
+             ()))
 0005 ERROR
 0006 ERROR
 0007 (EndOfFileTopDecl)

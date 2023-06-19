@@ -1,0 +1,20 @@
+datatype suit = Spades | Hearts | Diamonds | Clubs;
+datatype 'a tree = Empty | Node of 'a * 'a forest
+     and 'a forest = Nil | Cons of 'a tree * 'a forest;
+datatype arith_expr = Number of bigint
+                    | arith_expr ~+ arith_expr
+                    | arith_expr ~- arith_expr
+                    | ~- arith_expr;
+datatype arith_expr = Number of bigint
+                    | (arith_expr) ~+ arith_expr
+                    | (~-) of arith_expr * arith_expr
+                    | (prefix ~-) of arith_expr;
+datatype formula = Prop of string
+                 | ¬ formula
+                 | formula ∧ formula
+                 | formula ∨ formula
+                 | formula → formula
+                 | (⊥);
+datatype ('a, 'b) pair = Pair of 'a * 'b;
+datatype ('b, 'a) pair = Pair of 'a * 'b;
+datatype ('d, 'a, 'bar) foo = Foo | Bar of 'bar;

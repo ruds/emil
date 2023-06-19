@@ -1,0 +1,39 @@
+datatype suit = Spades | Hearts | Diamonds | Clubs;
+datatype 'a tree = Empty | Node of 'a * 'a forest
+     and 'a forest = Nil | Cons of 'a tree * 'a forest;
+datatype arith_expr = Number of bigint
+                    | arith_expr ~+ arith_expr
+                    | arith_expr ~- arith_expr
+                    | ~- arith_expr;
+datatype arith_expr = Number of bigint
+                    | (arith_expr) ~+ arith_expr
+                    | (~-) of arith_expr * arith_expr
+                    | (prefix ~-) of arith_expr;
+datatype formula = Prop of str
+                 | ¬ formula
+                 | formula ∧ formula
+                 | formula ∨ formula
+                 | formula → formula
+                 | (⊥);
+datatype ('a, 'b) pair = Pair of 'a * 'b;
+datatype pair = Pair of 'a * 'b;
+datatype 'a pair = Pair of 'a * 'b;
+datatype 'a, 'b pair = Pair of 'a * 'b;
+datatype pair = pair of int * string;
+datatype pair = pair of int * string
+     and pair = Jacks | Queens | Kings | Aces;
+datatype foo = Foo | Bar | Bar of int;
+datatype foo = Foo | Bar and bar = Bar | Baz;
+datatype it = Foo;
+datatype foo = it;
+datatype ref = Foo;
+datatype foo = ref;
+datatype true = Foo;
+datatype foo = true;
+datatype false = Foo;
+datatype foo = false;
+datatype nil = Foo;
+datatype foo = nil;
+datatype Foo = (::);
+datatype Foo = int :: int;
+datatype Foo = (::) of (int * int);

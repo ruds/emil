@@ -75,122 +75,158 @@
                  false))
              :explicit_type_vars
              ()))
-0002 (ExprTopDecl
-         :expr
-         (TupleExpr
-             :exprs
-             (
-                 (ApplicationExpr
+0002 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
+                     :qualifiers
+                     ()
+                     :identifier
+                     "6974"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false)
+                 :expr
+                 (TupleExpr
                      :exprs
                      (
-                         (IdentifierExpr
-                             :qualifiers
-                             ()
-                             :identifier
-                             "7461696C"
-                             :is_op
-                             false
-                             :is_prefix_op
-                             false)
-                         (ListExpr
+                         (ApplicationExpr
                              :exprs
                              (
-                                 (BigintLiteralExpr
-                                     :val
-                                     1)
-                                 (BigintLiteralExpr
-                                     :val
-                                     2)
-                                 (BigintLiteralExpr
-                                     :val
-                                     3)
+                                 (IdentifierExpr
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "7461696C"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                                 (ListExpr
+                                     :exprs
+                                     (
+                                         (BigintLiteralExpr
+                                             :val
+                                             1)
+                                         (BigintLiteralExpr
+                                             :val
+                                             2)
+                                         (BigintLiteralExpr
+                                             :val
+                                             3)
+                                     ))
+                             ))
+                         (ApplicationExpr
+                             :exprs
+                             (
+                                 (IdentifierExpr
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "7461696C"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                                 (ListExpr
+                                     :exprs
+                                     (
+                                         (BigintLiteralExpr
+                                             :val
+                                             4)
+                                         (BigintLiteralExpr
+                                             :val
+                                             5)
+                                         (BigintLiteralExpr
+                                             :val
+                                             6)
+                                     ))
                              ))
                      ))
-                 (ApplicationExpr
+                 :rec
+                 false))
+             :explicit_type_vars
+             ()))
+0003 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
+                     :qualifiers
+                     ()
+                     :identifier
+                     "6974"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false)
+                 :expr
+                 (TupleExpr
                      :exprs
                      (
-                         (IdentifierExpr
-                             :qualifiers
-                             ()
-                             :identifier
-                             "7461696C"
-                             :is_op
-                             false
-                             :is_prefix_op
-                             false)
-                         (ListExpr
+                         (ApplicationExpr
                              :exprs
                              (
-                                 (BigintLiteralExpr
-                                     :val
-                                     4)
-                                 (BigintLiteralExpr
-                                     :val
-                                     5)
-                                 (BigintLiteralExpr
-                                     :val
-                                     6)
+                                 (IdentifierExpr
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "7461696C"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                                 (ListExpr
+                                     :exprs
+                                     (
+                                         (BigintLiteralExpr
+                                             :val
+                                             1)
+                                         (BigintLiteralExpr
+                                             :val
+                                             2)
+                                         (BigintLiteralExpr
+                                             :val
+                                             3)
+                                     ))
                              ))
-                     ))
-             )))
-0003 (ExprTopDecl
-         :expr
-         (TupleExpr
-             :exprs
-             (
-                 (ApplicationExpr
-                     :exprs
-                     (
-                         (IdentifierExpr
-                             :qualifiers
-                             ()
-                             :identifier
-                             "7461696C"
-                             :is_op
-                             false
-                             :is_prefix_op
-                             false)
-                         (ListExpr
+                         (ApplicationExpr
                              :exprs
                              (
-                                 (BigintLiteralExpr
-                                     :val
-                                     1)
-                                 (BigintLiteralExpr
-                                     :val
-                                     2)
-                                 (BigintLiteralExpr
-                                     :val
-                                     3)
+                                 (IdentifierExpr
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "7461696C"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                                 (ListExpr
+                                     :exprs
+                                     (
+                                         (StringLiteralExpr
+                                             :val
+                                             "666F6F")
+                                         (StringLiteralExpr
+                                             :val
+                                             "626172")
+                                         (StringLiteralExpr
+                                             :val
+                                             "62617A")
+                                     ))
                              ))
                      ))
-                 (ApplicationExpr
-                     :exprs
-                     (
-                         (IdentifierExpr
-                             :qualifiers
-                             ()
-                             :identifier
-                             "7461696C"
-                             :is_op
-                             false
-                             :is_prefix_op
-                             false)
-                         (ListExpr
-                             :exprs
-                             (
-                                 (StringLiteralExpr
-                                     :val
-                                     "666F6F")
-                                 (StringLiteralExpr
-                                     :val
-                                     "626172")
-                                 (StringLiteralExpr
-                                     :val
-                                     "62617A")
-                             ))
-                     ))
-             )))
+                 :rec
+                 false))
+             :explicit_type_vars
+             ()))
 0004 (DeclTopDecl
          :decl
          (ValDecl
@@ -294,65 +330,22 @@
                  false))
              :explicit_type_vars
              ()))
-0005 (ExprTopDecl
-         :expr
-         (ApplicationExpr
-             :exprs
-             (
-                 (IdentifierExpr
+0005 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
                      :qualifiers
                      ()
                      :identifier
-                     "626F7468"
+                     "6974"
                      :is_op
                      false
                      :is_prefix_op
                      false)
-                 (IdentifierExpr
-                     :qualifiers
-                     ()
-                     :identifier
-                     "7461696C"
-                     :is_op
-                     false
-                     :is_prefix_op
-                     false)
-                 (TupleExpr
-                     :exprs
-                     (
-                         (ListExpr
-                             :exprs
-                             (
-                                 (BigintLiteralExpr
-                                     :val
-                                     1)
-                                 (BigintLiteralExpr
-                                     :val
-                                     2)
-                                 (BigintLiteralExpr
-                                     :val
-                                     3)
-                             ))
-                         (ListExpr
-                             :exprs
-                             (
-                                 (BigintLiteralExpr
-                                     :val
-                                     4)
-                                 (BigintLiteralExpr
-                                     :val
-                                     5)
-                                 (BigintLiteralExpr
-                                     :val
-                                     6)
-                             ))
-                     ))
-             )))
-0006 (ExprTopDecl
-         :expr
-         (ApplicationExpr
-             :exprs
-             (
+                 :expr
                  (ApplicationExpr
                      :exprs
                      (
@@ -374,90 +367,187 @@
                              false
                              :is_prefix_op
                              false)
-                     ))
-                 (TupleExpr
-                     :exprs
-                     (
-                         (ListExpr
+                         (TupleExpr
                              :exprs
                              (
-                                 (BigintLiteralExpr
-                                     :val
-                                     1)
-                                 (BigintLiteralExpr
-                                     :val
-                                     2)
-                                 (BigintLiteralExpr
-                                     :val
-                                     3)
-                             ))
-                         (ListExpr
-                             :exprs
-                             (
-                                 (BigintLiteralExpr
-                                     :val
-                                     4)
-                                 (BigintLiteralExpr
-                                     :val
-                                     5)
-                                 (BigintLiteralExpr
-                                     :val
-                                     6)
+                                 (ListExpr
+                                     :exprs
+                                     (
+                                         (BigintLiteralExpr
+                                             :val
+                                             1)
+                                         (BigintLiteralExpr
+                                             :val
+                                             2)
+                                         (BigintLiteralExpr
+                                             :val
+                                             3)
+                                     ))
+                                 (ListExpr
+                                     :exprs
+                                     (
+                                         (BigintLiteralExpr
+                                             :val
+                                             4)
+                                         (BigintLiteralExpr
+                                             :val
+                                             5)
+                                         (BigintLiteralExpr
+                                             :val
+                                             6)
+                                     ))
                              ))
                      ))
-             )))
-0007 (ExprTopDecl
-         :expr
-         (ApplicationExpr
-             :exprs
-             (
-                 (IdentifierExpr
+                 :rec
+                 false))
+             :explicit_type_vars
+             ()))
+0006 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
                      :qualifiers
                      ()
                      :identifier
-                     "626F7468"
+                     "6974"
                      :is_op
                      false
                      :is_prefix_op
                      false)
-                 (IdentifierExpr
+                 :expr
+                 (ApplicationExpr
+                     :exprs
+                     (
+                         (ApplicationExpr
+                             :exprs
+                             (
+                                 (IdentifierExpr
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "626F7468"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                                 (IdentifierExpr
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "7461696C"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                             ))
+                         (TupleExpr
+                             :exprs
+                             (
+                                 (ListExpr
+                                     :exprs
+                                     (
+                                         (BigintLiteralExpr
+                                             :val
+                                             1)
+                                         (BigintLiteralExpr
+                                             :val
+                                             2)
+                                         (BigintLiteralExpr
+                                             :val
+                                             3)
+                                     ))
+                                 (ListExpr
+                                     :exprs
+                                     (
+                                         (BigintLiteralExpr
+                                             :val
+                                             4)
+                                         (BigintLiteralExpr
+                                             :val
+                                             5)
+                                         (BigintLiteralExpr
+                                             :val
+                                             6)
+                                     ))
+                             ))
+                     ))
+                 :rec
+                 false))
+             :explicit_type_vars
+             ()))
+0007 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
                      :qualifiers
                      ()
                      :identifier
-                     "7461696C"
+                     "6974"
                      :is_op
                      false
                      :is_prefix_op
                      false)
-                 (TupleExpr
+                 :expr
+                 (ApplicationExpr
                      :exprs
                      (
-                         (ListExpr
+                         (IdentifierExpr
+                             :qualifiers
+                             ()
+                             :identifier
+                             "626F7468"
+                             :is_op
+                             false
+                             :is_prefix_op
+                             false)
+                         (IdentifierExpr
+                             :qualifiers
+                             ()
+                             :identifier
+                             "7461696C"
+                             :is_op
+                             false
+                             :is_prefix_op
+                             false)
+                         (TupleExpr
                              :exprs
                              (
-                                 (BigintLiteralExpr
-                                     :val
-                                     1)
-                                 (BigintLiteralExpr
-                                     :val
-                                     2)
-                                 (BigintLiteralExpr
-                                     :val
-                                     3)
-                             ))
-                         (ListExpr
-                             :exprs
-                             (
-                                 (StringLiteralExpr
-                                     :val
-                                     "666F6F")
-                                 (StringLiteralExpr
-                                     :val
-                                     "626172")
-                                 (StringLiteralExpr
-                                     :val
-                                     "62617A")
+                                 (ListExpr
+                                     :exprs
+                                     (
+                                         (BigintLiteralExpr
+                                             :val
+                                             1)
+                                         (BigintLiteralExpr
+                                             :val
+                                             2)
+                                         (BigintLiteralExpr
+                                             :val
+                                             3)
+                                     ))
+                                 (ListExpr
+                                     :exprs
+                                     (
+                                         (StringLiteralExpr
+                                             :val
+                                             "666F6F")
+                                         (StringLiteralExpr
+                                             :val
+                                             "626172")
+                                         (StringLiteralExpr
+                                             :val
+                                             "62617A")
+                                     ))
                              ))
                      ))
-             )))
+                 :rec
+                 false))
+             :explicit_type_vars
+             ()))
 0008 (EndOfFileTopDecl)

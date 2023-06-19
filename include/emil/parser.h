@@ -31,7 +31,10 @@
 namespace emil {
 
 class CaseExpr;
+class ConBind;
 class Decl;
+class DtypeBind;
+class DtypeDecl;
 class Expr;
 class FnExpr;
 class FstringLiteralExpr;
@@ -122,9 +125,17 @@ class Parser {
 
   std::unique_ptr<ValDecl> match_val_decl(Token& first);
 
+  std::unique_ptr<DtypeDecl> match_dtype_decl(Token& first);
+
   std::vector<std::u8string> match_type_id_seq();
 
   std::unique_ptr<ValBind> match_val_bind(Token& first);
+
+  std::unique_ptr<DtypeBind> match_dtype_bind();
+
+  std::unique_ptr<ConBind> match_con_bind(Token& first);
+
+  std::unique_ptr<ConBind> match_infix_con_bind(Token& first);
 
   std::unique_ptr<Pattern> match_left_pattern(Token& first);
 

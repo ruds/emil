@@ -582,6 +582,7 @@ class TFnExpr : public TExpr {
 };
 
 class TValDecl;
+class TDtypeDecl;
 
 /** A typed declaration. */
 class TDecl {
@@ -597,6 +598,7 @@ class TDecl {
     virtual ~Visitor();
 
     virtual void visit(const TValDecl& node) = 0;
+    virtual void visit(const TDtypeDecl& node) = 0;
   };
 
   virtual void accept(Visitor& visitor) const = 0;
@@ -620,9 +622,20 @@ class TValDecl : public TDecl {
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 };
 
+class TDtypeDecl : public TDecl {
+ public:
+  TDtypeDecl(const Location& location, managed_ptr<typing::Env> env);
+
+  std::unique_ptr<TDecl> apply_substitutions(typing::Substitutions,
+                                             bool) const override {
+    return std::make_unique<TDtypeDecl>(location, env);
+  }
+
+  void accept(Visitor& visitor) const override { visitor.visit(*this); }
+};
+
 class TEmptyTopDecl;
 class TEndOfFileTopDecl;
-class TExprTopDecl;
 class TDeclTopDecl;
 
 /** A typed top-level declaration. */
@@ -639,7 +652,6 @@ class TTopDecl {
 
     virtual void visit(const TEmptyTopDecl& v) = 0;
     virtual void visit(const TEndOfFileTopDecl& v) = 0;
-    virtual void visit(const TExprTopDecl& v) = 0;
     virtual void visit(const TDeclTopDecl& v) = 0;
   };
 
@@ -656,17 +668,6 @@ class TEmptyTopDecl : public TTopDecl {
 class TEndOfFileTopDecl : public TTopDecl {
  public:
   using TTopDecl::TTopDecl;
-
-  void accept(Visitor& visitor) const override { visitor.visit(*this); }
-};
-
-class TExprTopDecl : public TTopDecl {
- public:
-  std::unique_ptr<TExpr> expr;
-  managed_ptr<typing::TypeScheme> sigma;
-
-  TExprTopDecl(const Location& location, std::unique_ptr<TExpr> expr,
-               managed_ptr<typing::TypeScheme> sigma);
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 };

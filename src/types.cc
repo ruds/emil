@@ -621,6 +621,10 @@ void TypeStructure::visit_additional_subobjects(const ManagedVisitor& visitor) {
   env_.accept(visitor);
 }
 
+BindingError::BindingError(std::u8string_view id)
+    : id(id),
+      full_msg_(fmt::format("Could not rebind {}.", to_std_string(id))) {}
+
 TypeEnv::TypeEnv(StringMap<TypeStructure> env)
     : TypeObj(merge_free_variables(env), merge_undetermined_types(env),
               merge_type_names(env)),
@@ -638,17 +642,22 @@ std::optional<managed_ptr<TypeStructure>> TypeEnv::get(
 
 managed_ptr<TypeEnv> TypeEnv::add_binding(StringPtr id,
                                           managed_ptr<TypeFunction> theta,
-                                          managed_ptr<ValEnv> VE) const {
-  return make_managed<TypeEnv>(
-      env_->insert(id, make_managed<TypeStructure>(theta, VE)).first);
+                                          managed_ptr<ValEnv> VE,
+                                          bool allow_rebinding) const {
+  auto e = env_->insert(id, make_managed<TypeStructure>(theta, VE));
+  if (!allow_rebinding && e.second) {
+    throw BindingError(*id);
+  }
+  return make_managed<TypeEnv>(e.first);
 }
 
 managed_ptr<TypeEnv> TypeEnv::add_binding(StringPtr id, managed_ptr<Type> theta,
-                                          managed_ptr<ValEnv> VE) const {
+                                          managed_ptr<ValEnv> VE,
+                                          bool allow_rebinding) const {
   return add_binding(id,
                      make_managed<TypeFunction>(
                          theta, collections::make_array<ManagedString>({})),
-                     VE);
+                     VE, allow_rebinding);
 }
 
 void TypeEnv::visit_additional_subobjects(const ManagedVisitor& visitor) {
@@ -664,21 +673,6 @@ ValueBinding::ValueBinding(managed_ptr<TypeScheme> scheme, IdStatus status)
 void ValueBinding::visit_additional_subobjects(const ManagedVisitor& visitor) {
   scheme_.accept(visitor);
 }
-
-std::u8string canonicalize_val_id(std::u8string_view id, bool is_op,
-                                  bool is_prefix_op) {
-  assert(!is_prefix_op || is_op);
-  if (!is_op) return std::u8string(id);
-  std::u8string out = u8"(";
-  if (is_prefix_op) out += u8"prefix ";
-  out += id;
-  out += u8")";
-  return out;
-}
-
-BindingError::BindingError(std::u8string_view id)
-    : id(id),
-      full_msg_(fmt::format("Could not rebind {}.", to_std_string(id))) {}
 
 ValEnv::ValEnv(StringMap<ValueBinding> env)
     : TypeObj(merge_free_variables(env), merge_undetermined_types(env),
@@ -699,10 +693,16 @@ managed_ptr<ValEnv> ValEnv::add_binding(std::u8string_view id,
                                         managed_ptr<TypeScheme> scheme,
                                         IdStatus status,
                                         bool allow_rebinding) const {
-  auto e =
-      env_->insert(make_string(id), make_managed<ValueBinding>(scheme, status));
+  return add_binding(make_string(id), scheme, status, allow_rebinding);
+}
+
+managed_ptr<ValEnv> ValEnv::add_binding(StringPtr id,
+                                        managed_ptr<TypeScheme> scheme,
+                                        IdStatus status,
+                                        bool allow_rebinding) const {
+  auto e = env_->insert(id, make_managed<ValueBinding>(scheme, status));
   if (!allow_rebinding && e.second) {
-    throw BindingError(id);
+    throw BindingError(*id);
   }
   return make_managed<ValEnv>(e.first);
 }
@@ -888,6 +888,14 @@ managed_ptr<Env> operator+(const managed_ptr<Env>& l,
   return make_managed<Env>(l->str_env(), l->type_env(), l->val_env() + r);
 }
 
+managed_ptr<Env> operator+(const managed_ptr<Env>& l,
+                           const managed_ptr<TypeEnv>& r) {
+  assert(l);
+  assert(r);
+  auto hold = ctx().mgr->acquire_hold();
+  return make_managed<Env>(l->str_env(), l->type_env() + r, l->val_env());
+}
+
 managed_ptr<Context> operator+(const managed_ptr<Context>& C,
                                const StringSet& U) {
   assert(C);
@@ -914,6 +922,15 @@ managed_ptr<Context> operator+(const managed_ptr<Context>& C,
   auto hold = ctx().mgr->acquire_hold();
   return make_managed<Context>(C->type_names(), C->explicit_type_variables(),
                                C->env() + VE);
+}
+
+managed_ptr<Context> operator+(const managed_ptr<Context>& C,
+                               const managed_ptr<TypeEnv>& TE) {
+  assert(C);
+  assert(TE);
+  auto hold = ctx().mgr->acquire_hold();
+  return make_managed<Context>(C->type_names(), C->explicit_type_variables(),
+                               C->env() + TE);
 }
 
 managed_ptr<Basis> operator+(const managed_ptr<Basis>& B,

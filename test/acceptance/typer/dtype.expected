@@ -1,0 +1,44 @@
+@0001:
+datatype suit = Clubs | Diamonds | Hearts | Spades
+val Clubs : suit
+val Diamonds : suit
+val Hearts : suit
+val Spades : suit
+@0002:
+datatype 'a forest = Cons of ('a tree * 'a forest) | Nil
+datatype 'a tree = Empty | Node of ('a * 'a forest)
+val Cons : ('a tree * 'a forest) -> 'a forest
+val Empty : 'a tree
+val Nil : 'a forest
+val Node : ('a * 'a forest) -> 'a tree
+@0004:
+datatype arith_expr = (prefix ~-) of arith_expr | (~+) of (arith_expr * arith_expr) | (~-) of (arith_expr * arith_expr) | Number of bigint
+val (prefix ~-) : arith_expr -> arith_expr
+val (~+) : (arith_expr * arith_expr) -> arith_expr
+val (~-) : (arith_expr * arith_expr) -> arith_expr
+val Number : bigint -> arith_expr
+@0008:
+datatype arith_expr = (prefix ~-) of arith_expr | (~+) of (arith_expr * arith_expr) | (~-) of (arith_expr * arith_expr) | Number of bigint
+val (prefix ~-) : arith_expr -> arith_expr
+val (~+) : (arith_expr * arith_expr) -> arith_expr
+val (~-) : (arith_expr * arith_expr) -> arith_expr
+val Number : bigint -> arith_expr
+@0012:
+datatype formula = (prefix ¬) of formula | (→) of (formula * formula) | (∧) of (formula * formula) | (∨) of (formula * formula) | (⊥) | Prop of string
+val (prefix ¬) : formula -> formula
+val (→) : (formula * formula) -> formula
+val (∧) : (formula * formula) -> formula
+val (∨) : (formula * formula) -> formula
+val (⊥) : formula
+val Prop : string -> formula
+@0018:
+datatype ('a, 'b) pair = Pair of ('a * 'b)
+val Pair : ('a * 'b) -> ('a, 'b) pair
+@0019:
+datatype ('a, 'b) pair = Pair of ('b * 'a)
+val Pair : ('a * 'b) -> ('b, 'a) pair
+@0020:
+datatype ('a, 'b, 'c) foo = Bar of 'c | Foo
+val Bar : 'a -> ('b, 'c, 'a) foo
+val Foo : ('a, 'b, 'c) foo
+@0021:

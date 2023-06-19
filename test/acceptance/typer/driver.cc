@@ -101,7 +101,7 @@ void process_next_topdecl(managed_ptr<typing::Basis>& B, Typer& typer,
   auto e = typer.elaborate(B, *topdecl);
   B = e.B;
   fmt::format_to(out, "@{:04}:\n{}", e.topdecl->location.line,
-                 describe_basis_updates(*e.topdecl));
+                 describe_basis_updates(typer, *e.topdecl));
 }
 
 void process_file(std::string_view infile, const std::string& outfile,

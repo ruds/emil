@@ -577,15 +577,13 @@ std::unique_ptr<TDecl> TValDecl::apply_substitutions(
       env->apply_substitutions(substitutions, enforce_timing_constraints));
 }
 
+TDtypeDecl::TDtypeDecl(const Location& location, managed_ptr<typing::Env> env)
+    : TDecl(location, env) {}
+
 TTopDecl::TTopDecl(const Location& location) : location(location) {}
 
 TTopDecl::~TTopDecl() = default;
 TTopDecl::Visitor::~Visitor() = default;
-
-TExprTopDecl::TExprTopDecl(const Location& location,
-                           std::unique_ptr<TExpr> expr,
-                           managed_ptr<typing::TypeScheme> sigma)
-    : TTopDecl(location), expr(std::move(expr)), sigma(sigma) {}
 
 TDeclTopDecl::TDeclTopDecl(const Location& location,
                            std::unique_ptr<TDecl> decl)

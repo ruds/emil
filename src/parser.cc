@@ -18,6 +18,7 @@
 #include <fmt/format.h>
 
 #include <algorithm>
+#include <cassert>
 #include <cstdint>
 #include <initializer_list>
 #include <iterator>
@@ -89,6 +90,38 @@ std::u8string&& move_string(Token& t) {
   return std::move(get<std::u8string>(t.aux));
 }
 
+std::unique_ptr<IdentifierPattern> make_id_pattern(
+    const Location& location, std::vector<std::u8string> qualifiers,
+    std::u8string id, bool is_op, bool is_prefix) {
+  return std::make_unique<IdentifierPattern>(location, std::move(qualifiers),
+                                             std::move(id), is_op, is_prefix);
+}
+
+std::unique_ptr<IdentifierPattern> make_id_pattern(Token& t,
+                                                   bool is_prefix = false) {
+  switch (t.type) {
+    case TokenType::QUAL_ID_OP:
+    case TokenType::QUAL_ID_WORD: {
+      auto& qid = get<QualifiedIdentifier>(t.aux);
+      const bool is_op = t.type == TokenType::QUAL_ID_OP;
+      return make_id_pattern(t.location, std::move(qid.qualifiers),
+                             std::move(qid.id), is_op, is_prefix && is_op);
+    }
+
+    case TokenType::ID_OP:
+    case TokenType::EQUALS:
+    case TokenType::ASTERISK:
+      return make_id_pattern(t.location, {}, move_string(t), true, is_prefix);
+
+    case TokenType::ID_WORD:
+      return make_id_pattern(t.location, {}, move_string(t), false, false);
+
+    default:
+      throw std::logic_error(
+          fmt::format("This token shouldn't make it here: {}.", t));
+  }
+}
+
 }  // namespace
 
 ParsingError::ParsingError(std::string msg, const Location& location)
@@ -118,7 +151,13 @@ std::unique_ptr<TopDecl> Parser::next() {
         if (starts_decl(t.type)) {
           top_decl = std::make_unique<DeclTopDecl>(t.location, match_decl(t));
         } else {
-          top_decl = std::make_unique<ExprTopDecl>(t.location, match_expr(t));
+          std::vector<std::unique_ptr<ValBind>> it_binding;
+          it_binding.push_back(std::make_unique<ValBind>(
+              t.location, make_id_pattern(t.location, {}, u8"it", false, false),
+              match_expr(t), false));
+          auto decl = std::make_unique<ValDecl>(
+              t.location, std::move(it_binding), std::vector<std::u8string>{});
+          top_decl = std::make_unique<DeclTopDecl>(t.location, std::move(decl));
         }
         consume(TokenType::SEMICOLON, "top-level declaration");
         return top_decl;
@@ -208,7 +247,19 @@ ExprPtr Parser::match_expr(Token& first) {
   return expr;
 }
 
-DeclPtr Parser::match_decl(Token& first) { return match_val_decl(first); }
+DeclPtr Parser::match_decl(Token& first) {
+  switch (first.type) {
+    case TokenType::KW_VAL:
+      return match_val_decl(first);
+
+    case TokenType::KW_DATATYPE:
+      return match_dtype_decl(first);
+
+    default:
+      error(fmt::format("Expected decl but got token of type {}", first.type),
+            first);
+  }
+}
 
 namespace {
 bool can_start_atomic_pattern(const Token* t) {
@@ -227,38 +278,6 @@ bool can_start_atomic_pattern(const Token* t) {
 
     default:
       return false;
-  }
-}
-
-std::unique_ptr<IdentifierPattern> make_id_pattern(
-    const Location& location, std::vector<std::u8string> qualifiers,
-    std::u8string id, bool is_op, bool is_prefix) {
-  return std::make_unique<IdentifierPattern>(location, std::move(qualifiers),
-                                             std::move(id), is_op, is_prefix);
-}
-
-std::unique_ptr<IdentifierPattern> make_id_pattern(Token& t,
-                                                   bool is_prefix = false) {
-  switch (t.type) {
-    case TokenType::QUAL_ID_OP:
-    case TokenType::QUAL_ID_WORD: {
-      auto& qid = get<QualifiedIdentifier>(t.aux);
-      const bool is_op = t.type == TokenType::QUAL_ID_OP;
-      return make_id_pattern(t.location, std::move(qid.qualifiers),
-                             std::move(qid.id), is_op, is_prefix && is_op);
-    }
-
-    case TokenType::ID_OP:
-    case TokenType::EQUALS:
-    case TokenType::ASTERISK:
-      return make_id_pattern(t.location, {}, move_string(t), true, is_prefix);
-
-    case TokenType::ID_WORD:
-      return make_id_pattern(t.location, {}, move_string(t), false, false);
-
-    default:
-      throw std::logic_error(
-          fmt::format("This token shouldn't make it here: {}.", t));
   }
 }
 
@@ -544,29 +563,62 @@ std::vector<std::pair<PatternPtr, ExprPtr>> Parser::match_cases() {
 }
 
 std::unique_ptr<ValDecl> Parser::match_val_decl(Token& first) {
-  // TODO: lift this check to match_decl
-  if (first.type != TokenType::KW_VAL)
-    error(fmt::format("Expected 'val' but got token of type {}", first.type),
-          first);
   auto explicit_type_vars = match_type_id_seq();
+  std::sort(explicit_type_vars.begin(), explicit_type_vars.end());
   std::vector<std::unique_ptr<ValBind>> bindings;
   do {
-    bindings.push_back(match_val_bind(advance_safe("valbind declaration")));
+    bindings.push_back(match_val_bind(advance_safe("val-bind")));
   } while (match(TokenType::KW_AND));
   return std::make_unique<ValDecl>(first.location, std::move(bindings),
                                    std::move(explicit_type_vars));
 }
 
-std::vector<std::u8string> Parser::match_type_id_seq() {
+namespace {
+
+void check_no_doublebind(
+    const std::vector<std::unique_ptr<DtypeBind>>& bindings) {
   std::set<std::u8string> types;
+  std::set<std::u8string> constructors;
+  for (const auto& b : bindings) {
+    if (!types.insert(b->identifier).second) {
+      throw ParsingError(
+          fmt::format("bound {} multiple times", to_std_string(b->identifier)),
+          b->location);
+    }
+    for (const auto& c : b->constructors) {
+      auto id = canonicalize_val_id(c->identifier, c->is_op, c->is_prefix_op);
+      if (!constructors.insert(id).second) {
+        throw ParsingError(
+            fmt::format("bound {} multiple times", to_std_string(id)),
+            c->location);
+      }
+    }
+  }
+}
+
+}  // namespace
+
+std::unique_ptr<DtypeDecl> Parser::match_dtype_decl(Token& first) {
+  std::vector<std::unique_ptr<DtypeBind>> bindings;
+  do {
+    bindings.push_back(match_dtype_bind());
+  } while (match(TokenType::KW_AND));
+  check_no_doublebind(bindings);
+  return std::make_unique<DtypeDecl>(first.location, std::move(bindings));
+}
+
+std::vector<std::u8string> Parser::match_type_id_seq() {
+  std::vector<std::u8string> types;
   if (match(TokenType::ID_TYPE)) {
-    types.insert(move_string(current_.back()));
+    types.push_back(move_string(current_.back()));
   } else if (peek() && peek()->type == TokenType::LPAREN && peek(1) &&
              peek(1)->type == TokenType::ID_TYPE) {
+    std::set<std::u8string> types_deduped;
     advance();
     do {
       auto s = move_string(consume(TokenType::ID_TYPE, "type id sequence"));
-      if (!types.insert(s).second) {
+      types.push_back(s);
+      if (!types_deduped.insert(s).second) {
         error("type id sequence contains duplicate type ids", current_.back());
       }
     } while (match(TokenType::COMMA));
@@ -576,9 +628,7 @@ std::vector<std::u8string> Parser::match_type_id_seq() {
     }
     consume(TokenType::RPAREN, "type id sequence");
   }
-  std::vector<std::u8string> out(std::move_iterator(types.begin()),
-                                 std::move_iterator(types.end()));
-  return out;
+  return types;
 }
 
 std::unique_ptr<ValBind> Parser::match_val_bind(Token& first) {
@@ -589,6 +639,172 @@ std::unique_ptr<ValBind> Parser::match_val_bind(Token& first) {
   auto expr = match_expr(advance_safe("valbind declaration"));
   return std::make_unique<ValBind>(first.location, std::move(pattern),
                                    std::move(expr), rec);
+}
+
+namespace {
+
+class TypeVarExtractor : public TypeExpr::Visitor {
+ public:
+  std::set<std::u8string> vars;
+
+  void visitVarTypeExpr(const VarTypeExpr& e) override { vars.insert(e.id); }
+
+  void visitRecordTypeExpr(const RecordTypeExpr& e) override {
+    for (const auto& row : e.rows) {
+      row.second->accept(*this);
+    }
+  }
+
+  void visitTyconTypeExpr(const TyconTypeExpr& e) override {
+    for (const auto& t : e.types) {
+      t->accept(*this);
+    }
+  }
+
+  void visitTupleTypeExpr(const TupleTypeExpr& e) override {
+    for (const auto& t : e.types) {
+      t->accept(*this);
+    }
+  }
+
+  void visitFuncTypeExpr(const FuncTypeExpr& e) override {
+    e.param->accept(*this);
+    e.ret->accept(*this);
+  }
+};
+
+/** Check that any tyvar used in a constructor occurs in `vars`. */
+void check_type_vars(
+    const Location& location, const std::vector<std::u8string>& vars,
+    const std::vector<std::unique_ptr<ConBind>>& constructors) {
+  TypeVarExtractor v;
+
+  for (const auto& con : constructors) {
+    if (con->param) con->param->accept(v);
+  }
+
+  std::set<std::u8string> sorted_vars(vars.begin(), vars.end());
+  std::vector<std::u8string> extras;
+  std::set_difference(v.vars.begin(), v.vars.end(), sorted_vars.begin(),
+                      sorted_vars.end(), back_inserter(extras));
+  if (!extras.empty()) {
+    std::string outvars;
+    for (auto it = extras.begin(); it != extras.end(); ++it) {
+      if (it != extras.begin()) outvars += ", ";
+      outvars += to_std_string(*it);
+    }
+    throw ParsingError(
+        fmt::format("unbound type variable(s) in type declaration: {}",
+                    outvars),
+        location);
+  }
+}
+
+const std::vector<std::u8string_view> RESERVED_NAMES_DATBIND = {
+    u8"(::)", u8"false", u8"it", u8"nil", u8"ref", u8"true",
+};
+
+/** Check that none of the reserved names are bound. */
+void check_names(const Location& location, std::u8string_view type_name,
+                 const std::vector<std::unique_ptr<ConBind>>& constructors) {
+  assert(std::is_sorted(RESERVED_NAMES_DATBIND.begin(),
+                        RESERVED_NAMES_DATBIND.end()));
+  if (std::binary_search(RESERVED_NAMES_DATBIND.begin(),
+                         RESERVED_NAMES_DATBIND.end(), type_name)) {
+    throw ParsingError(fmt::format("Illegally bound {} as datatype name",
+                                   to_std_string(type_name)),
+                       location);
+  }
+  for (const auto& c : constructors) {
+    const auto id =
+        canonicalize_val_id(c->identifier, c->is_op, c->is_prefix_op);
+    if (std::binary_search(RESERVED_NAMES_DATBIND.begin(),
+                           RESERVED_NAMES_DATBIND.end(), id)) {
+      throw ParsingError(fmt::format("Illegal bound {} as value constructor",
+                                     to_std_string(id)),
+                         location);
+    }
+  }
+}
+
+}  // namespace
+
+std::unique_ptr<DtypeBind> Parser::match_dtype_bind() {
+  if (!peek()) {
+    error("Expected dtype-bind", current_.back());
+  }
+
+  const auto& location = peek()->location;
+  auto types = match_type_id_seq();
+  auto id = consume(TokenType::ID_WORD, "dtype-bind");
+  consume(TokenType::EQUALS, "dtype-bind");
+  std::vector<std::unique_ptr<ConBind>> constructors;
+  do {
+    constructors.push_back(match_con_bind(advance_safe("con-bind")));
+  } while (match(TokenType::PIPE));
+  check_type_vars(location, types, constructors);
+  auto type_name = move_string(id);
+  check_names(location, type_name, constructors);
+  return std::make_unique<DtypeBind>(location, std::move(type_name),
+                                     std::move(types), std::move(constructors));
+}
+
+std::unique_ptr<ConBind> Parser::match_con_bind(Token& first) {
+  switch (first.type) {
+    case TokenType::ID_WORD: {
+      // This could be a type expression: foo list list list list list ....
+      std::size_t lookahead = 0;
+      while (peek(lookahead) && peek(lookahead)->type == TokenType::ID_WORD) {
+        ++lookahead;
+      }
+      if (peek(lookahead)->type == TokenType::ID_OP) {
+        return match_infix_con_bind(first);
+      }
+      std::unique_ptr<TypeExpr> param;
+      if (match(TokenType::KW_OF)) {
+        param = match_type(advance_safe("con-bind type expression"));
+      }
+      return std::make_unique<ConBind>(first.location, move_string(first),
+                                       std::move(param), false, false);
+    }
+
+    case TokenType::ID_OP: {
+      std::unique_ptr<TypeExpr> param =
+          match_type(advance_safe("con-bind prefix op type"));
+      return std::make_unique<ConBind>(first.location, move_string(first),
+                                       std::move(param), true, true);
+    }
+
+    case TokenType::LPAREN: {
+      bool prefix = match(TokenType::KW_PREFIX);
+      if (prefix || (peek() && peek()->type == TokenType::ID_OP)) {
+        auto id = consume(TokenType::ID_OP, "con-bind paren op");
+        consume(TokenType::RPAREN, "con-bind paren op");
+        std::unique_ptr<TypeExpr> param;
+        if (match(TokenType::KW_OF)) {
+          param = match_type(advance_safe("con-bind paren op type"));
+        }
+        return std::make_unique<ConBind>(first.location, move_string(id),
+                                         std::move(param), true, prefix);
+      } else {
+        return match_infix_con_bind(first);
+      }
+    }
+
+    default:
+      return match_infix_con_bind(first);
+  }
+}
+
+std::unique_ptr<ConBind> Parser::match_infix_con_bind(Token& first) {
+  std::vector<std::unique_ptr<TypeExpr>> types;
+  types.push_back(match_type(first));
+  auto id = consume(TokenType::ID_OP, "con-bind infix op");
+  types.push_back(match_type(advance_safe("con-bind infix op type")));
+  return std::make_unique<ConBind>(
+      first.location, move_string(id),
+      std::make_unique<TupleTypeExpr>(first.location, std::move(types)), true,
+      false);
 }
 
 std::unique_ptr<LetExpr> Parser::match_let_expr(const Location& location) {

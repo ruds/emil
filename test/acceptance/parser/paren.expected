@@ -1,80 +1,152 @@
-0001 (ExprTopDecl
-         :expr
-         (UnitExpr))
-0002 (ExprTopDecl
-         :expr
-         (RecordExpr
-             :rows
-             (
-                 (RecRowExpr
-                     :label
-                     "666F6F"
-                     :val
-                     (BigintLiteralExpr
-                         :val
-                         1))
-                 (RecRowExpr
-                     :label
-                     "626172"
-                     :val
-                     (IdentifierExpr
-                         :qualifiers
-                         ()
-                         :identifier
-                         "62617A"
-                         :is_op
-                         false
-                         :is_prefix_op
-                         false))
-             )))
-0003 (ExprTopDecl
-         :expr
-         (TupleExpr
-             :exprs
-             (
-                 (IdentifierExpr
+0001 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
                      :qualifiers
                      ()
                      :identifier
-                     "666F6F"
+                     "6974"
                      :is_op
                      false
                      :is_prefix_op
                      false)
-                 (IdentifierExpr
+                 :expr
+                 (UnitExpr)
+                 :rec
+                 false))
+             :explicit_type_vars
+             ()))
+0002 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
                      :qualifiers
                      ()
                      :identifier
-                     "2B2B"
-                     :is_op
-                     true
-                     :is_prefix_op
-                     false)
-             )))
-0004 (ExprTopDecl
-         :expr
-         (SequencedExpr
-             :exprs
-             (
-                 (IdentifierExpr
-                     :qualifiers
-                     ()
-                     :identifier
-                     "666F6F"
+                     "6974"
                      :is_op
                      false
                      :is_prefix_op
                      false)
-                 (IdentifierExpr
+                 :expr
+                 (RecordExpr
+                     :rows
+                     (
+                         (RecRowExpr
+                             :label
+                             "666F6F"
+                             :val
+                             (BigintLiteralExpr
+                                 :val
+                                 1))
+                         (RecRowExpr
+                             :label
+                             "626172"
+                             :val
+                             (IdentifierExpr
+                                 :qualifiers
+                                 ()
+                                 :identifier
+                                 "62617A"
+                                 :is_op
+                                 false
+                                 :is_prefix_op
+                                 false))
+                     ))
+                 :rec
+                 false))
+             :explicit_type_vars
+             ()))
+0003 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
                      :qualifiers
                      ()
                      :identifier
-                     "2B2B"
+                     "6974"
                      :is_op
-                     true
+                     false
                      :is_prefix_op
                      false)
-             )))
+                 :expr
+                 (TupleExpr
+                     :exprs
+                     (
+                         (IdentifierExpr
+                             :qualifiers
+                             ()
+                             :identifier
+                             "666F6F"
+                             :is_op
+                             false
+                             :is_prefix_op
+                             false)
+                         (IdentifierExpr
+                             :qualifiers
+                             ()
+                             :identifier
+                             "2B2B"
+                             :is_op
+                             true
+                             :is_prefix_op
+                             false)
+                     ))
+                 :rec
+                 false))
+             :explicit_type_vars
+             ()))
+0004 (DeclTopDecl
+         :decl
+         (ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
+                     :qualifiers
+                     ()
+                     :identifier
+                     "6974"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false)
+                 :expr
+                 (SequencedExpr
+                     :exprs
+                     (
+                         (IdentifierExpr
+                             :qualifiers
+                             ()
+                             :identifier
+                             "666F6F"
+                             :is_op
+                             false
+                             :is_prefix_op
+                             false)
+                         (IdentifierExpr
+                             :qualifiers
+                             ()
+                             :identifier
+                             "2B2B"
+                             :is_op
+                             true
+                             :is_prefix_op
+                             false)
+                     ))
+                 :rec
+                 false))
+             :explicit_type_vars
+             ()))
 0005 ERROR
 0006 ERROR
 0007 ERROR
