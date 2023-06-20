@@ -14,22 +14,15 @@
 
 #pragma once
 
-#include <emil/collections.h>
-
-#include <cstdint>
 #include <exception>
-#include <map>
 #include <memory>
-#include <set>
 #include <string>
-#include <utility>
-#include <vector>
 
 #include "emil/ast.h"  // IWYU pragma: keep
 #include "emil/gc.h"
 #include "emil/token.h"
 #include "emil/typed_ast.h"  // IWYU pragma: keep
-#include "emil/types.h"
+#include "emil/types.h"      // IWYU pragma: keep
 
 namespace emil {
 
@@ -51,9 +44,7 @@ class ElaborationError : public std::exception {
   const std::string full_msg;
 };
 
-class Typer;
-
-std::string describe_basis_updates(Typer& typer, const TTopDecl& topdecl);
+class TyperImpl;
 
 /**
  * Performs static elaboration of a program.
@@ -64,98 +55,22 @@ std::string describe_basis_updates(Typer& typer, const TTopDecl& topdecl);
 class Typer {
  public:
   explicit Typer(Reporter& reporter);
+  ~Typer();
 
   managed_ptr<typing::Basis> initial_basis() const;
 
-  struct elaborate_topdecl_t {
+  struct elaborate_t {
     managed_ptr<typing::Basis> B;
     std::unique_ptr<TTopDecl> topdecl;
   };
 
   /** Do typing analysis of a top-level declaration. */
-  elaborate_topdecl_t elaborate(managed_ptr<typing::Basis> B,
-                                const TopDecl& topdecl);
+  elaborate_t elaborate(managed_ptr<typing::Basis> B, const TopDecl& topdecl);
 
-  using ImplicitlyScopedVars = std::map<const Decl*, std::set<std::u8string>>;
-
-  struct elaborate_decl_t {
-    managed_ptr<typing::Env> env;
-    std::unique_ptr<TDecl> decl;
-  };
-
-  /** Do typing analysis of a declaration. */
-  elaborate_decl_t elaborate(managed_ptr<typing::Context> C, const Decl& dec,
-                             const ImplicitlyScopedVars& scopes);
-
-  struct elaborate_decl_with_substitutions_t {
-    managed_ptr<typing::Env> env;
-    std::unique_ptr<TDecl> decl;
-    typing::Substitutions new_substitutions;
-  };
-
-  /** Do typing analysis of a declaration. */
-  elaborate_decl_with_substitutions_t elaborate(
-      managed_ptr<typing::Context> C, const Decl& dec,
-      typing::Substitutions& substitutions, const ImplicitlyScopedVars& scopes);
-
-  /** Do typing analysis of an expression. */
-  std::unique_ptr<TExpr> elaborate(managed_ptr<typing::Context> C,
-                                   const Expr& exp,
-                                   const ImplicitlyScopedVars& scopes);
-
-  struct elaborate_expr_with_substitutions_t {
-    std::unique_ptr<TExpr> expr;
-    typing::Substitutions new_substitutions;
-  };
-
-  /**
-   * Do typing analysis of an expression.
-   *
-   * The given substitutions are applied to the expression's subtypes;
-   * newly deduced substitutions are added to substitutions as well as
-   * being returned separately in the result's new_substitutions
-   * field.
-   */
-  elaborate_expr_with_substitutions_t elaborate(
-      managed_ptr<typing::Context> C, const Expr& exp,
-      typing::Substitutions& substitutions, std::uint64_t maximum_type_name_id,
-      const ImplicitlyScopedVars& scopes);
-
-  struct elaborate_match_t {
-    match_t match;
-    typing::Substitutions new_substitutions =
-        collections::managed_map<typing::Stamp, typing::Type>({});
-  };
-
-  elaborate_match_t elaborate_match(
-      const Location& location, managed_ptr<typing::Context> C,
-      const std::vector<
-          std::pair<std::unique_ptr<Pattern>, std::unique_ptr<Expr>>>& cases,
-      typing::Substitutions& substitutions, std::uint64_t maximum_type_name_id,
-      const ImplicitlyScopedVars& scopes);
-
-  elaborate_match_t elaborate_match(const Location& location,
-                                    managed_ptr<typing::Context> C,
-                                    const Pattern& pat,
-                                    typing::Substitutions& substitutions,
-                                    std::uint64_t maximum_type_name_id);
-
-  managed_ptr<typing::Type> elaborate_type_expr(managed_ptr<typing::Context> C,
-                                                const TypeExpr& ty);
-
-  std::unique_ptr<TPattern> elaborate_pattern(managed_ptr<typing::Context> C,
-                                              const Pattern& pat);
-
-  managed_ptr<typing::Stamp> new_stamp();
-  typing::StampGenerator& stamper() { return stamp_generator_; }
-  const typing::BuiltinTypes& builtins() const;
-
-  Reporter& reporter() { return reporter_; }
+  std::string describe_basis_updates(const TTopDecl& topdecl);
 
  private:
-  typing::StampGenerator stamp_generator_;
-  typing::BuiltinTypes builtins_;
-  Reporter& reporter_;
+  std::unique_ptr<TyperImpl> impl_;
 };
 
 }  // namespace emil
