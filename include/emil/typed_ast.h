@@ -31,6 +31,12 @@
 #include "emil/token.h"
 #include "emil/types.h"
 
+/**
+ * @file typed_ast.h
+ *
+ * @brief Provides classes for an abstract syntax tree annotated with types.
+ */
+
 namespace emil {
 
 class TDecl;

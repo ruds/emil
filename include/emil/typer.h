@@ -57,6 +57,15 @@ class Typer {
   explicit Typer(Reporter& reporter);
   ~Typer();
 
+  /**
+   * Generate an initial static basis for elaboration.
+   *
+   * Contains the following types:
+   * - `bigint`, `int`, `byte`, `float`, `char`, `string`.
+   * - `bool` and its value constructors `true` and `false`.
+   * - `'a list` and its value constructors `nil` and `::`.
+   * - `'a ref` and its value constructor `ref`.
+   */
   managed_ptr<typing::Basis> initial_basis() const;
 
   struct elaborate_t {
@@ -67,6 +76,8 @@ class Typer {
   /** Do typing analysis of a top-level declaration. */
   elaborate_t elaborate(managed_ptr<typing::Basis> B, const TopDecl& topdecl);
 
+  /** Produce a string describing changes to `B` due to a top-level declaration.
+   */
   std::string describe_basis_updates(const TTopDecl& topdecl);
 
  private:
