@@ -40,11 +40,6 @@
 namespace emil::collections {
 
 /** A fixed-size (mutable) array. */
-// TODO: This might be horribly broken. The constructor is allocating
-// space for the underlying type but new'ing managed_ptr into that
-// memory. Also, managed_ptrs to elements can escape (e.g. through
-// operator[]) without placing a reference on the array as a whole, so
-// it can be deallocated out from under.
 template <typename T>
 class ManagedArray : public Managed {
  public:
@@ -84,7 +79,7 @@ class ManagedArray : public Managed {
   }
 
   bool empty() const { return buf_.size() == 0; }
-  std::size_t size() const { return buf_.size() / sizeof(T); }
+  std::size_t size() const { return buf_.size() / sizeof(managed_ptr<T>); }
 
   managed_ptr<T>& operator[](std::size_t n) { return *(data() + n); }
   const managed_ptr<T>& operator[](std::size_t n) const {
@@ -129,7 +124,7 @@ class ManagedArray : public Managed {
   PrivateBuffer buf_;
 
   static PrivateBuffer allocate(std::size_t n) {
-    return ctx().mgr->allocate_private_buffer(n * sizeof(T));
+    return ctx().mgr->allocate_private_buffer(n * sizeof(managed_ptr<T>));
   }
 
   managed_ptr<T>* data() {
