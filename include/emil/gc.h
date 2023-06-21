@@ -195,6 +195,9 @@ class managed_ptr : public managed_ptr_base {
     return *this;
   }
 
+  /** Create a default-initialized object. */
+  static managed_ptr dflt();
+
   T& operator*() { return *val(); }
 
   const T& operator*() const { return *val(); }
@@ -397,9 +400,15 @@ class MemoryManager {
   void full_gc();
 };
 
-template <ManagedType T, class... Args>
+template <typename T, class... Args>
 managed_ptr<T> make_managed(Args&&... args) {
+  static_assert(ManagedType<T>);
   return ctx().mgr->create<T>(std::forward<Args>(args)...);
+}
+
+template <typename T>
+managed_ptr<T> managed_ptr<T>::dflt() {
+  return make_managed<T>();
 }
 
 template <ManagedType T, class... Args>
