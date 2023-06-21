@@ -129,7 +129,7 @@ class Parser {
 
   std::vector<std::u8string> match_type_id_seq();
 
-  std::unique_ptr<ValBind> match_val_bind(Token& first);
+  std::unique_ptr<ValBind> match_val_bind(Token& first, bool is_recursive);
 
   std::unique_ptr<DtypeBind> match_dtype_bind();
 

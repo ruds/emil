@@ -566,8 +566,10 @@ std::unique_ptr<ValDecl> Parser::match_val_decl(Token& first) {
   auto explicit_type_vars = match_type_id_seq();
   std::sort(explicit_type_vars.begin(), explicit_type_vars.end());
   std::vector<std::unique_ptr<ValBind>> bindings;
+  bool is_recursive = false;
   do {
-    bindings.push_back(match_val_bind(advance_safe("val-bind")));
+    bindings.push_back(match_val_bind(advance_safe("val-bind"), is_recursive));
+    is_recursive = is_recursive || bindings.back()->rec;
   } while (match(TokenType::KW_AND));
   return std::make_unique<ValDecl>(first.location, std::move(bindings),
                                    std::move(explicit_type_vars));
@@ -631,12 +633,19 @@ std::vector<std::u8string> Parser::match_type_id_seq() {
   return types;
 }
 
-std::unique_ptr<ValBind> Parser::match_val_bind(Token& first) {
+std::unique_ptr<ValBind> Parser::match_val_bind(Token& first,
+                                                bool is_recursive) {
   const bool rec = first.type == TokenType::KW_REC;
   auto& token = rec ? advance_safe("valbind declaration") : first;
   auto pattern = match_pattern(token);
   consume(TokenType::EQUALS, "valbind declaration");
-  auto expr = match_expr(advance_safe("valbind declaration"));
+  ExprPtr expr;
+  if (rec || is_recursive) {
+    consume(TokenType::KW_FN, "recursive valbind declaration");
+    expr = match_fn_expr(current_.back().location);
+  } else {
+    expr = match_expr(advance_safe("valbind declaration"));
+  }
   return std::make_unique<ValBind>(first.location, std::move(pattern),
                                    std::move(expr), rec);
 }

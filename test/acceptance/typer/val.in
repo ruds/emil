@@ -41,8 +41,8 @@ val rec even = fn 0 => true | n => odd ((-) (n, 1))
     and odd  = fn 0 => false | n => even ((-) (n, 1));
 val 'a id = fn (z: 'a) => z;
 val ('a, 'b) pair = fn (x: 'a, y: 'b) => (x, y);
-val 'a rec f = fn nil : 'a list => [] : 'a list | ((::) (x, xs)) => f xs
-       and foo = nil : 'a list;
+val 'a foo = nil : 'a list
+   and rec f = fn nil : 'a list => [] : 'a list | ((::) (x, xs)) => f xs;
 val 'a foo = let val 'a bar = baz in bar end;
 val (a, a) = foo;
 val a = foo and a = bar;
