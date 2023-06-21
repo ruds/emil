@@ -405,14 +405,10 @@ class BuiltinTypes : public TypeObj {
   managed_ptr<ConstructedType> bool_type() const { return bo_; }
   managed_ptr<ConstructedType> char_type() const { return c_; }
   managed_ptr<ConstructedType> string_type() const { return s_; }
-  // cppcheck-suppress functionStatic
-  TypePtr tuple_type(TypeList types) const;
   managed_ptr<ConstructedType> list_type(TypePtr type) const;
   managed_ptr<TypeName> list_name() const { return l_; }
   managed_ptr<ConstructedType> ref_type(TypePtr type) const;
   managed_ptr<TypeName> ref_name() const { return r_; }
-  // cppcheck-suppress functionStatic
-  TypePtr record_type(StringMap<Type> rows) const;
 
  private:
   const managed_ptr<ConstructedType> bi_;

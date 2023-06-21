@@ -319,20 +319,12 @@ BuiltinTypes::BuiltinTypes(managed_ptr<Stamp> bi, managed_ptr<Stamp> i,
       l_(make_managed<TypeName>(u8"list", l, 1, 2)),
       r_(make_managed<TypeName>(u8"ref", r, 1, 1)) {}
 
-TypePtr BuiltinTypes::tuple_type(TypeList types) const {
-  return make_managed<TupleType>(std::move(types));
-}
-
 managed_ptr<ConstructedType> BuiltinTypes::list_type(TypePtr type) const {
   return make_managed<ConstructedType>(l_, type_list({std::move(type)}));
 }
 
 managed_ptr<ConstructedType> BuiltinTypes::ref_type(TypePtr type) const {
   return make_managed<ConstructedType>(r_, type_list({std::move(type)}));
-}
-
-TypePtr BuiltinTypes::record_type(StringMap<Type> rows) const {
-  return make_managed<RecordType>(std::move(rows));
 }
 
 void BuiltinTypes::visit_additional_subobjects(const ManagedVisitor& visitor) {

@@ -69,8 +69,56 @@ ElaborationError::ElaborationError(const typing::UnificationError &e,
 
 namespace {
 
+/**
+ * Maps a declaration to the type variables implicitly scoped to it.
+ *
+ * When performing static elaboration, each type variable must be
+ * associated with a val declaration. If the declaration is
+ * well-formed, that type variable will be generalized away when
+ * closing the value environment for that declaration.
+ *
+ * If a type variable is present in the optional type variable
+ * sequence associated with a val declaration, then that variable is
+ * *explicitly* scoped to that declaration, and may not be
+ * explicitly scoped to any declaration contained within it.
+ *
+ * If a type variable is not explicitly scoped to any declaration,
+ * then its scope must be computed. A variable is "unguarded" in a
+ * declaration if it is present in that declaration but not in an
+ * enclosed declaration. A variable is implicitly scoped to a
+ * declaration if it is unguarded in that declaration and not
+ * unguarded in any enclosing declaration.
+ *
+ * Some illustrative examples:
+ *
+ *     val id = fn (z : 'a) => z;
+ * is equivalent to
+ *     val 'a id = fn (z : 'a) => z;
+ *
+ *     val x = (let val id = fn (z : 'a) => z in id id end,
+ *              fn z => z);
+ * is equivalent to
+ *     val x = (let val 'a id = fn (z : 'a) => z in id id end,
+ *              fn y => y);
+ * but
+ *     val x = (let val id = fn (z : 'a) => z in id id end,
+ *              fn (y: 'a) => y);
+ * is equivalent to
+ *     val 'a x = (let val id = fn (z : 'a) => z in id id end,
+ *                 fn (y: 'a) => y);
+ * and doesn't type-check. However,
+ *     val x = (let val id = fn (z : 'a) => z in id id end,
+ *              let val id2 = fn (y : 'a) => y in id2 end);
+ * is equivalent to
+ *     val x = (let val 'a id = fn (z : 'a) => z in id id end,
+ *              let val 'a id2 = fn (y : 'a) => y in id2 end);
+ * because the introduced `val` in the second element of the tuple guards 'a
+ * from the outer declaration.
+ */
 using ImplicitlyScopedVars = std::map<const Decl *, std::set<std::u8string>>;
-}
+
+using ContextPtr = managed_ptr<typing::Context>;
+}  // namespace
 
 class TyperImpl {
  public:
@@ -82,8 +130,8 @@ class TyperImpl {
   };
 
   /** Do typing analysis of a declaration. */
-  elaborate_decl_t elaborate(managed_ptr<typing::Context> C, const Decl &dec,
-                             const ImplicitlyScopedVars &scopes);
+  elaborate_decl_t elaborate_decl(ContextPtr C, const Decl &dec,
+                                  const ImplicitlyScopedVars &scopes);
 
   struct elaborate_decl_with_substitutions_t {
     managed_ptr<typing::Env> env;
@@ -92,14 +140,13 @@ class TyperImpl {
   };
 
   /** Do typing analysis of a declaration. */
-  elaborate_decl_with_substitutions_t elaborate(
-      managed_ptr<typing::Context> C, const Decl &dec,
-      typing::Substitutions &substitutions, const ImplicitlyScopedVars &scopes);
+  elaborate_decl_with_substitutions_t elaborate_decl(
+      ContextPtr C, const Decl &dec, typing::Substitutions &substitutions,
+      const ImplicitlyScopedVars &scopes);
 
   /** Do typing analysis of an expression. */
-  std::unique_ptr<TExpr> elaborate(managed_ptr<typing::Context> C,
-                                   const Expr &exp,
-                                   const ImplicitlyScopedVars &scopes);
+  std::unique_ptr<TExpr> elaborate_expr(ContextPtr C, const Expr &exp,
+                                        const ImplicitlyScopedVars &scopes);
 
   struct elaborate_expr_with_substitutions_t {
     std::unique_ptr<TExpr> expr;
@@ -114,41 +161,67 @@ class TyperImpl {
    * being returned separately in the result's new_substitutions
    * field.
    */
-  elaborate_expr_with_substitutions_t elaborate(
-      managed_ptr<typing::Context> C, const Expr &exp,
-      typing::Substitutions &substitutions, std::uint64_t maximum_type_name_id,
-      const ImplicitlyScopedVars &scopes);
+  elaborate_expr_with_substitutions_t elaborate_expr(
+      ContextPtr C, const Expr &exp, typing::Substitutions &substitutions,
+      std::uint64_t maximum_type_name_id, const ImplicitlyScopedVars &scopes);
 
   struct elaborate_match_t {
     match_t match;
-    typing::Substitutions new_substitutions =
-        collections::managed_map<typing::Stamp, typing::Type>({});
+    typing::Substitutions new_substitutions = typing::Substitutions::dflt();
   };
 
   elaborate_match_t elaborate_match(
-      const Location &location, managed_ptr<typing::Context> C,
+      const Location &location, ContextPtr C,
       const std::vector<
           std::pair<std::unique_ptr<Pattern>, std::unique_ptr<Expr>>> &cases,
       typing::Substitutions &substitutions, std::uint64_t maximum_type_name_id,
       const ImplicitlyScopedVars &scopes);
 
-  elaborate_match_t elaborate_match(const Location &location,
-                                    managed_ptr<typing::Context> C,
+  elaborate_match_t elaborate_match(const Location &location, ContextPtr C,
                                     const Pattern &pat,
                                     typing::Substitutions &substitutions,
                                     std::uint64_t maximum_type_name_id);
 
-  managed_ptr<typing::Type> elaborate_type_expr(managed_ptr<typing::Context> C,
+  managed_ptr<typing::Type> elaborate_type_expr(ContextPtr C,
                                                 const TypeExpr &ty);
 
-  std::unique_ptr<TPattern> elaborate_pattern(managed_ptr<typing::Context> C,
-                                              const Pattern &pat);
+  std::unique_ptr<TPattern> elaborate_pattern(ContextPtr C, const Pattern &pat);
 
   managed_ptr<typing::Stamp> new_stamp();
   typing::StampGenerator &stamper() { return stamp_generator_; }
   const typing::BuiltinTypes &builtins() const;
 
   Reporter &reporter() { return reporter_; }
+
+  managed_ptr<typing::TypeName> type_name(std::u8string name, std::size_t arity,
+                                          std::size_t span) {
+    return make_managed<typing::TypeName>(name, new_stamp(), arity, span);
+  }
+  managed_ptr<typing::TypeName> type_name(StringPtr name, std::size_t arity,
+                                          std::size_t span) {
+    return make_managed<typing::TypeName>(name, new_stamp(), arity, span);
+  }
+  managed_ptr<typing::ConstructedType> constructed_type(
+      managed_ptr<typing::TypeName> name, typing::TypeList types) {
+    return make_managed<typing::ConstructedType>(name, types);
+  }
+  managed_ptr<typing::UndeterminedType> undetermined_type() {
+    return make_managed<typing::UndeterminedType>(stamp_generator_);
+  }
+  typing::TypePtr ensure_age_constraint(typing::TypePtr type,
+                                        std::uint64_t age) {
+    return make_managed<typing::TypeWithAgeRestriction>(type, age);
+  }
+  typing::TypePtr tuple_type(typing::TypeList types) {
+    return make_managed<typing::TupleType>(types);
+  }
+  typing::TypePtr record_type(typing::StringMap<typing::Type> rows) {
+    return make_managed<typing::RecordType>(rows);
+  }
+  managed_ptr<typing::FunctionType> function_type(typing::TypePtr param,
+                                                  typing::TypePtr result) {
+    return make_managed<typing::FunctionType>(param, result);
+  }
 
  private:
   friend class Typer;
@@ -172,18 +245,24 @@ namespace {
 
 template <typename StringRange>
 typing::StringSet to_set(const StringRange &v) {
-  auto ss = collections::managed_set<ManagedString>({});
+  auto ss = typing::StringSet::dflt();
   for (const auto &s : v) {
     ss = ss->insert(make_string(s)).first;
   }
   return ss;
 }
 
+/**
+ * Computes implicit scopes for explicit type variables.
+ *
+ * Unguarded variables are mapped to nullptr.
+ */
 ImplicitlyScopedVars scope_explicit_type_variables(const Decl &dec);
 ImplicitlyScopedVars scope_explicit_type_variables(const Expr &exp);
 ImplicitlyScopedVars scope_explicit_type_variables(const Pattern &pat);
 ImplicitlyScopedVars scope_explicit_type_variables(const TypeExpr &ty);
 
+/** Merge the ordered sequence `r` into `l`. */
 template <typename C>
 void merge_into(std::set<std::u8string> &l, const C &r) {
   auto lb = l.begin(), le = l.end();
@@ -204,6 +283,7 @@ void merge_into(std::set<std::u8string> &l, const C &r) {
   }
 }
 
+/** Merge the values of `vars` and `new_vars` in `vars`. */
 void merge(ImplicitlyScopedVars &vars, ImplicitlyScopedVars &&new_vars) {
   auto lb = vars.begin(), le = vars.end();
   auto rb = new_vars.begin(), re = new_vars.end();
@@ -223,6 +303,7 @@ void merge(ImplicitlyScopedVars &vars, ImplicitlyScopedVars &&new_vars) {
   }
 }
 
+/** Remove all elements of `r` from `l`. */
 template <typename C>
 void remove_all(std::set<std::u8string> &l, const C &r) {
   auto lb = l.begin(), le = l.end();
@@ -240,6 +321,7 @@ void remove_all(std::set<std::u8string> &l, const C &r) {
   }
 }
 
+/** Remove all elements of `to_remove` from each value in `vars`. */
 void remove_from_children(ImplicitlyScopedVars &vars,
                           const std::set<std::u8string> to_remove) {
   for (auto &entry : vars) {
@@ -248,10 +330,16 @@ void remove_from_children(ImplicitlyScopedVars &vars,
   }
 }
 
+/** Used to implement `scope_explicit_type_variables(const Decl&)`. */
 class DeclVarScoper : public Decl::Visitor {
  public:
   ImplicitlyScopedVars vars;
 
+  // Builds the scoping assignments from the bottom up.
+  //
+  // `d` guards any unguarded variables it encounters; any variable
+  // scoped to `d` (implicitly or explicitly) is not scoped to any of
+  // its children, so should be removed from those children's scopes.
   void visitValDecl(const ValDecl &d) override {
     for (const auto &b : d.bindings) {
       merge(vars, scope_explicit_type_variables(*b->pat));
@@ -275,6 +363,7 @@ ImplicitlyScopedVars scope_explicit_type_variables(const Decl &dec) {
   return std::move(v.vars);
 }
 
+/** Used to implement `scope_explicit_type_variables(const Expr&)`. */
 class ExprVarScoper : public Expr::Visitor {
  public:
   ImplicitlyScopedVars vars;
@@ -360,6 +449,7 @@ ImplicitlyScopedVars scope_explicit_type_variables(const Expr &exp) {
   return std::move(v.vars);
 }
 
+/** Used to implement `scope_explicit_type_variables(const Pattern&)`. */
 class PatternVarScoper : public Pattern::Visitor {
  public:
   ImplicitlyScopedVars vars;
@@ -407,6 +497,7 @@ ImplicitlyScopedVars scope_explicit_type_variables(const Pattern &pat) {
   return std::move(v.vars);
 }
 
+/** Used to implement `scope_explicit_type_variables(const TypeExpr&)`. */
 class TypeExprVarScoper : public TypeExpr::Visitor {
  public:
   ImplicitlyScopedVars vars;
@@ -445,11 +536,11 @@ ImplicitlyScopedVars scope_explicit_type_variables(const TypeExpr &ty) {
   return std::move(v.vars);
 }
 
+/** Used to implement `get_function`. */
 class GetFunctionVisitor : public typing::TypeVisitor {
  public:
   const typing::FunctionType *fn = nullptr;
-  typing::Substitutions new_substitutions =
-      collections::managed_map<typing::Stamp, typing::Type>({});
+  typing::Substitutions new_substitutions = typing::Substitutions::dflt();
 
   explicit GetFunctionVisitor(TyperImpl &typer) : typer_(typer) {}
 
@@ -458,14 +549,13 @@ class GetFunctionVisitor : public typing::TypeVisitor {
   }
 
   void visit(const typing::UndeterminedType &t) override {
-    auto p = make_managed<typing::UndeterminedType>(typer_.new_stamp());
-    auto r = make_managed<typing::UndeterminedType>(typer_.new_stamp());
-    auto fnptr = make_managed<typing::FunctionType>(p, r);
-    new_substitutions =
-        new_substitutions
-            ->insert(t.stamp(), make_managed<typing::TypeWithAgeRestriction>(
-                                    fnptr, t.stamp()->id()))
-            .first;
+    auto p = typer_.undetermined_type();
+    auto r = typer_.undetermined_type();
+    auto fnptr = typer_.function_type(p, r);
+    new_substitutions = new_substitutions
+                            ->insert(t.stamp(), typer_.ensure_age_constraint(
+                                                    fnptr, t.stamp()->id()))
+                            .first;
     fn = &*fnptr;
   }
 
@@ -498,6 +588,7 @@ get_function_t get_function(typing::TypePtr t, TyperImpl &typer) {
   return {v.fn, v.new_substitutions};
 }
 
+/** Used to implement `Typer::describe_basis_updates`. */
 class DeclChangeDescriber : public TDecl::Visitor {
  public:
   DeclChangeDescriber(TyperImpl &typer, std::string &out)
@@ -508,8 +599,27 @@ class DeclChangeDescriber : public TDecl::Visitor {
   }
 
   void visit(const TDtypeDecl &decl) override {
+    print_dtypes(*decl.env->type_env());
+    print_vals(*decl.env->val_env());
+  }
+
+ private:
+  TyperImpl &typer_;
+  std::string &out_;
+
+  void print_vals(const typing::ValEnv &VE) {
+    auto it = back_inserter(out_);
+    for (const auto &b : *VE.env()) {
+      fmt::format_to(it, "val {} : {}\n", to_std_string(*b.first),
+                     to_std_string(print_type(
+                         b.second->scheme()->t(),
+                         typing::CanonicalizeUndeterminedTypes::YES)));
+    }
+  }
+
+  void print_dtypes(const typing::TypeEnv &TE) {
     auto it = std::back_inserter(out_);
-    for (const auto &t : *decl.env->type_env()->env()) {
+    for (const auto &t : *TE.env()) {
       out_ += "datatype ";
       const auto &bound = *t.second->fn()->bound();
       if (bound.size() == 1) {
@@ -531,9 +641,20 @@ class DeclChangeDescriber : public TDecl::Visitor {
         if (cit != constructors->begin()) out_ += " | ";
         auto c_type = cit->second->scheme()->instantiate(typer_.stamper());
         auto gf = get_function(c_type, typer_);
+        // If the constructor takes a parameter, we must unify the
+        // result with the "canonical" type of the datatype to make
+        // sure the variables match up.
+        //
+        // For example, take the declaration:
+        //     datatype ('b, 'a) pair = Pair of ('a * 'b);
+        // `pair` will be canonicalized and stored in the type environment as
+        // "Λ('a, 'b).('a, 'b) pair", and `Pair` will be canonicalized and
+        // stored in the value environment as "Θ('a, 'b).('a * 'b) -> ('b, 'a)
+        // pair". To get everything to print correctly, we need to instantiate
+        // `Pair`'s type, unify its result type with `pair`'s base type, and
+        // apply the substitutions to `Pair`'s param type.
         if (gf.fn) {
-          typing::Substitutions subs =
-              collections::managed_map<typing::Stamp, typing::Type>({});
+          auto subs = typing::Substitutions::dflt();
           auto u = typing::unify(gf.fn->result(), t.second->fn()->t(), subs);
           auto param_type = typing::apply_substitutions(gf.fn->param(), subs);
           fmt::format_to(it, "{} of {}", cit->first,
@@ -544,24 +665,10 @@ class DeclChangeDescriber : public TDecl::Visitor {
       }
       out_ += "\n";
     }
-    print_vals(*decl.env->val_env());
-  }
-
- private:
-  TyperImpl &typer_;
-  std::string &out_;
-
-  void print_vals(const typing::ValEnv &VE) {
-    auto it = back_inserter(out_);
-    for (const auto &b : *VE.env()) {
-      fmt::format_to(it, "val {} : {}\n", to_std_string(*b.first),
-                     to_std_string(print_type(
-                         b.second->scheme()->t(),
-                         typing::CanonicalizeUndeterminedTypes::YES)));
-    }
   }
 };
 
+/** Used to implement `Typer::describe_basis_updates`. */
 class TopDeclChangeDescriber : public TTopDecl::Visitor {
  public:
   std::string out;
@@ -591,6 +698,11 @@ std::string Typer::describe_basis_updates(const TTopDecl &topdecl) {
 
 namespace {
 
+/**
+ * Add a type and its constructors to TE and VE.
+ *
+ * Assumes that `t` and `constructors` have no stray free variables.
+ */
 void add_type(managed_ptr<typing::TypeEnv> &TE, managed_ptr<typing::ValEnv> &VE,
               managed_ptr<typing::ConstructedType> t,
               std::initializer_list<std::pair<std::u8string, typing::TypePtr>>
@@ -625,14 +737,15 @@ managed_ptr<typing::Basis> Typer::initial_basis() const {
   add_type(TE, VE, b.bool_type(),
            {{u8"true", b.bool_type()}, {u8"false", b.bool_type()}});
   const auto a = make_managed<typing::TypeVar>(u8"'a");
-  add_type(TE, VE, b.list_type(a),
-           {{u8"nil", b.list_type(a)},
-            {u8"(::)", make_managed<typing::FunctionType>(
-                           b.tuple_type(collections::make_array<typing::Type>(
-                               {a, b.list_type(a)})),
-                           b.list_type(a))}});
+  add_type(
+      TE, VE, b.list_type(a),
+      {{u8"nil", b.list_type(a)},
+       {u8"(::)", make_managed<typing::FunctionType>(
+                      impl_->tuple_type(collections::make_array<typing::Type>(
+                          {a, b.list_type(a)})),
+                      b.list_type(a))}});
   add_type(TE, VE, b.ref_type(a),
-           {{u8"ref", make_managed<typing::FunctionType>(a, b.ref_type(a))}});
+           {{u8"ref", impl_->function_type(a, b.ref_type(a))}});
   return make_managed<typing::Basis>(
       make_managed<typing::Env>(typing::StrEnv::empty(), TE, VE));
 }
@@ -680,6 +793,7 @@ std::string id_to_string(const std::vector<std::u8string> &qualifiers,
   return out;
 }
 
+/** Used to implement `Typer::elaborate`. */
 class TopDeclElaborator : public TopDecl::Visitor {
  public:
   managed_ptr<typing::Basis> B;
@@ -702,9 +816,89 @@ void TopDeclElaborator::visitEndOfFileTopDecl(const EndOfFileTopDecl &node) {
   typed = std::make_unique<TEndOfFileTopDecl>(node.location);
 }
 
-managed_ptr<typing::TypeScheme> generalize_for_valbind(
-    const Location &location, managed_ptr<typing::Context> C,
-    typing::TypePtr type, const TExpr &expr) {
+/**
+ * Create a new dummy type to substitute for any undetermined type not
+ * generalized.
+ *
+ * This prevents unsound substitutions prevented by the value restriction.
+ */
+typing::Substitutions compute_dummy_substitutions(TyperImpl &typer,
+                                                  managed_ptr<typing::Env> env,
+                                                  const Location &location) {
+  auto subs = typing::Substitutions::dflt();
+  std::uint64_t counter = 0;
+  for (const auto &stamp : *env->undetermined_types()) {
+    subs =
+        subs->insert(
+                stamp,
+                typer.constructed_type(
+                    typer.type_name(
+                        u8"X" + to_u8string(std::to_string(++counter)), 0, 0),
+                    typing::TypeList::dflt()))
+            .first;
+  }
+  if (!subs->empty()) {
+    typer.reporter().report_warning(
+        location,
+        "undetermined types not generalized because of value restriction are "
+        "instantiated to dummy types (X1, X2,....)");
+  }
+  return subs;
+}
+
+void TopDeclElaborator::visitDeclTopDecl(const DeclTopDecl &node) {
+  auto scopes = scope_explicit_type_variables(*node.decl);
+  auto r = typer_.elaborate_decl(B->as_context(), *node.decl, scopes);
+  auto subs = compute_dummy_substitutions(typer_, r.env, node.location);
+  if (!subs->empty()) {
+    r.decl = r.decl->apply_substitutions(subs, false);
+  }
+  B = B + r.decl->env;
+
+  typed = std::make_unique<TDeclTopDecl>(node.location, std::move(r.decl));
+}
+
+}  // namespace
+
+Typer::elaborate_t Typer::elaborate(managed_ptr<typing::Basis> B,
+                                    const TopDecl &topdec) {
+  TopDeclElaborator v(*impl_, std::move(B));
+  topdec.accept(v);
+  return {std::move(v.B), std::move(v.typed)};
+}
+
+namespace {
+
+/** Used to implement `TyperImpl::elaborate_decl`. */
+class DeclElaborator : public Decl::Visitor {
+ public:
+  managed_ptr<typing::Env> env = typing::Env::empty();
+  std::unique_ptr<TDecl> decl;
+  typing::Substitutions new_substitutions = typing::Substitutions::dflt();
+
+  DeclElaborator(TyperImpl &typer, ContextPtr C,
+                 typing::Substitutions &substitutions,
+                 const ImplicitlyScopedVars &scopes)
+      : typer_(typer), C(C), substitutions_(substitutions), scopes_(scopes) {}
+
+  DECLARE_DECL_V_FUNCS;
+
+ private:
+  TyperImpl &typer_;
+  ContextPtr C;
+  typing::Substitutions &substitutions_;
+  const ImplicitlyScopedVars &scopes_;
+};
+
+/**
+ * Close `type` for `valbind` in the context of `C`.
+ *
+ * @see `close_for_valbind`.
+ */
+managed_ptr<typing::TypeScheme> generalize_for_valbind(const Location &location,
+                                                       ContextPtr C,
+                                                       typing::TypePtr type,
+                                                       const TExpr &expr) {
   if (expr.is_nonexpansive) {
     try {
       return typing::TypeScheme::generalize(C, type);
@@ -728,80 +922,6 @@ managed_ptr<typing::TypeScheme> generalize_for_valbind(
       type, collections::make_array<ManagedString>({}));
 }
 
-typing::Substitutions compute_dummy_substitutions(TyperImpl &typer,
-                                                  managed_ptr<typing::Env> env,
-                                                  const Location &location) {
-  auto subs = collections::managed_map<typing::Stamp, typing::Type>({});
-  std::uint64_t counter = 0;
-  for (const auto &stamp : *env->undetermined_types()) {
-    subs = subs->insert(stamp,
-                        make_managed<typing::ConstructedType>(
-                            make_managed<typing::TypeName>(
-                                u8"X" + to_u8string(std::to_string(++counter)),
-                                typer.new_stamp(), 0, 0),
-                            collections::make_array<typing::Type>({})))
-               .first;
-  }
-  if (!subs->empty()) {
-    typer.reporter().report_warning(
-        location,
-        "undetermined types not generalized because of value restriction are "
-        "instantiated to dummy types (X1, X2,....)");
-  }
-  return subs;
-}
-
-std::unique_ptr<TDecl> elaborate_decl(managed_ptr<typing::Basis> &B,
-                                      TyperImpl &typer,
-                                      const Location &location,
-                                      const Decl &decl) {
-  auto scopes = scope_explicit_type_variables(decl);
-  auto r = typer.elaborate(B->as_context(), decl, scopes);
-  auto subs = compute_dummy_substitutions(typer, r.env, location);
-  if (!subs->empty()) {
-    r.decl = r.decl->apply_substitutions(subs, false);
-  }
-  B = B + r.decl->env;
-  return std::move(r.decl);
-}
-
-void TopDeclElaborator::visitDeclTopDecl(const DeclTopDecl &node) {
-  typed = std::make_unique<TDeclTopDecl>(
-      node.location, elaborate_decl(B, typer_, node.location, *node.decl));
-}
-
-}  // namespace
-
-Typer::elaborate_t Typer::elaborate(managed_ptr<typing::Basis> B,
-                                    const TopDecl &topdec) {
-  TopDeclElaborator v(*impl_, std::move(B));
-  topdec.accept(v);
-  return {std::move(v.B), std::move(v.typed)};
-}
-
-namespace {
-
-class DeclElaborator : public Decl::Visitor {
- public:
-  managed_ptr<typing::Env> env = typing::Env::empty();
-  std::unique_ptr<TDecl> decl;
-  typing::Substitutions new_substitutions =
-      collections::managed_map<typing::Stamp, typing::Type>({});
-
-  DeclElaborator(TyperImpl &typer, managed_ptr<typing::Context> C,
-                 typing::Substitutions &substitutions,
-                 const ImplicitlyScopedVars &scopes)
-      : typer_(typer), C(C), substitutions_(substitutions), scopes_(scopes) {}
-
-  DECLARE_DECL_V_FUNCS;
-
- private:
-  TyperImpl &typer_;
-  managed_ptr<typing::Context> C;
-  typing::Substitutions &substitutions_;
-  const ImplicitlyScopedVars &scopes_;
-};
-
 /**
  * Close a value environment that stems from the elaboration of a valbind.
  *
@@ -812,7 +932,7 @@ class DeclElaborator : public Decl::Visitor {
  * found in the type but not the enclosing context. If it is
  * expansive, then the type of the bound variable is monomorphic.
  */
-managed_ptr<typing::ValEnv> close_for_valbind(managed_ptr<typing::Context> C,
+managed_ptr<typing::ValEnv> close_for_valbind(ContextPtr C,
                                               const match_t &match,
                                               const TExpr &expr) {
   auto closed =
@@ -832,18 +952,18 @@ managed_ptr<typing::ValEnv> close_for_valbind(managed_ptr<typing::Context> C,
   return make_managed<typing::ValEnv>(closed);
 }
 
-void DeclElaborator::visitValDecl(const ValDecl &node) {
-  std::vector<std::pair<match_t, std::unique_ptr<TExpr>>> bindings;
-  bindings.reserve(node.bindings.size());
-  bool is_recursive = false;
+/** Get all the type variables properly scoped to this decl. */
+typing::StringSet get_scoped_type_vars(ContextPtr C,
+                                       const ImplicitlyScopedVars &scopes,
+                                       const ValDecl &node) {
   auto type_vars = to_set(node.explicit_type_vars);
   {
-    auto it = scopes_.find(&node);
-    if (it != scopes_.end()) {
+    const auto it = scopes.find(&node);
+    if (it != scopes.end()) {
       type_vars = type_vars | to_set(it->second);
     }
   }
-  auto duplicated_type_vars = C->explicit_type_variables() & type_vars;
+  const auto duplicated_type_vars = C->explicit_type_variables() & type_vars;
   if (!duplicated_type_vars->empty()) {
     throw ElaborationError(
         fmt::format("val declaration attempts to bind variables bound by an "
@@ -851,13 +971,46 @@ void DeclElaborator::visitValDecl(const ValDecl &node) {
                     fmt::join(*duplicated_type_vars, ", ")),
         node.location);
   }
-  auto C_expr = C + type_vars;
+  return type_vars;
+}
+
+using val_bind_bindings =
+    std::vector<std::pair<match_t, std::unique_ptr<TExpr>>>;
+
+struct elaborate_val_bind_patterns_t {
+  /** Context to be used to elaborate assignment expressions. */
+  ContextPtr C_expr;
+  /** The elaborated matches, each associated with nullptr. */
+  val_bind_bindings bindings;
+  typing::Substitutions new_substitutions = typing::Substitutions::dflt();
+};
+
+/**
+ * Elaborate the patterns found in a ValDecl.
+ *
+ * A ValDecl comprises zero or more ValBinds. Each ValBind contains a
+ * pattern and an expression that it is matched against. We start by
+ * elaborating all the patterns, developing a context as necessary for
+ * use when elaborating the expressions.
+ */
+elaborate_val_bind_patterns_t elaborate_val_bind_patterns(
+    TyperImpl &typer, typing::Substitutions &substitutions, ContextPtr C,
+    typing::StringSet type_vars, const ValDecl &node) {
+  elaborate_val_bind_patterns_t result;
+  result.bindings.reserve(node.bindings.size());
+  result.C_expr = C + type_vars;
+
+  bool is_recursive = false;
   for (const auto &binding : node.bindings) {
     const auto &pat = binding->pat;
     TyperImpl::elaborate_match_t m;
     try {
-      m = typer_.elaborate_match(pat->location, C, *pat, substitutions_,
-                                 typer_.new_stamp()->id());
+      // Any undetermined types introduced in elaborating the pattern
+      // must not be substituted by a type introduced in later
+      // elaboration; hence create a new stamp and make it the maximum
+      // allowable type id.
+      m = typer.elaborate_match(pat->location, C, *pat, substitutions,
+                                typer.new_stamp()->id());
     } catch (typing::BindingError &err) {
       throw ElaborationError(
           fmt::format("Bound identifier {} multiple times in val declaration",
@@ -865,24 +1018,39 @@ void DeclElaborator::visitValDecl(const ValDecl &node) {
           pat->location);
     }
     if (!m.new_substitutions->empty()) {
-      for (auto &b : bindings) {
+      for (auto &b : result.bindings) {
         b.first = b.first.apply_substitutions(m.new_substitutions, true);
       }
-      C = C->apply_substitutions(m.new_substitutions);
-      C_expr = C_expr->apply_substitutions(m.new_substitutions);
-      new_substitutions = new_substitutions | m.new_substitutions;
+      result.new_substitutions = result.new_substitutions | m.new_substitutions;
     }
     if (binding->rec) is_recursive = true;
-    if (is_recursive) C_expr = C_expr + m.match.outcomes.front().bindings;
-    bindings.emplace_back(std::move(m.match), nullptr);
+    if (is_recursive)
+      result.C_expr = result.C_expr + m.match.outcomes.front().bindings;
+    result.bindings.emplace_back(std::move(m.match), nullptr);
   }
+  return result;
+}
+
+/**
+ * Elaborate the expressions found in a ValDecl.
+ *
+ * We continue by elaborating each expression and unifying its type
+ * with the corresponding pattern's type.
+ *
+ * Returns the new substitutions deduced herein.
+ */
+typing::Substitutions elaborate_val_bind_exprs(
+    TyperImpl &typer, typing::Substitutions &substitutions,
+    const ImplicitlyScopedVars &scopes, ContextPtr C_expr,
+    val_bind_bindings &bindings, const ValDecl &node) {
+  auto new_substitutions = typing::Substitutions::dflt();
   for (std::size_t i = 0; i < node.bindings.size(); ++i) {
     const auto &node_expr = node.bindings[i]->expr;
     auto &match = bindings[i].first;
 
-    auto e =
-        typer_.elaborate(C_expr, *node_expr, substitutions_,
-                         typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION, scopes_);
+    auto e = typer.elaborate_expr(C_expr, *node_expr, substitutions,
+                                  typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                  scopes);
     auto new_subs = e.new_substitutions;
     if (!new_subs->empty()) {
       match = match.apply_substitutions(new_subs, true);
@@ -890,7 +1058,7 @@ void DeclElaborator::visitValDecl(const ValDecl &node) {
 
     typing::unification_t u;
     try {
-      u = typing::unify(match.match_type, e.expr->type, substitutions_);
+      u = typing::unify(match.match_type, e.expr->type, substitutions);
     } catch (typing::UnificationError &e) {
       throw ElaborationError(e, match.location);
     }
@@ -899,7 +1067,6 @@ void DeclElaborator::visitValDecl(const ValDecl &node) {
       e.expr = e.expr->apply_substitutions(u.new_substitutions, true);
       new_subs = new_subs | u.new_substitutions;
     }
-
     if (!new_subs->empty()) {
       for (std::size_t j = 0; j < i; ++j) {
         bindings[j].first =
@@ -911,37 +1078,76 @@ void DeclElaborator::visitValDecl(const ValDecl &node) {
         bindings[j].first =
             bindings[j].first.apply_substitutions(new_subs, true);
       }
-      C = C->apply_substitutions(new_subs);
-      C_expr = C_expr->apply_substitutions(new_subs);
       new_substitutions = new_substitutions | new_subs;
     }
+    bindings[i].second = std::move(e.expr);
+  }
+  return new_substitutions;
+}
 
-    auto VE = close_for_valbind(C, match, *e.expr);
+/**
+ * Given the bindings, compute the environment they produce.
+ *
+ * Closes types as appropriate. Checks that all of the type variables
+ * scoped to this declaration are generalized away.
+ */
+managed_ptr<typing::Env> compute_val_decl_env(
+    const Location &location, ContextPtr C, const val_bind_bindings &bindings,
+    typing::StringSet scoped_type_vars) {
+  auto env = typing::Env::empty();
+  for (const auto &b : bindings) {
+    auto VE = close_for_valbind(C, b.first, *b.second);
     auto overlap = env->val_env()->env() & VE->env();
     if (!overlap->empty()) {
       throw ElaborationError(
           fmt::format("Separate clauses of a val declaration bound the same "
                       "identifier(s): {}",
                       fmt::join(*overlap | std::views::keys, ", ")),
-          node.location);
+          location);
     }
     env = env + VE;
-    bindings[i].second = std::move(e.expr);
   }
-  auto unbound_variables = env->free_variables() & type_vars;
+  auto unbound_variables = env->free_variables() & scoped_type_vars;
   if (!(unbound_variables->empty())) {
     throw ElaborationError(fmt::format("explicit type variable(s) cannot be "
                                        "generalized at binding declaration: {}",
                                        fmt::join(*unbound_variables, ", ")),
-                           node.location);
+                           location);
   }
+  return env;
+}
+
+void DeclElaborator::visitValDecl(const ValDecl &node) {
+  const auto type_vars = get_scoped_type_vars(C, scopes_, node);
+  auto pats =
+      elaborate_val_bind_patterns(typer_, substitutions_, C, type_vars, node);
+  auto new_subs = pats.new_substitutions |
+                  elaborate_val_bind_exprs(typer_, substitutions_, scopes_,
+                                           pats.C_expr, pats.bindings, node);
+  if (!new_subs->empty()) {
+    C = C->apply_substitutions(new_subs);
+    new_substitutions = new_substitutions | new_subs;
+  }
+  env = compute_val_decl_env(node.location, C, pats.bindings, type_vars);
   for (const auto &b : *env->val_env()->env()) {
     typer_.reporter().report_type_judgement(
         node.location, to_std_string(*b.first), *b.second->scheme());
   }
-  decl = std::make_unique<TValDecl>(node.location, std::move(bindings), env);
+  decl =
+      std::make_unique<TValDecl>(node.location, std::move(pats.bindings), env);
 }
 
+/**
+ * "Seed" the type environment for a datatype binding.
+ *
+ * Datatype bindings are potentially (mutually) recursive, so we need
+ * to start our elaboration by adding a binding for each type defined
+ * in a datatype declaration. The bindings have correct (though not
+ * necessarily canonical) type function and empty value environments
+ * (ie the constructors are not present). (The type function is
+ * noncanonical in that it uses the type variables indicated in the
+ * source instead of 'a, 'b, 'c, ...).
+ */
 managed_ptr<typing::TypeEnv> seed_type_env(
     TyperImpl &typer, const std::vector<std::unique_ptr<DtypeBind>> &bindings) {
   auto TE = typing::TypeEnv::empty();
@@ -956,16 +1162,14 @@ managed_ptr<typing::TypeEnv> seed_type_env(
           return make_managed<typing::TypeVar>((*type_var_names)[i]);
         });
     try {
-      TE =
-          TE->add_binding(name,
-                          make_managed<typing::TypeFunction>(
-                              make_managed<typing::ConstructedType>(
-                                  make_managed<typing::TypeName>(
-                                      name, typer.new_stamp(), db->types.size(),
-                                      db->constructors.size()),
-                                  type_vars),
-                              type_var_names),
-                          typing::ValEnv::empty(), false);
+      TE = TE->add_binding(
+          name,
+          make_managed<typing::TypeFunction>(
+              typer.constructed_type(typer.type_name(name, db->types.size(),
+                                                     db->constructors.size()),
+                                     type_vars),
+              type_var_names),
+          typing::ValEnv::empty(), false);
     } catch (typing::BindingError &err) {
       throw ElaborationError(
           fmt::format(
@@ -977,6 +1181,11 @@ managed_ptr<typing::TypeEnv> seed_type_env(
   return TE;
 }
 
+/**
+ * Returns the first subtype of a tuple type.
+ *
+ * Requires that the type being visited actually is a tuple.
+ */
 class Tuple0Extractor : public typing::TypeVisitor {
  public:
   typing::TypePtr type;
@@ -1011,8 +1220,8 @@ struct elaborate_dtype_bind_t {
   managed_ptr<typing::ValEnv> VE = typing::ValEnv::empty();
 };
 
-elaborate_dtype_bind_t elaborate_dtype_bind(TyperImpl &typer,
-                                            managed_ptr<typing::Context> C,
+/** Elaborate a single DtypeBind. */
+elaborate_dtype_bind_t elaborate_dtype_bind(TyperImpl &typer, ContextPtr C,
                                             const DtypeBind &binding) {
   elaborate_dtype_bind_t r;
   const auto theta = (*C->env()->lookup_type({}, binding.identifier))->fn();
@@ -1048,24 +1257,11 @@ elaborate_dtype_bind_t elaborate_dtype_bind(TyperImpl &typer,
     }
   }
 
-  typing::TypePtr theta_type;
-  collections::ArrayPtr<ManagedString> theta_bound;
-  if (params.size() == 1) {
-    auto g = typing::TypeScheme::generalize(C, type);
-    theta_type = g->t();
-    theta_bound = g->bound();
-  } else {
-    auto g = typing::TypeScheme::generalize(
-        C, make_managed<typing::TupleType>(collections::to_array(params)));
-    Tuple0Extractor v;
-    g->t()->accept(v);
-
-    theta_type = v.type;
-    theta_bound = g->bound();
-  }
+  auto g = typing::TypeScheme::generalize(C, type);
+  assert(g->undetermined_types()->empty() && g->free_variables()->empty());
   r.TE = r.TE->add_binding(
       make_string(binding.identifier),
-      make_managed<typing::TypeFunction>(theta_type, theta_bound), r.VE, false);
+      make_managed<typing::TypeFunction>(g->t(), g->bound()), r.VE, false);
   return r;
 }
 
@@ -1084,18 +1280,17 @@ void DeclElaborator::visitDtypeDecl(const DtypeDecl &node) {
 
 }  // namespace
 
-TyperImpl::elaborate_decl_t TyperImpl::elaborate(
-    managed_ptr<typing::Context> C, const Decl &dec,
-    const ImplicitlyScopedVars &scopes) {
+TyperImpl::elaborate_decl_t TyperImpl::elaborate_decl(
+    ContextPtr C, const Decl &dec, const ImplicitlyScopedVars &scopes) {
   typing::Substitutions subs =
       collections::managed_map<typing::Stamp, typing::Type>({});
-  auto r = elaborate(C, dec, subs, scopes);
+  auto r = elaborate_decl(C, dec, subs, scopes);
   return {r.env, std::move(r.decl)};
 }
 
-TyperImpl::elaborate_decl_with_substitutions_t TyperImpl::elaborate(
-    managed_ptr<typing::Context> C, const Decl &dec,
-    typing::Substitutions &substitutions, const ImplicitlyScopedVars &scopes) {
+TyperImpl::elaborate_decl_with_substitutions_t TyperImpl::elaborate_decl(
+    ContextPtr C, const Decl &dec, typing::Substitutions &substitutions,
+    const ImplicitlyScopedVars &scopes) {
   DeclElaborator v{*this, C, substitutions, scopes};
   dec.accept(v);
   return {v.env, std::move(v.decl), v.new_substitutions};
@@ -1103,17 +1298,17 @@ TyperImpl::elaborate_decl_with_substitutions_t TyperImpl::elaborate(
 
 namespace {
 
+/** Used to implement `TyperImpl::elaborate_pattern`. */
 class PatternElaborator : public Pattern::Visitor {
  public:
-  managed_ptr<typing::Context> C;
+  ContextPtr C;
   typing::TypePtr type;
   pattern_t pattern = pattern_t::wildcard();
   managed_ptr<typing::ValEnv> bindings = make_managed<typing::ValEnv>(
       collections::managed_map<ManagedString, typing::ValueBinding>({}));
   bind_rule_t bind_rule;
 
-  PatternElaborator(managed_ptr<typing::Context> C, TyperImpl &typer)
-      : C(C), typer_(typer) {}
+  PatternElaborator(ContextPtr C, TyperImpl &typer) : C(C), typer_(typer) {}
 
   DECLARE_PATTERN_V_FUNCS;
 
@@ -1129,9 +1324,12 @@ void PatternElaborator::visitWildcardPattern(const WildcardPattern &) {
   pattern = pattern_t::wildcard();
 }
 
+/** Extract the specific literal from a literal pattern. */
 class LiteralExtractor : public Expr::Visitor {
  public:
+  /** The type of the literal. */
   managed_ptr<typing::ConstructedType> type;
+  /** A string representation of the value of the literal. */
   std::u8string value;
 
   explicit LiteralExtractor(TyperImpl &typer) : typer_(typer) {}
@@ -1243,7 +1441,7 @@ void PatternElaborator::visitIdentifierPattern(const IdentifierPattern &node) {
               id_to_string(node.qualifiers, id)),
           node.location);
     }
-    type = make_managed<typing::UndeterminedType>(typer_.new_stamp());
+    type = typer_.undetermined_type();
     pattern = pattern_t::wildcard();
     bindings = bindings->add_binding(
         id,
@@ -1292,10 +1490,8 @@ void PatternElaborator::visitRecordPattern(const RecordPattern &node) {
 }
 
 void PatternElaborator::visitListPattern(const ListPattern &node) {
-  typing::TypePtr el_type =
-      make_managed<typing::UndeterminedType>(typer_.new_stamp());
-  typing::Substitutions subs =
-      collections::managed_map<typing::Stamp, typing::Type>({});
+  typing::TypePtr el_type = typer_.undetermined_type();
+  auto subs = typing::Substitutions::dflt();
   pattern_t cons_pattern =
       pattern_t::constructed(std::u8string(typing::BuiltinTypes::NIL),
                              typer_.builtins().list_name(), nullptr, {});
@@ -1318,7 +1514,7 @@ void PatternElaborator::visitListPattern(const ListPattern &node) {
     cons_pattern = pattern_t::constructed(
         std::u8string(typing::BuiltinTypes::CONS),
         typer_.builtins().list_name(),
-        typer_.builtins().tuple_type(collections::make_array<typing::Type>(
+        typer_.tuple_type(collections::make_array<typing::Type>(
             {el_type, typer_.builtins().list_type(el_type)})),
         std::move(s));
     if (!cons_bind_rule.empty() || !bind_rule.empty()) {
@@ -1359,7 +1555,7 @@ void PatternElaborator::visitTuplePattern(const TuplePattern &node) {
     }
   }
 
-  type = typer_.builtins().tuple_type(collections::to_array(types));
+  type = typer_.tuple_type(collections::to_array(types));
   pattern = pattern_t::tuple(std::move(subpatterns));
   if (!subrules.empty()) {
     bind_rule.subtype_bindings = std::move(subrules);
@@ -1461,8 +1657,8 @@ PatternElaborator::lookup_val(const IdentifierPattern &pat) const {
 
 }  // namespace
 
-std::unique_ptr<TPattern> TyperImpl::elaborate_pattern(
-    managed_ptr<typing::Context> C, const Pattern &pat) {
+std::unique_ptr<TPattern> TyperImpl::elaborate_pattern(ContextPtr C,
+                                                       const Pattern &pat) {
   PatternElaborator v{C, *this};
   pat.accept(v);
   return std::make_unique<TPattern>(pat.location, v.type, std::move(v.pattern),
@@ -1471,14 +1667,15 @@ std::unique_ptr<TPattern> TyperImpl::elaborate_pattern(
 
 namespace {
 
+/** Used to implement `TyperImpl::elaborate_expr`. */
 class ExprElaborator : public Expr::Visitor {
  public:
-  const managed_ptr<typing::Context> C;
+  const ContextPtr C;
   std::unique_ptr<TExpr> typed;
   typing::Substitutions new_substitutions =
       collections::managed_map<typing::Stamp, typing::Type>({});
 
-  ExprElaborator(TyperImpl &typer, managed_ptr<typing::Context> C,
+  ExprElaborator(TyperImpl &typer, ContextPtr C,
                  typing::Substitutions &substitutions,
                  std::uint64_t maximum_type_name_id,
                  const ImplicitlyScopedVars &scopes)
@@ -1538,8 +1735,8 @@ void ExprElaborator::visitFstringLiteralExpr(const FstringLiteralExpr &node) {
   std::vector<std::unique_ptr<TExpr>> str_substitutions;
   str_substitutions.reserve(node.substitutions.size());
   for (const auto &ns : node.substitutions) {
-    auto e = typer_.elaborate(C, *ns, substitutions_, maximum_type_name_id_,
-                              scopes_);
+    auto e = typer_.elaborate_expr(C, *ns, substitutions_,
+                                   maximum_type_name_id_, scopes_);
     if (!e.new_substitutions->empty()) {
       new_substitutions = new_substitutions | e.new_substitutions;
       for (auto &ss : str_substitutions) {
@@ -1575,8 +1772,8 @@ void ExprElaborator::visitRecRowExpr(const RecRowExpr &) {
 
 ExprElaborator::elaborate_rec_row_t ExprElaborator::elaborate_rec_row(
     const RecRowExpr &node) const {
-  auto e = typer_.elaborate(C, *node.val, substitutions_, maximum_type_name_id_,
-                            scopes_);
+  auto e = typer_.elaborate_expr(C, *node.val, substitutions_,
+                                 maximum_type_name_id_, scopes_);
   auto t = e.expr->type;
   return {.elaborated_row = std::make_unique<TRecRowExpr>(
               node.location, std::move(t), make_string(node.label),
@@ -1602,14 +1799,14 @@ void ExprElaborator::visitRecordExpr(const RecordExpr &node) {
   for (const auto &expr : exprs) {
     rows = rows->insert(expr->label, expr->type).first;
   }
-  typed = std::make_unique<TRecordExpr>(
-      node.location, typer_.builtins().record_type(rows), std::move(exprs));
+  typed = std::make_unique<TRecordExpr>(node.location, typer_.record_type(rows),
+                                        std::move(exprs));
 }
 
 void ExprElaborator::visitUnitExpr(const UnitExpr &node) {
   typed = std::make_unique<TTupleExpr>(
       node.location,
-      typer_.builtins().tuple_type(collections::make_array<typing::Type>({})),
+      typer_.tuple_type(collections::make_array<typing::Type>({})),
       std::vector<std::unique_ptr<TExpr>>{});
 }
 
@@ -1617,8 +1814,8 @@ void ExprElaborator::visitTupleExpr(const TupleExpr &node) {
   std::vector<std::unique_ptr<TExpr>> exprs;
   exprs.reserve(node.exprs.size());
   for (const auto &ne : node.exprs) {
-    auto e = typer_.elaborate(C, *ne, substitutions_, maximum_type_name_id_,
-                              scopes_);
+    auto e = typer_.elaborate_expr(C, *ne, substitutions_,
+                                   maximum_type_name_id_, scopes_);
     if (!e.new_substitutions->empty()) {
       new_substitutions = new_substitutions | e.new_substitutions;
       for (auto &expr : exprs) {
@@ -1629,17 +1826,17 @@ void ExprElaborator::visitTupleExpr(const TupleExpr &node) {
   }
   auto types = make_managed<collections::ManagedArray<typing::Type>>(
       exprs.size(), [&](std::size_t i) { return exprs[i]->type; });
-  typed = std::make_unique<TTupleExpr>(
-      node.location, typer_.builtins().tuple_type(types), std::move(exprs));
+  typed = std::make_unique<TTupleExpr>(node.location, typer_.tuple_type(types),
+                                       std::move(exprs));
 }
 
 void ExprElaborator::visitSequencedExpr(const SequencedExpr &node) {
   std::vector<std::unique_ptr<TExpr>> exprs;
   exprs.reserve(node.exprs.size());
   for (const auto &ne : node.exprs) {
-    auto e =
-        typer_.elaborate(C, *ne, substitutions_,
-                         typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION, scopes_);
+    auto e = typer_.elaborate_expr(C, *ne, substitutions_,
+                                   typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                   scopes_);
     if (!e.new_substitutions->empty()) {
       new_substitutions = new_substitutions | e.new_substitutions;
       for (auto &expr : exprs) {
@@ -1664,8 +1861,8 @@ void ExprElaborator::visitListExpr(const ListExpr &node) {
   typing::TypePtr type =
       make_managed<typing::UndeterminedType>(typer_.new_stamp());
   for (const auto &ne : node.exprs) {
-    auto e = typer_.elaborate(C, *ne, substitutions_, maximum_type_name_id_,
-                              scopes_);
+    auto e = typer_.elaborate_expr(C, *ne, substitutions_,
+                                   maximum_type_name_id_, scopes_);
     typing::unification_t u;
     try {
       u = typing::unify(type, e.expr->type, substitutions_,
@@ -1693,9 +1890,9 @@ void ExprElaborator::visitListExpr(const ListExpr &node) {
 void ExprElaborator::visitLetExpr(const LetExpr &node) {
   std::vector<std::unique_ptr<TDecl>> decls;
   decls.reserve(node.decls.size());
-  managed_ptr<typing::Context> Cprime = C;
+  ContextPtr Cprime = C;
   for (const auto &nd : node.decls) {
-    auto e = typer_.elaborate(Cprime, *nd, substitutions_, scopes_);
+    auto e = typer_.elaborate_decl(Cprime, *nd, substitutions_, scopes_);
     if (!e.new_substitutions->empty()) {
       new_substitutions = new_substitutions | e.new_substitutions;
       for (auto &decl : decls) {
@@ -1709,9 +1906,9 @@ void ExprElaborator::visitLetExpr(const LetExpr &node) {
   std::vector<std::unique_ptr<TExpr>> exprs;
   exprs.reserve(node.exprs.size());
   for (const auto &ne : node.exprs) {
-    auto e =
-        typer_.elaborate(Cprime, *ne, substitutions_,
-                         typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION, scopes_);
+    auto e = typer_.elaborate_expr(Cprime, *ne, substitutions_,
+                                   typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                   scopes_);
     if (!e.new_substitutions->empty()) {
       new_substitutions = new_substitutions | e.new_substitutions;
       for (auto &decl : decls) {
@@ -1734,6 +1931,7 @@ void ExprElaborator::visitLetExpr(const LetExpr &node) {
                                      std::move(exprs));
 }
 
+/** Used to implement `get_identifier`. */
 class GetIdentifierVisitor : public TExpr::Visitor {
  public:
   const TIdentifierExpr *id;
@@ -1763,6 +1961,11 @@ const TIdentifierExpr *get_identifier(const TExpr &expr) {
   return v.id;
 }
 
+/**
+ * Determines whether a function application is nonexpansive.
+ *
+ * See Section 4.7 of The Definition of Standard ML (Revised).
+ */
 bool is_nonexpansive_application(
     const std::vector<std::unique_ptr<TExpr>> &exprs, TyperImpl &typer) {
   if (exprs.size() != 2) return false;
@@ -1792,9 +1995,9 @@ void ExprElaborator::visitApplicationExpr(const ApplicationExpr &node) {
   exprs.reserve(node.exprs.size());
   typing::TypePtr type;
   for (const auto &ne : node.exprs) {
-    auto e =
-        typer_.elaborate(C, *ne, substitutions_,
-                         typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION, scopes_);
+    auto e = typer_.elaborate_expr(C, *ne, substitutions_,
+                                   typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                   scopes_);
     auto new_subs = e.new_substitutions;
     if (exprs.empty()) {
       type = e.expr->type;
@@ -1852,9 +2055,9 @@ void ExprElaborator::visitCaseExpr(const CaseExpr &node) {
   auto m = typer_.elaborate_match(node.location, C, node.cases, substitutions_,
                                   maximum_type_name_id_, scopes_);
   new_substitutions = new_substitutions | m.new_substitutions;
-  auto e =
-      typer_.elaborate(C, *node.expr, substitutions_,
-                       typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION, scopes_);
+  auto e = typer_.elaborate_expr(C, *node.expr, substitutions_,
+                                 typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                 scopes_);
   if (!e.new_substitutions->empty()) {
     m.match = m.match.apply_substitutions(e.new_substitutions, true);
     new_substitutions = new_substitutions | e.new_substitutions;
@@ -1896,8 +2099,8 @@ void ExprElaborator::visitFnExpr(const FnExpr &node) {
 
 void ExprElaborator::visitTypedExpr(const TypedExpr &node) {
   auto t = typer_.elaborate_type_expr(C, *node.type);
-  auto e = typer_.elaborate(C, *node.expr, substitutions_,
-                            maximum_type_name_id_, scopes_);
+  auto e = typer_.elaborate_expr(C, *node.expr, substitutions_,
+                                 maximum_type_name_id_, scopes_);
   new_substitutions = new_substitutions | e.new_substitutions;
   typing::unification_t u;
   try {
@@ -1915,20 +2118,18 @@ void ExprElaborator::visitTypedExpr(const TypedExpr &node) {
 
 }  // namespace
 
-std::unique_ptr<TExpr> TyperImpl::elaborate(
-    managed_ptr<typing::Context> C, const Expr &exp,
-    const ImplicitlyScopedVars &scopes) {
+std::unique_ptr<TExpr> TyperImpl::elaborate_expr(
+    ContextPtr C, const Expr &exp, const ImplicitlyScopedVars &scopes) {
   typing::Substitutions s =
       collections::managed_map<typing::Stamp, typing::Type>({});
-  auto e =
-      elaborate(C, exp, s, typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION, scopes);
+  auto e = elaborate_expr(C, exp, s,
+                          typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION, scopes);
   return std::move(e.expr);
 }
 
-TyperImpl::elaborate_expr_with_substitutions_t TyperImpl::elaborate(
-    managed_ptr<typing::Context> C, const Expr &exp,
-    typing::Substitutions &substitutions, std::uint64_t maximum_type_name_id,
-    const ImplicitlyScopedVars &scopes) {
+TyperImpl::elaborate_expr_with_substitutions_t TyperImpl::elaborate_expr(
+    ContextPtr C, const Expr &exp, typing::Substitutions &substitutions,
+    std::uint64_t maximum_type_name_id, const ImplicitlyScopedVars &scopes) {
   ExprElaborator v{*this, C, substitutions, maximum_type_name_id, scopes};
   exp.accept(v);
   reporter_.report_type_judgement(exp.location, exp, *v.typed->type);
@@ -2100,75 +2301,101 @@ void compile_match(match_t &match, std::vector<TCase> cases) {
   }
 }
 
-template <typename It>
-TyperImpl::elaborate_match_t elaborate_match_impl(
-    TyperImpl &typer, const Location &location, managed_ptr<typing::Context> C,
-    It begin, It end, typing::Substitutions &substitutions,
-    std::uint64_t maximum_type_name_id, const ImplicitlyScopedVars &scopes) {
-  TyperImpl::elaborate_match_t result;
-
-  typing::TypePtr match_type =
-      make_managed<typing::UndeterminedType>(typer.new_stamp());
-  typing::TypePtr result_type =
-      make_managed<typing::UndeterminedType>(typer.new_stamp());
+struct elaborate_cases_t {
+  typing::TypePtr match_type;
+  typing::TypePtr result_type;
   std::vector<TCase> tcases;
-  tcases.reserve(std::distance(begin, end));
+  typing::Substitutions new_substitutions = typing::Substitutions::dflt();
+};
+
+/**
+ * Elaborate the cases of a match.
+ *
+ * Each case of a match comprises a pattern to match against and an
+ * expression to evaluate to. The types of all of the patterns must be
+ * unified, and the types of all the expressions must separately be
+ * unified.
+ */
+template <typename It>
+elaborate_cases_t elaborate_cases(TyperImpl &typer, ContextPtr C, It begin,
+                                  It end, typing::Substitutions &substitutions,
+                                  std::uint64_t maximum_type_name_id,
+                                  const ImplicitlyScopedVars &scopes) {
+  elaborate_cases_t result;
+  result.match_type = typer.undetermined_type();
+  result.result_type = typer.undetermined_type();
+  result.tcases.reserve(std::distance(begin, end));
   for (; begin != end; ++begin) {
     const auto &c = *begin;
     auto tpat = typer.elaborate_pattern(C, *c.first);
     typing::unification_t mu;
     try {
-      mu = typing::unify(match_type, tpat->type, substitutions);
+      mu = typing::unify(result.match_type, tpat->type, substitutions);
     } catch (typing::UnificationError &err) {
       throw ElaborationError(err, c.first->location);
     }
-    match_type = mu.unified_type;
+    result.match_type = mu.unified_type;
     auto new_subs = mu.new_substitutions;
 
     if (!mu.new_substitutions->empty()) {
       tpat = tpat->apply_substitutions(mu.new_substitutions, true);
     }
 
-    auto e = typer.elaborate(C + tpat->bindings, *c.second, substitutions,
-                             maximum_type_name_id, scopes);
+    // The expression is evaluated in a context that includes the
+    // bindings introduced by the pattern we just matched against.
+    auto e = typer.elaborate_expr(C + tpat->bindings, *c.second, substitutions,
+                                  maximum_type_name_id, scopes);
     if (!e.new_substitutions->empty()) {
-      match_type = typing::apply_substitutions(match_type, e.new_substitutions);
+      result.match_type =
+          typing::apply_substitutions(result.match_type, e.new_substitutions);
       tpat = tpat->apply_substitutions(e.new_substitutions, true);
       new_subs = new_subs | e.new_substitutions;
     }
 
     typing::unification_t ru;
     try {
-      ru = typing::unify(result_type, e.expr->type, substitutions,
+      ru = typing::unify(result.result_type, e.expr->type, substitutions,
                          maximum_type_name_id, maximum_type_name_id);
     } catch (typing::UnificationError &err) {
       throw ElaborationError(err, c.second->location);
     }
-    result_type = ru.unified_type;
+    result.result_type = ru.unified_type;
 
     if (!ru.new_substitutions->empty()) {
-      match_type =
-          typing::apply_substitutions(match_type, ru.new_substitutions);
+      result.match_type =
+          typing::apply_substitutions(result.match_type, ru.new_substitutions);
       tpat = tpat->apply_substitutions(ru.new_substitutions, true);
       e.expr = e.expr->apply_substitutions(ru.new_substitutions, true);
       new_subs = new_subs | ru.new_substitutions;
     }
 
     if (!new_subs->empty()) {
-      for (auto &tc : tcases) {
+      for (auto &tc : result.tcases) {
         tc.first = tc.first->apply_substitutions(mu.new_substitutions, true);
         tc.second = tc.second->apply_substitutions(mu.new_substitutions, true);
       }
       result.new_substitutions = result.new_substitutions | new_subs;
     }
 
-    tcases.emplace_back(std::move(tpat), std::move(e.expr));
+    result.tcases.emplace_back(std::move(tpat), std::move(e.expr));
   }
+  return result;
+}
+
+template <typename It>
+TyperImpl::elaborate_match_t elaborate_match_impl(
+    TyperImpl &typer, const Location &location, ContextPtr C, It begin, It end,
+    typing::Substitutions &substitutions, std::uint64_t maximum_type_name_id,
+    const ImplicitlyScopedVars &scopes) {
+  TyperImpl::elaborate_match_t result;
+  auto cases = elaborate_cases(typer, C, begin, end, substitutions,
+                               maximum_type_name_id, scopes);
+  result.new_substitutions = cases.new_substitutions;
 
   result.match = {.location = location,
-                  .match_type = match_type,
-                  .result_type = result_type};
-  compile_match(result.match, std::move(tcases));
+                  .match_type = cases.match_type,
+                  .result_type = cases.result_type};
+  compile_match(result.match, std::move(cases.tcases));
   if (result.match.nonexhaustive) {
     typer.reporter().report_warning(location, "match nonexhaustive");
   }
@@ -2178,7 +2405,7 @@ TyperImpl::elaborate_match_t elaborate_match_impl(
 }  // namespace
 
 TyperImpl::elaborate_match_t TyperImpl::elaborate_match(
-    const Location &location, managed_ptr<typing::Context> C,
+    const Location &location, ContextPtr C,
     const std::vector<
         std::pair<std::unique_ptr<Pattern>, std::unique_ptr<Expr>>> &cases,
     typing::Substitutions &substitutions, std::uint64_t maximum_type_name_id,
@@ -2188,9 +2415,8 @@ TyperImpl::elaborate_match_t TyperImpl::elaborate_match(
 }
 
 TyperImpl::elaborate_match_t TyperImpl::elaborate_match(
-    const Location &location, managed_ptr<typing::Context> C,
-    const Pattern &pat, typing::Substitutions &substitutions,
-    std::uint64_t maximum_type_name_id) {
+    const Location &location, ContextPtr C, const Pattern &pat,
+    typing::Substitutions &substitutions, std::uint64_t maximum_type_name_id) {
   auto expr = std::make_unique<UnitExpr>(location);
   std::vector<std::pair<const Pattern *, const Expr *>> cases{
       std::make_pair(&pat, &*expr)};
@@ -2199,12 +2425,13 @@ TyperImpl::elaborate_match_t TyperImpl::elaborate_match(
 }
 
 namespace {
+
+/** Used to implement `TyperImpl::elaborate_type_expr`. */
 class TypeExprElaborator : public TypeExpr::Visitor {
  public:
   typing::TypePtr type;
 
-  TypeExprElaborator(TyperImpl &typer, managed_ptr<typing::Context> C)
-      : typer_(typer), C(C) {}
+  TypeExprElaborator(TyperImpl &typer, ContextPtr C) : typer_(typer), C(C) {}
 
   void visitVarTypeExpr(const VarTypeExpr &node) override {
     type = make_managed<typing::TypeVar>(node.id);
@@ -2216,7 +2443,7 @@ class TypeExprElaborator : public TypeExpr::Visitor {
       row.second->accept(*this);
       rows = rows->insert(make_string(row.first), type).first;
     }
-    type = typer_.builtins().record_type(rows);
+    type = typer_.record_type(rows);
   }
 
   void visitTyconTypeExpr(const TyconTypeExpr &node) override {
@@ -2248,7 +2475,7 @@ class TypeExprElaborator : public TypeExpr::Visitor {
           node.types[i]->accept(*this);
           return type;
         });
-    type = typer_.builtins().tuple_type(types);
+    type = typer_.tuple_type(types);
   }
 
   void visitFuncTypeExpr(const FuncTypeExpr &node) override {
@@ -2260,12 +2487,12 @@ class TypeExprElaborator : public TypeExpr::Visitor {
 
  private:
   TyperImpl &typer_;
-  managed_ptr<typing::Context> C;
+  ContextPtr C;
 };
 
 }  // namespace
 
-typing::TypePtr TyperImpl::elaborate_type_expr(managed_ptr<typing::Context> C,
+typing::TypePtr TyperImpl::elaborate_type_expr(ContextPtr C,
                                                const TypeExpr &ty) {
   TypeExprElaborator v{*this, C};
   ty.accept(v);
