@@ -80,6 +80,8 @@ class Typer {
    */
   std::string describe_basis_updates(const TTopDecl& topdecl);
 
+  void visit_root(const ManagedVisitor& visitor);
+
  private:
   std::unique_ptr<TyperImpl> impl_;
 };

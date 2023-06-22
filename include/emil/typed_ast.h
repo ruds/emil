@@ -93,8 +93,12 @@ struct bind_rule_t : public Managed {
   }
 
   void visit_subobjects(const ManagedVisitor& visitor) override {
-    names.accept(visitor);
-    visit([&](auto& l) { l.accept(visitor); }, subtype_bindings);
+    if (names) names.accept(visitor);
+    visit(
+        [&](auto& l) {
+          if (l) l.accept(visitor);
+        },
+        subtype_bindings);
   }
   std::size_t managed_size() const noexcept override {
     return sizeof(bind_rule_t);

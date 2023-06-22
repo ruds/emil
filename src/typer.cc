@@ -44,6 +44,7 @@
 #include "emil/collections.h"
 #include "emil/gc.h"
 #include "emil/reporter.h"
+#include "emil/runtime.h"
 #include "emil/strconvert.h"
 #include "emil/string.h"
 #include "emil/token.h"
@@ -226,11 +227,13 @@ class TyperImpl {
     return make_managed<typing::FunctionType>(param, result);
   }
 
+  void visit_root(const ManagedVisitor &visitor) { builtins_.accept(visitor); }
+
  private:
   friend class Typer;
 
   typing::StampGenerator stamp_generator_;
-  typing::BuiltinTypes builtins_;
+  managed_ptr<typing::BuiltinTypes> builtins_;
   Reporter &reporter_;
 };
 
@@ -694,6 +697,7 @@ class TopDeclChangeDescriber : public TTopDecl::Visitor {
 }  // namespace
 
 std::string Typer::describe_basis_updates(const TTopDecl &topdecl) {
+  auto hold = ctx().mgr->acquire_hold();
   TopDeclChangeDescriber v{*impl_};
   topdecl.accept(v);
   return std::move(v.out);
@@ -727,9 +731,10 @@ void add_type(managed_ptr<typing::TypeEnv> &TE, managed_ptr<typing::ValEnv> &VE,
 }  // namespace
 
 managed_ptr<typing::Basis> Typer::initial_basis() const {
+  auto hold = ctx().mgr->acquire_hold();
   auto TE = typing::TypeEnv::empty();
   auto VE = typing::ValEnv::empty();
-  auto &b = impl_->builtins_;
+  auto &b = *impl_->builtins_;
 
   add_type(TE, VE, b.bigint_type());
   add_type(TE, VE, b.int_type());
@@ -856,6 +861,7 @@ void TopDeclElaborator::visitDeclTopDecl(const DeclTopDecl &node) {
 
 Typer::elaborate_t Typer::elaborate(managed_ptr<typing::Basis> B,
                                     const TopDecl &topdec) {
+  auto hold = ctx().mgr->acquire_hold();
   TopDeclElaborator v(*impl_, B);
   topdec.accept(v);
   return {v.B, v.typed};
@@ -2490,6 +2496,10 @@ typing::TypePtr TyperImpl::elaborate_type_expr(ContextPtr C,
 
 managed_ptr<typing::Stamp> TyperImpl::new_stamp() { return stamp_generator_(); }
 
-const typing::BuiltinTypes &TyperImpl::builtins() const { return builtins_; }
+const typing::BuiltinTypes &TyperImpl::builtins() const { return *builtins_; }
+
+void Typer::visit_root(const ManagedVisitor &visitor) {
+  impl_->visit_root(visitor);
+}
 
 }  // namespace emil

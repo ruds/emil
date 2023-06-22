@@ -42,7 +42,21 @@ using OutIt = std::ostreambuf_iterator<char>;
 
 class DriverRoot : public Root {
  public:
-  void visit_root(const ManagedVisitor&) override {}
+  std::unique_ptr<Typer> typer;
+  managed_ptr<typing::Basis> B;
+  managed_ptr<TTopDecl> last_topdecl;
+
+  void initialize(Reporter& reporter) {
+    auto hold = ctx().mgr->acquire_hold();
+    typer = std::make_unique<Typer>(reporter);
+    B = typer->initial_basis();
+  }
+
+  void visit_root(const ManagedVisitor& visitor) override {
+    if (typer) typer->visit_root(visitor);
+    if (B) B.accept(visitor);
+    if (last_topdecl) last_topdecl.accept(visitor);
+  }
 };
 
 class DriverContextAccessor {
@@ -95,35 +109,33 @@ class TestReporter : public Reporter {
   const bool enable_type_judgements_;
 };
 
-void process_next_topdecl(managed_ptr<typing::Basis>& B, Typer& typer,
-                          Parser& parser, OutIt& out) {
+void process_next_topdecl(DriverRoot& root, Parser& parser, OutIt& out) {
   auto topdecl = parser.next();
-  auto e = typer.elaborate(B, *topdecl);
-  B = e.B;
+  auto e = root.typer->elaborate(root.B, *topdecl);
+  root.B = e.B;
+  root.last_topdecl = e.topdecl;
   fmt::format_to(out, "@{:04}:\n{}", e.topdecl->location.line,
-                 typer.describe_basis_updates(*e.topdecl));
+                 root.typer->describe_basis_updates(*e.topdecl));
 }
 
 void process_file(std::string_view infile, const std::string& outfile,
                   bool enable_type_judgement) {
-  DriverRoot root;
-  MemoryManager mgr{root};
-  RuntimeContext rc{.mgr = &mgr};
-  DriverContextAccessor::install_context(rc);
-  auto hold = mgr.acquire_hold();
-
-  Parser parser(emil::make_lexer(infile));
-
   std::ofstream outstream(outfile);
   std::ostreambuf_iterator<char> out(outstream);
   TestReporter reporter{out, enable_type_judgement};
-  Typer typer{reporter};
 
-  auto B = typer.initial_basis();
+  DriverRoot root;
+  MemoryManager mgr{root};
+  RuntimeContext rc{.mgr = &mgr};
+
+  DriverContextAccessor::install_context(rc);
+  root.initialize(reporter);
+
+  Parser parser(emil::make_lexer(infile));
 
   while (!parser.at_end()) {
     try {
-      process_next_topdecl(B, typer, parser, out);
+      process_next_topdecl(root, parser, out);
     } catch (ElaborationError& e) {
       reporter.report_error(e.location, e.msg);
     }

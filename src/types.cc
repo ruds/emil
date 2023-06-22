@@ -298,8 +298,9 @@ managed_ptr<ConstructedType> construct_type0(managed_ptr<Stamp>&& stamp,
 
 }  // namespace
 
-BuiltinTypes BuiltinTypes::create(StampGenerator& g) {
-  return {g(), g(), g(), g(), g(), g(), g(), g(), g()};
+managed_ptr<BuiltinTypes> BuiltinTypes::create(StampGenerator& g) {
+  return make_managed<BuiltinTypes>(g(), g(), g(), g(), g(), g(), g(), g(),
+                                    g());
 }
 
 BuiltinTypes::BuiltinTypes(managed_ptr<Stamp> bi, managed_ptr<Stamp> i,
@@ -308,7 +309,7 @@ BuiltinTypes::BuiltinTypes(managed_ptr<Stamp> bi, managed_ptr<Stamp> i,
                            managed_ptr<Stamp> s, managed_ptr<Stamp> l,
                            managed_ptr<Stamp> r)
     : TypeObj(string_set(), stamp_set(),
-              stamp_set({bi, i, by, fl, bo, c, s, l})),
+              stamp_set({bi, i, by, fl, bo, c, s, l, r})),
       tru_(make_string(TRUE)),
       fals_(make_string(FALSE)),
       nil_(make_string(NIL)),
@@ -333,6 +334,11 @@ managed_ptr<ConstructedType> BuiltinTypes::ref_type(TypePtr type) const {
 }
 
 void BuiltinTypes::visit_additional_subobjects(const ManagedVisitor& visitor) {
+  tru_.accept(visitor);
+  fals_.accept(visitor);
+  nil_.accept(visitor);
+  cons_.accept(visitor);
+  ref_.accept(visitor);
   bi_.accept(visitor);
   i_.accept(visitor);
   by_.accept(visitor);
