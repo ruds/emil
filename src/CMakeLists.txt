@@ -92,3 +92,7 @@ target_include_directories(typer PUBLIC ../include)
 target_link_libraries(typer
   PUBLIC ast typed_ast runtime
   PRIVATE parser)
+
+add_executable(repl repl.cc)
+add_emil_options(repl)
+target_link_libraries(repl linenoise fmt::fmt)
