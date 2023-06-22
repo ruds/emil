@@ -70,7 +70,7 @@ class Typer {
 
   struct elaborate_t {
     managed_ptr<typing::Basis> B;
-    std::unique_ptr<TTopDecl> topdecl;
+    managed_ptr<TTopDecl> topdecl;
   };
 
   /** Do typing analysis of a top-level declaration. */

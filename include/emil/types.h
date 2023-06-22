@@ -398,6 +398,12 @@ class BuiltinTypes : public TypeObj {
   static constexpr std::u8string_view CONS = u8"(::)";
   static constexpr std::u8string_view REF = u8"ref";
 
+  StringPtr tru() const { return tru_; }
+  StringPtr fals() const { return fals_; }
+  StringPtr nil() const { return nil_; }
+  StringPtr cons() const { return cons_; }
+  StringPtr ref() const { return ref_; }
+
   managed_ptr<ConstructedType> bigint_type() const { return bi_; }
   managed_ptr<ConstructedType> int_type() const { return i_; }
   managed_ptr<ConstructedType> byte_type() const { return by_; }
@@ -411,6 +417,11 @@ class BuiltinTypes : public TypeObj {
   managed_ptr<TypeName> ref_name() const { return r_; }
 
  private:
+  const StringPtr tru_;
+  const StringPtr fals_;
+  const StringPtr nil_;
+  const StringPtr cons_;
+  const StringPtr ref_;
   const managed_ptr<ConstructedType> bi_;
   const managed_ptr<ConstructedType> i_;
   const managed_ptr<ConstructedType> by_;

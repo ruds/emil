@@ -378,7 +378,7 @@ class ManagedSet : public ManagedWithSelfPtr<ManagedSet<T, Comp>> {
  private:
   friend class MemoryManager;
   friend class testing::ManagedSetAccessor;
-  template <ManagedType K, ManagedType V, typename C>
+  template <typename K, typename V, typename C>
   friend class ManagedMap;
 
   const Comp* comp_;
@@ -462,7 +462,7 @@ SetPtr<T> to_set(ArrayPtr<T> arr) {
  * See comments about `trees::tree_iterator`'s interaction with the memory
  * manager.
  */
-template <ManagedType K, ManagedType V, typename Comp = std::less<>>
+template <typename K, typename V, typename Comp = std::less<>>
 class ManagedMap : public ManagedWithSelfPtr<ManagedMap<K, V, Comp>> {
   struct token {
    private:
@@ -487,6 +487,10 @@ class ManagedMap : public ManagedWithSelfPtr<ManagedMap<K, V, Comp>> {
   ManagedMap(token, const Comp& comp, trees::TreePtr<K, V> tree,
              std::size_t size)
       : comp_(&comp), tree_(std::move(tree)), size_(size) {}
+  ~ManagedMap() {
+    static_assert(ManagedType<K>);
+    static_assert(ManagedType<V>);
+  }
   iterator begin() const { return cbegin(); }
   const_iterator cbegin() const { return iterator::begin(tree_, *comp_); }
 
@@ -701,7 +705,7 @@ class ManagedMap : public ManagedWithSelfPtr<ManagedMap<K, V, Comp>> {
   }
 };
 
-template <ManagedType K, ManagedType V, typename Comp = std::less<>>
+template <typename K, typename V, typename Comp = std::less<>>
 using MapPtr = managed_ptr<ManagedMap<K, V, Comp>>;
 
 /**

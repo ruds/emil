@@ -17,11 +17,13 @@
 #include <algorithm>
 #include <cassert>
 #include <compare>
-#include <iterator>
 #include <stdexcept>
+#include <utility>
 #include <variant>
 
+#include "emil/bigint.h"  // IWYU pragma: keep
 #include "emil/collections.h"
+#include "emil/gc.h"
 #include "emil/tree.h"
 #include "emil/types.h"
 
@@ -29,25 +31,33 @@ namespace emil {
 
 pattern_t::pattern_t(repr r) : repr_(std::move(r)) {}
 
-pattern_t pattern_t::wildcard() { return {wildcard_t{}}; }
-
-pattern_t pattern_t::constructed(std::u8string constructor,
-                                 managed_ptr<typing::TypeName> type_name,
-                                 typing::TypePtr arg_type,
-                                 std::vector<pattern_t> subpatterns) {
-  return {constructed_t{std::move(constructor), type_name, arg_type,
-                        std::move(subpatterns)}};
+managed_ptr<pattern_t> pattern_t::wildcard() {
+  return make_managed<pattern_t>(wildcard_t{});
 }
 
-pattern_t pattern_t::tuple(std::vector<pattern_t> subpatterns) {
-  return {tuple_t{std::move(subpatterns)}};
+managed_ptr<pattern_t> pattern_t::constructed(
+    StringPtr constructor, managed_ptr<typing::TypeName> type_name,
+    typing::TypePtr arg_type, collections::ArrayPtr<pattern_t> subpatterns) {
+  assert(constructor && !constructor->empty());
+  assert(type_name);
+  assert(subpatterns);
+  return make_managed<pattern_t>(
+      constructed_t{constructor, type_name, arg_type, subpatterns});
 }
 
-pattern_t pattern_t::record(std::vector<pattern_t> subpatterns) {
+managed_ptr<pattern_t> pattern_t::tuple(
+    collections::ArrayPtr<pattern_t> subpatterns) {
+  assert(subpatterns);
+  return make_managed<pattern_t>(tuple_t{subpatterns});
+}
+
+managed_ptr<pattern_t> pattern_t::record(
+    collections::ArrayPtr<pattern_t> subpatterns) {
+  assert(subpatterns);
   assert(std::is_sorted(
-      subpatterns.begin(), subpatterns.end(),
-      [](const auto& l, const auto& r) { return l.field() < r.field(); }));
-  return {record_t{std::move(subpatterns)}};
+      subpatterns->begin(), subpatterns->end(),
+      [](const auto& l, const auto& r) { return *l->field() < *r->field(); }));
+  return make_managed<pattern_t>(record_t{subpatterns});
 }
 
 bool pattern_t::is_wildcard() const {
@@ -62,13 +72,13 @@ bool pattern_t::is_record() const {
   return std::holds_alternative<record_t>(repr_);
 }
 
-bool pattern_t::is_record_field() const { return !field_.empty(); }
+bool pattern_t::is_record_field() const { return static_cast<bool>(field_); }
 
 bool pattern_t::is_constructed() const {
   return std::holds_alternative<constructed_t>(repr_);
 }
 
-const std::u8string& pattern_t::constructor() const {
+StringPtr pattern_t::constructor() const {
   assert(is_constructed());
   return get<constructed_t>(repr_).constructor;
 }
@@ -95,33 +105,30 @@ overloaded(Ts...) -> overloaded<Ts...>;
 
 }  // namespace
 
-const std::vector<pattern_t>& pattern_t::subpatterns() const {
+collections::ArrayPtr<pattern_t> pattern_t::subpatterns() const {
   assert(!is_wildcard());
   return std::visit(
-      overloaded{[](wildcard_t) -> const std::vector<pattern_t>& {
+      overloaded{[](wildcard_t) -> collections::ArrayPtr<pattern_t> {
                    throw std::invalid_argument(
                        "May not call subpatterns() on wildcard pattern.");
                  },
-                 [](const auto& r) -> const std::vector<pattern_t>& {
-                   return r.subpatterns;
-                 }},
+                 [](const auto& r) { return r.subpatterns; }},
       repr_);
 }
 
-const std::u8string& pattern_t::field() const {
+StringPtr pattern_t::field() const {
   assert(is_record_field());
   return field_;
 }
 
-void pattern_t::set_field(std::u8string field) { field_ = std::move(field); }
+void pattern_t::set_field(StringPtr field) { field_ = field; }
 
 namespace {
 
-const pattern_t WILDCARD_PATTERN = pattern_t::wildcard();
-
 class PatternExpander : public typing::TypeVisitor {
  public:
-  PatternExpander(const pattern_t* pat, std::vector<const pattern_t*>& out)
+  PatternExpander(managed_ptr<pattern_t> pat,
+                  std::vector<managed_ptr<pattern_t>>& out)
       : pat_(pat), out_(out) {}
 
   void visit(const typing::TypeWithAgeRestriction& t) override {
@@ -141,9 +148,9 @@ class PatternExpander : public typing::TypeVisitor {
       }
     } else {
       const auto& subpatterns = pat_->subpatterns();
-      assert(subpatterns.size() == t.types()->size());
-      for (std::size_t i = 0; i < subpatterns.size(); ++i) {
-        pat_ = &subpatterns[i];
+      assert(subpatterns->size() == t.types()->size());
+      for (std::size_t i = 0; i < subpatterns->size(); ++i) {
+        pat_ = (*subpatterns)[i];
         (*t.types())[i]->accept(*this);
       }
     }
@@ -155,14 +162,14 @@ class PatternExpander : public typing::TypeVisitor {
         row.second->accept(*this);
       }
     } else {
-      auto it = pat_->subpatterns().begin();
-      const auto end = pat_->subpatterns().end();
+      auto it = pat_->subpatterns()->begin();
+      const auto end = pat_->subpatterns()->end();
       for (const auto& row : *t.rows()) {
-        if (it == end || *row.first < it->field()) {
-          pat_ = &WILDCARD_PATTERN;
+        if (it == end || *row.first < *(*it)->field()) {
+          pat_ = pattern_t::wildcard();
         } else {
-          assert(*row.first == it->field());
-          pat_ = &*it++;
+          assert(*row.first == *(*it)->field());
+          pat_ = *it++;
         }
         row.second->accept(*this);
       }
@@ -176,65 +183,115 @@ class PatternExpander : public typing::TypeVisitor {
   void visit(const typing::ConstructedType&) override { out_.push_back(pat_); }
 
  private:
-  const pattern_t* pat_;
-  std::vector<const pattern_t*>& out_;
+  managed_ptr<pattern_t> pat_;
+  std::vector<managed_ptr<pattern_t>>& out_;
 };
 
 }  // namespace
 
-void pattern_t::expand(std::vector<const pattern_t*>& out,
-                       const typing::Type& match_type) const {
-  PatternExpander v{this, out};
+void expand(managed_ptr<pattern_t> pat,
+            std::vector<managed_ptr<pattern_t>>& out,
+            const typing::Type& match_type) {
+  PatternExpander v{pat, out};
   match_type.accept(v);
 }
 
-void pattern_t::apply_substitutions(typing::Substitutions substitutions,
-                                    bool enforce_timing_constraints) {
-  std::visit(
+namespace {
+
+collections::ArrayPtr<pattern_t> apply_substitutions_to_subpatterns(
+    typing::Substitutions substitutions, bool enforce_timing_constraints,
+    collections::ArrayPtr<pattern_t> subpatterns) {
+  return make_managed<collections::ManagedArray<pattern_t>>(
+      subpatterns->size(), [&](std::size_t i) {
+        return (*subpatterns)[i]->apply_substitutions(
+            substitutions, enforce_timing_constraints);
+      });
+}
+
+}  // namespace
+
+managed_ptr<pattern_t> pattern_t::apply_substitutions(
+    typing::Substitutions substitutions,
+    bool enforce_timing_constraints) const {
+  auto pat = std::visit(
       overloaded{
-          [&](auto& r) {
-            for (auto& p : r.subpatterns)
-              p.apply_substitutions(substitutions, enforce_timing_constraints);
+          [&](const tuple_t& t) {
+            return pattern_t::tuple(apply_substitutions_to_subpatterns(
+                substitutions, enforce_timing_constraints, t.subpatterns));
           },
-          [](wildcard_t&) {},
-          [&](constructed_t& c) {
-            c.arg_type = c.arg_type
-                             ? typing::apply_substitutions(
-                                   c.arg_type, substitutions,
-                                   typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
-                                   enforce_timing_constraints)
-                             : nullptr;
-            for (auto& p : c.subpatterns)
-              p.apply_substitutions(substitutions, enforce_timing_constraints);
+          [&](const record_t& r) {
+            return pattern_t::record(apply_substitutions_to_subpatterns(
+                substitutions, enforce_timing_constraints, r.subpatterns));
+          },
+          [](const wildcard_t&) { return pattern_t::wildcard(); },
+          [&](const constructed_t& c) {
+            return pattern_t::constructed(
+                c.constructor, c.type_name,
+                c.arg_type ? typing::apply_substitutions(
+                                 c.arg_type, substitutions,
+                                 typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                 enforce_timing_constraints)
+                           : nullptr,
+                apply_substitutions_to_subpatterns(
+                    substitutions, enforce_timing_constraints, c.subpatterns));
           }},
       repr_);
+  pat->field_ = field_;
+  return pat;
+}
+
+void pattern_t::visit_subobjects(const ManagedVisitor& visitor) {
+  if (field_) field_.accept(visitor);
+  visit(overloaded{[&](auto& r) { r.subpatterns.accept(visitor); },
+                   [&](wildcard_t&) {},
+                   [&](constructed_t& c) {
+                     c.constructor.accept(visitor);
+                     c.type_name.accept(visitor);
+                     c.arg_type.accept(visitor);
+                     c.subpatterns.accept(visitor);
+                   }},
+        repr_);
 }
 
 TPattern::TPattern(const Location& location, typing::TypePtr type,
-                   pattern_t pat, managed_ptr<typing::ValEnv> bindings,
-                   bind_rule_t bind_rule)
+                   managed_ptr<pattern_t> pat,
+                   managed_ptr<typing::ValEnv> bindings,
+                   managed_ptr<bind_rule_t> bind_rule)
     : location(location),
       type(type),
-      pat(std::move(pat)),
+      pat(pat),
       bindings(bindings),
-      bind_rule(std::move(bind_rule)) {}
+      bind_rule(bind_rule) {}
 
-std::unique_ptr<TPattern> TPattern::apply_substitutions(
+managed_ptr<TPattern> TPattern::apply_substitutions(
     typing::Substitutions substitutions,
     bool enforce_timing_constraints) const {
-  auto new_pat = pat;
-  new_pat.apply_substitutions(substitutions, enforce_timing_constraints);
-  return std::make_unique<TPattern>(
+  return make_managed<TPattern>(
       location,
       typing::apply_substitutions(type, substitutions,
                                   typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
                                   enforce_timing_constraints),
-      new_pat,
+      pat->apply_substitutions(substitutions, enforce_timing_constraints),
       bindings->apply_substitutions(substitutions, enforce_timing_constraints),
       bind_rule);
 }
 
+void TPattern::visit_subobjects(const ManagedVisitor& visitor) {
+  type.accept(visitor);
+  pat.accept(visitor);
+  bindings.accept(visitor);
+  bind_rule.accept(visitor);
+}
+
 const std::u8string dt_switch_t::DEFAULT_KEY = u8"_";
+
+dt_switch_t::dt_switch_t(std::size_t index)
+    : index(index),
+      cases(collections::managed_map<ManagedString, dt_switch_subtree_t>({})) {}
+
+dt_switch_t::~dt_switch_t() = default;
+dt_switch_t::dt_switch_t(const dt_switch_t&) noexcept = default;
+dt_switch_t& dt_switch_t::operator=(const dt_switch_t&) noexcept = default;
 
 TExpr::TExpr(const Location& location, typing::TypePtr type,
              bool is_nonexpansive)
@@ -243,67 +300,65 @@ TExpr::TExpr(const Location& location, typing::TypePtr type,
 TExpr::~TExpr() = default;
 TExpr::Visitor::~Visitor() = default;
 
-match_t match_t::apply_substitutions(typing::Substitutions substitutions,
-                                     bool enforce_timing_constraints) const {
-  match_t result{.location = location,
-                 .match_type = match_type,
-                 .result_type = typing::apply_substitutions(
-                     result_type, substitutions,
-                     typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
-                     enforce_timing_constraints),
-                 .outcomes{},
-                 .decision_tree = decision_tree,
-                 .nonexhaustive = nonexhaustive};
-  result.outcomes.reserve(outcomes.size());
-  std::transform(outcomes.begin(), outcomes.end(),
-                 back_inserter(result.outcomes), [&](const outcome_t& o) {
-                   return outcome_t{
-                       o.bindings->apply_substitutions(
-                           substitutions, enforce_timing_constraints),
-                       o.bind_rule,
-                       o.result->apply_substitutions(
-                           substitutions, enforce_timing_constraints)};
-                 });
+void TExpr::visit_subobjects(const ManagedVisitor& visitor) {
+  type.accept(visitor);
+  visit_texpr_subobjects(visitor);
+}
+
+void visit_subobjects(decision_tree_t& t, const ManagedVisitor& visitor) {
+  visit(overloaded{[](auto&) {},
+                   [&](dt_switch_t& d) { d.cases.accept(visitor); }},
+        t);
+}
+
+managed_ptr<match_t> match_t::apply_substitutions(
+    typing::Substitutions substitutions,
+    bool enforce_timing_constraints) const {
+  auto result = make_managed<match_t>();
+  result->location = location;
+  result->match_type = match_type;
+  result->result_type = typing::apply_substitutions(
+      result_type, substitutions, typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+      enforce_timing_constraints);
+  result->outcomes = make_managed<collections::ManagedArray<outcome_t>>(
+      outcomes->size(), [&](std::size_t i) {
+        const auto& o = *(*outcomes)[i];
+        return make_managed<outcome_t>(
+            o.bindings->apply_substitutions(substitutions,
+                                            enforce_timing_constraints),
+            o.bind_rule,
+            o.result->apply_substitutions(substitutions,
+                                          enforce_timing_constraints));
+      });
+  result->decision_tree = decision_tree;
+  result->nonexhaustive = nonexhaustive;
   return result;
+}
+
+void match_t::visit_subobjects(const ManagedVisitor& visitor) {
+  match_type.accept(visitor);
+  result_type.accept(visitor);
+  outcomes.accept(visitor);
+  emil::visit_subobjects(decision_tree, visitor);
 }
 
 namespace {
 
 template <typename T>
 bool all_nonexp(const T& types) {
-  return std::all_of(types.begin(), types.end(),
+  return std::all_of(types->begin(), types->end(),
                      [](const auto& t) { return t->is_nonexpansive; });
 }
 
 template <typename T>
-std::vector<std::unique_ptr<T>> apply_substitutions_to_list(
-    const std::vector<std::unique_ptr<T>>& exprs,
-    typing::Substitutions substitutions, bool enforce_timing_constraints) {
-  std::vector<std::unique_ptr<T>> new_exprs;
-  new_exprs.reserve(exprs.size());
-  std::transform(exprs.begin(), exprs.end(), back_inserter(new_exprs),
-                 [&](const auto& e) {
-                   return e->apply_substitutions(substitutions,
-                                                 enforce_timing_constraints);
-                 });
-  return new_exprs;
-}
-
-template <typename T, typename U>
-std::vector<std::pair<std::unique_ptr<T>, std::unique_ptr<U>>>
-apply_substitutions_to_pairs(
-    const std::vector<std::pair<std::unique_ptr<T>, std::unique_ptr<U>>>& pairs,
-    typing::Substitutions substitutions, bool enforce_timing_constraints) {
-  std::vector<std::pair<std::unique_ptr<T>, std::unique_ptr<U>>> new_pairs;
-  new_pairs.reserve(pairs.size());
-  std::transform(
-      pairs.begin(), pairs.end(), back_inserter(new_pairs), [&](const auto& p) {
-        return std::make_pair(p.first->apply_substitutions(
-                                  substitutions, enforce_timing_constraints),
-                              p.second->apply_substitutions(
-                                  substitutions, enforce_timing_constraints));
+collections::ArrayPtr<T> apply_substitutions_to_list(
+    collections::ArrayPtr<T> exprs, typing::Substitutions substitutions,
+    bool enforce_timing_constraints) {
+  return make_managed<collections::ManagedArray<T>>(
+      exprs->size(), [&](std::size_t i) {
+        return (*exprs)[i]->apply_substitutions(substitutions,
+                                                enforce_timing_constraints);
       });
-  return new_pairs;
 }
 
 }  // namespace
@@ -313,77 +368,91 @@ TBigintLiteralExpr::TBigintLiteralExpr(const Location& location,
                                        managed_ptr<bigint> value)
     : TExpr(location, type, true), value(value) {}
 
-std::unique_ptr<TExpr> TBigintLiteralExpr::apply_substitutions(
+managed_ptr<TExpr> TBigintLiteralExpr::apply_substitutions(
     typing::Substitutions, bool) const {
-  return std::make_unique<TBigintLiteralExpr>(location, type, value);
+  return make_managed<TBigintLiteralExpr>(location, type, value);
+}
+
+void TBigintLiteralExpr::visit_texpr_subobjects(const ManagedVisitor& visitor) {
+  value.accept(visitor);
 }
 
 TIntLiteralExpr::TIntLiteralExpr(const Location& location, typing::TypePtr type,
                                  std::int64_t value)
     : TExpr(location, type, true), value(value) {}
 
-std::unique_ptr<TExpr> TIntLiteralExpr::apply_substitutions(
-    typing::Substitutions, bool) const {
-  return std::make_unique<TIntLiteralExpr>(location, type, value);
+managed_ptr<TExpr> TIntLiteralExpr::apply_substitutions(typing::Substitutions,
+                                                        bool) const {
+  return make_managed<TIntLiteralExpr>(location, type, value);
 }
 
 TFpLiteralExpr::TFpLiteralExpr(const Location& location, typing::TypePtr type,
                                double value)
     : TExpr(location, type, true), value(value) {}
 
-std::unique_ptr<TExpr> TFpLiteralExpr::apply_substitutions(
-    typing::Substitutions, bool) const {
-  return std::make_unique<TFpLiteralExpr>(location, type, value);
+managed_ptr<TExpr> TFpLiteralExpr::apply_substitutions(typing::Substitutions,
+                                                       bool) const {
+  return make_managed<TFpLiteralExpr>(location, type, value);
 }
 
 TStringLiteralExpr::TStringLiteralExpr(const Location& location,
                                        typing::TypePtr type, StringPtr value)
     : TExpr(location, type, true), value(value) {}
 
-std::unique_ptr<TExpr> TStringLiteralExpr::apply_substitutions(
+managed_ptr<TExpr> TStringLiteralExpr::apply_substitutions(
     typing::Substitutions, bool) const {
-  return std::make_unique<TStringLiteralExpr>(location, type, value);
+  return make_managed<TStringLiteralExpr>(location, type, value);
+}
+
+void TStringLiteralExpr::visit_texpr_subobjects(const ManagedVisitor& visitor) {
+  value.accept(visitor);
 }
 
 TCharLiteralExpr::TCharLiteralExpr(const Location& location,
                                    typing::TypePtr type, char32_t value)
     : TExpr(location, type, true), value(value) {}
 
-std::unique_ptr<TExpr> TCharLiteralExpr::apply_substitutions(
-    typing::Substitutions, bool) const {
-  return std::make_unique<TCharLiteralExpr>(location, type, value);
+managed_ptr<TExpr> TCharLiteralExpr::apply_substitutions(typing::Substitutions,
+                                                         bool) const {
+  return make_managed<TCharLiteralExpr>(location, type, value);
 }
 
 TFstringLiteralExpr::TFstringLiteralExpr(
     const Location& location, typing::TypePtr type,
-    collections::ConsPtr<ManagedString> segments,
-    std::vector<std::unique_ptr<TExpr>> substitutions)
+    collections::ArrayPtr<ManagedString> segments,
+    collections::ArrayPtr<TExpr> substitutions)
     : TExpr(location, type, all_nonexp(substitutions)),
       segments(segments),
-      substitutions(std::move(substitutions)) {}
+      substitutions(substitutions) {}
 
-std::unique_ptr<TExpr> TFstringLiteralExpr::apply_substitutions(
+managed_ptr<TExpr> TFstringLiteralExpr::apply_substitutions(
     typing::Substitutions var_substitutions,
     bool enforce_timing_constraints) const {
-  return std::make_unique<TFstringLiteralExpr>(
+  return make_managed<TFstringLiteralExpr>(
       location, type, segments,
       apply_substitutions_to_list(substitutions, var_substitutions,
                                   enforce_timing_constraints));
 }
 
-TIdentifierExpr::TIdentifierExpr(const Location& location, typing::TypePtr type,
-                                 typing::IdStatus status,
-                                 collections::ConsPtr<ManagedString> qualifiers,
-                                 StringPtr canonical_identifier)
+void TFstringLiteralExpr::visit_texpr_subobjects(
+    const ManagedVisitor& visitor) {
+  segments.accept(visitor);
+  substitutions.accept(visitor);
+}
+
+TIdentifierExpr::TIdentifierExpr(
+    const Location& location, typing::TypePtr type, typing::IdStatus status,
+    collections::ArrayPtr<ManagedString> qualifiers,
+    StringPtr canonical_identifier)
     : TExpr(location, type, true),
       status(status),
       qualifiers(qualifiers),
       canonical_identifier(canonical_identifier) {}
 
-std::unique_ptr<TExpr> TIdentifierExpr::apply_substitutions(
+managed_ptr<TExpr> TIdentifierExpr::apply_substitutions(
     typing::Substitutions substitutions,
     bool enforce_timing_constraints) const {
-  return std::make_unique<TIdentifierExpr>(
+  return make_managed<TIdentifierExpr>(
       location,
       typing::apply_substitutions(type, substitutions,
                                   typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
@@ -391,16 +460,21 @@ std::unique_ptr<TExpr> TIdentifierExpr::apply_substitutions(
       status, qualifiers, canonical_identifier);
 }
 
+void TIdentifierExpr::visit_texpr_subobjects(const ManagedVisitor& visitor) {
+  qualifiers.accept(visitor);
+  canonical_identifier.accept(visitor);
+}
+
 TRecRowExpr::TRecRowExpr(const Location& location, typing::TypePtr type,
-                         StringPtr label, std::unique_ptr<TExpr> value)
+                         StringPtr label, managed_ptr<TExpr> value)
     : TExpr(location, type, value->is_nonexpansive),
       label(label),
-      value(std::move(value)) {}
+      value(value) {}
 
-std::unique_ptr<TRecRowExpr> TRecRowExpr::apply_substitutions_as_rec_row(
+managed_ptr<TRecRowExpr> TRecRowExpr::apply_substitutions_as_rec_row(
     typing::Substitutions substitutions,
     bool enforce_timing_constraints) const {
-  return std::make_unique<TRecRowExpr>(
+  return make_managed<TRecRowExpr>(
       location,
       typing::apply_substitutions(type, substitutions,
                                   typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
@@ -409,68 +483,82 @@ std::unique_ptr<TRecRowExpr> TRecRowExpr::apply_substitutions_as_rec_row(
       value->apply_substitutions(substitutions, enforce_timing_constraints));
 }
 
-TRecordExpr::TRecordExpr(const Location& location, typing::TypePtr type,
-                         std::vector<std::unique_ptr<TRecRowExpr>> rows)
-    : TExpr(location, type, all_nonexp(rows)), rows(std::move(rows)) {}
+void TRecRowExpr::visit_texpr_subobjects(const ManagedVisitor& visitor) {
+  label.accept(visitor);
+  value.accept(visitor);
+}
 
-std::unique_ptr<TExpr> TRecordExpr::apply_substitutions(
+TRecordExpr::TRecordExpr(const Location& location, typing::TypePtr type,
+                         collections::ArrayPtr<TRecRowExpr> rows)
+    : TExpr(location, type, all_nonexp(rows)), rows(rows) {}
+
+managed_ptr<TExpr> TRecordExpr::apply_substitutions(
     typing::Substitutions substitutions,
     bool enforce_timing_constraints) const {
-  std::vector<std::unique_ptr<TRecRowExpr>> new_rows;
-  new_rows.reserve(rows.size());
-  std::transform(rows.begin(), rows.end(), back_inserter(new_rows),
-                 [&](const auto& r) {
-                   return r->apply_substitutions_as_rec_row(
-                       substitutions, enforce_timing_constraints);
-                 });
-  return std::make_unique<TRecordExpr>(
+  return make_managed<TRecordExpr>(
       location,
       typing::apply_substitutions(type, substitutions,
                                   typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
                                   enforce_timing_constraints),
-      std::move(new_rows));
+      make_managed<collections::ManagedArray<TRecRowExpr>>(
+          rows->size(), [&](std::size_t i) {
+            return (*rows)[i]->apply_substitutions_as_rec_row(
+                substitutions, enforce_timing_constraints);
+          }));
+}
+
+void TRecordExpr::visit_texpr_subobjects(const ManagedVisitor& visitor) {
+  rows.accept(visitor);
 }
 
 TTupleExpr::TTupleExpr(const Location& location, typing::TypePtr type,
-                       std::vector<std::unique_ptr<TExpr>> exprs)
-    : TExpr(location, type, all_nonexp(exprs)), exprs(std::move(exprs)) {}
+                       collections::ArrayPtr<TExpr> exprs)
+    : TExpr(location, type, all_nonexp(exprs)), exprs(exprs) {}
 
-std::unique_ptr<TExpr> TTupleExpr::apply_substitutions(
+managed_ptr<TExpr> TTupleExpr::apply_substitutions(
     typing::Substitutions substitutions,
     bool enforce_timing_constraints) const {
-  return std::make_unique<TTupleExpr>(
+  return make_managed<TTupleExpr>(
       location,
       typing::apply_substitutions(type, substitutions,
                                   typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
                                   enforce_timing_constraints),
       apply_substitutions_to_list(exprs, substitutions,
                                   enforce_timing_constraints));
+}
+
+void TTupleExpr::visit_texpr_subobjects(const ManagedVisitor& visitor) {
+  exprs.accept(visitor);
 }
 
 TSequencedExpr::TSequencedExpr(const Location& location, typing::TypePtr type,
-                               std::vector<std::unique_ptr<TExpr>> exprs)
-    : TExpr(location, type, false), exprs(std::move(exprs)) {}
+                               collections::ArrayPtr<TExpr> exprs)
+    : TExpr(location, type, false), exprs(exprs) {}
 
-std::unique_ptr<TExpr> TSequencedExpr::apply_substitutions(
+managed_ptr<TExpr> TSequencedExpr::apply_substitutions(
     typing::Substitutions substitutions,
     bool enforce_timing_constraints) const {
-  return std::make_unique<TSequencedExpr>(
+  return make_managed<TSequencedExpr>(
       location,
       typing::apply_substitutions(type, substitutions,
                                   typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
                                   enforce_timing_constraints),
       apply_substitutions_to_list(exprs, substitutions,
                                   enforce_timing_constraints));
+}
+
+void TSequencedExpr::visit_texpr_subobjects(const ManagedVisitor& visitor) {
+  exprs.accept(visitor);
 }
 
 TListExpr::TListExpr(const Location& location, typing::TypePtr type,
-                     std::vector<std::unique_ptr<TExpr>> exprs)
-    : TExpr(location, type, all_nonexp(exprs)), exprs(std::move(exprs)) {}
+                     collections::ArrayPtr<TExpr> exprs)
+    : TExpr(location, type, all_nonexp(exprs)), exprs(exprs) {}
 
-std::unique_ptr<TExpr> TListExpr::apply_substitutions(
+managed_ptr<TExpr> TListExpr::apply_substitutions(
     typing::Substitutions substitutions,
     bool enforce_timing_constraints) const {
-  return std::make_unique<TListExpr>(
+  return make_managed<TListExpr>(
       location,
       typing::apply_substitutions(type, substitutions,
                                   typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
@@ -479,17 +567,19 @@ std::unique_ptr<TExpr> TListExpr::apply_substitutions(
                                   enforce_timing_constraints));
 }
 
-TLetExpr::TLetExpr(const Location& location, typing::TypePtr type,
-                   std::vector<std::unique_ptr<TDecl>> decls,
-                   std::vector<std::unique_ptr<TExpr>> exprs)
-    : TExpr(location, type, false),
-      decls(std::move(decls)),
-      exprs(std::move(exprs)) {}
+void TListExpr::visit_texpr_subobjects(const ManagedVisitor& visitor) {
+  exprs.accept(visitor);
+}
 
-std::unique_ptr<TExpr> TLetExpr::apply_substitutions(
+TLetExpr::TLetExpr(const Location& location, typing::TypePtr type,
+                   collections::ArrayPtr<TDecl> decls,
+                   collections::ArrayPtr<TExpr> exprs)
+    : TExpr(location, type, false), decls(decls), exprs(exprs) {}
+
+managed_ptr<TExpr> TLetExpr::apply_substitutions(
     typing::Substitutions substitutions,
     bool enforce_timing_constraints) const {
-  return std::make_unique<TLetExpr>(
+  return make_managed<TLetExpr>(
       location,
       typing::apply_substitutions(type, substitutions,
                                   typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
@@ -500,15 +590,20 @@ std::unique_ptr<TExpr> TLetExpr::apply_substitutions(
                                   enforce_timing_constraints));
 }
 
+void TLetExpr::visit_texpr_subobjects(const ManagedVisitor& visitor) {
+  decls.accept(visitor);
+  exprs.accept(visitor);
+}
+
 TApplicationExpr::TApplicationExpr(const Location& location,
                                    typing::TypePtr type, bool is_nonexpansive,
-                                   std::vector<std::unique_ptr<TExpr>> exprs)
-    : TExpr(location, type, is_nonexpansive), exprs(std::move(exprs)) {}
+                                   collections::ArrayPtr<TExpr> exprs)
+    : TExpr(location, type, is_nonexpansive), exprs(exprs) {}
 
-std::unique_ptr<TExpr> TApplicationExpr::apply_substitutions(
+managed_ptr<TExpr> TApplicationExpr::apply_substitutions(
     typing::Substitutions substitutions,
     bool enforce_timing_constraints) const {
-  return std::make_unique<TApplicationExpr>(
+  return make_managed<TApplicationExpr>(
       location,
       typing::apply_substitutions(type, substitutions,
                                   typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
@@ -518,33 +613,45 @@ std::unique_ptr<TExpr> TApplicationExpr::apply_substitutions(
                                   enforce_timing_constraints));
 }
 
-TCaseExpr::TCaseExpr(const Location& location, std::unique_ptr<TExpr> expr,
-                     match_t match)
-    : TExpr(location, match.result_type, false),
-      expr(std::move(expr)),
-      match(std::move(match)) {}
-
-std::unique_ptr<TExpr> TCaseExpr::apply_substitutions(
-    typing::Substitutions substitutions,
-    bool enforce_timing_constraints) const {
-  return std::make_unique<TCaseExpr>(
-      location,
-      expr->apply_substitutions(substitutions, enforce_timing_constraints),
-      match.apply_substitutions(substitutions, enforce_timing_constraints));
+void TApplicationExpr::visit_texpr_subobjects(const ManagedVisitor& visitor) {
+  exprs.accept(visitor);
 }
 
-TFnExpr::TFnExpr(const Location& location, typing::TypePtr type, match_t match)
-    : TExpr(location, type, true), match(std::move(match)) {}
+TCaseExpr::TCaseExpr(const Location& location, managed_ptr<TExpr> expr,
+                     managed_ptr<match_t> match)
+    : TExpr(location, match->result_type, false), expr(expr), match(match) {}
 
-std::unique_ptr<TExpr> TFnExpr::apply_substitutions(
+managed_ptr<TExpr> TCaseExpr::apply_substitutions(
     typing::Substitutions substitutions,
     bool enforce_timing_constraints) const {
-  return std::make_unique<TFnExpr>(
+  return make_managed<TCaseExpr>(
+      location,
+      expr->apply_substitutions(substitutions, enforce_timing_constraints),
+      match->apply_substitutions(substitutions, enforce_timing_constraints));
+}
+
+void TCaseExpr::visit_texpr_subobjects(const ManagedVisitor& visitor) {
+  expr.accept(visitor);
+  match.accept(visitor);
+}
+
+TFnExpr::TFnExpr(const Location& location, typing::TypePtr type,
+                 managed_ptr<match_t> match)
+    : TExpr(location, type, true), match(match) {}
+
+managed_ptr<TExpr> TFnExpr::apply_substitutions(
+    typing::Substitutions substitutions,
+    bool enforce_timing_constraints) const {
+  return make_managed<TFnExpr>(
       location,
       typing::apply_substitutions(type, substitutions,
                                   typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
                                   enforce_timing_constraints),
-      match.apply_substitutions(substitutions, enforce_timing_constraints));
+      match->apply_substitutions(substitutions, enforce_timing_constraints));
+}
+
+void TFnExpr::visit_texpr_subobjects(const ManagedVisitor& visitor) {
+  match.accept(visitor);
 }
 
 TDecl::~TDecl() = default;
@@ -553,28 +660,45 @@ TDecl::Visitor::~Visitor() = default;
 TDecl::TDecl(const Location& location, managed_ptr<typing::Env> env)
     : location(location), env(env) {}
 
-TValDecl::TValDecl(
-    const Location& location,
-    std::vector<std::pair<match_t, std::unique_ptr<TExpr>>> bindings,
-    managed_ptr<typing::Env> env)
-    : TDecl(location, env), bindings(std::move(bindings)) {}
+void TDecl::visit_subobjects(const ManagedVisitor& visitor) {
+  env.accept(visitor);
+  visit_tdecl_subobjects(visitor);
+}
 
-std::unique_ptr<TDecl> TValDecl::apply_substitutions(
+TValBind::TValBind(managed_ptr<match_t> match) : TValBind(match, nullptr) {}
+TValBind::TValBind(managed_ptr<match_t> match, managed_ptr<TExpr> expr)
+    : match(match), expr(expr) {}
+
+void TValBind::visit_subobjects(const ManagedVisitor& visitor) {
+  match.accept(visitor);
+  if (expr) expr.accept(visitor);
+}
+
+TValDecl::TValDecl(const Location& location,
+                   collections::ArrayPtr<TValBind> bindings,
+                   managed_ptr<typing::Env> env)
+    : TDecl(location, env), bindings(bindings) {}
+
+managed_ptr<TDecl> TValDecl::apply_substitutions(
     typing::Substitutions substitutions,
     bool enforce_timing_constraints) const {
-  std::vector<std::pair<match_t, std::unique_ptr<TExpr>>> new_bindings;
-  new_bindings.reserve(bindings.size());
-  std::transform(bindings.begin(), bindings.end(), back_inserter(new_bindings),
+  auto new_bindings =
+      make_managed<collections::ManagedArray<TValBind>>(bindings->size());
+  std::transform(bindings->begin(), bindings->end(), new_bindings->begin(),
                  [&](const auto& p) {
-                   return std::make_pair(
-                       p.first.apply_substitutions(substitutions,
-                                                   enforce_timing_constraints),
-                       p.second->apply_substitutions(
+                   return make_managed<TValBind>(
+                       p->match->apply_substitutions(
+                           substitutions, enforce_timing_constraints),
+                       p->expr->apply_substitutions(
                            substitutions, enforce_timing_constraints));
                  });
-  return std::make_unique<TValDecl>(
-      location, std::move(new_bindings),
+  return make_managed<TValDecl>(
+      location, new_bindings,
       env->apply_substitutions(substitutions, enforce_timing_constraints));
+}
+
+void TValDecl::visit_tdecl_subobjects(const ManagedVisitor& visitor) {
+  bindings.accept(visitor);
 }
 
 TDtypeDecl::TDtypeDecl(const Location& location, managed_ptr<typing::Env> env)
@@ -585,8 +709,11 @@ TTopDecl::TTopDecl(const Location& location) : location(location) {}
 TTopDecl::~TTopDecl() = default;
 TTopDecl::Visitor::~Visitor() = default;
 
-TDeclTopDecl::TDeclTopDecl(const Location& location,
-                           std::unique_ptr<TDecl> decl)
+TDeclTopDecl::TDeclTopDecl(const Location& location, managed_ptr<TDecl> decl)
     : TTopDecl(location), decl(std::move(decl)) {}
+
+void TDeclTopDecl::visit_subobjects(const ManagedVisitor& visitor) {
+  decl.accept(visitor);
+}
 
 }  // namespace emil
