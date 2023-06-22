@@ -17,6 +17,7 @@ find_package(fmt REQUIRED)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 add_subdirectory("${PROJECT_SOURCE_DIR}/extern/utfcpp" "extern/utfcpp")
+add_subdirectory("${PROJECT_SOURCE_DIR}/extern/cpp-linenoise" "extern/cpp-linenoise")
 
 add_custom_command(
   OUTPUT
