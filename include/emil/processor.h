@@ -145,18 +145,18 @@ struct [[nodiscard]] processor {
 
     bool ready() const { return value.index() != 0; }
 
-    Out get_value_or_throw() {
+    Out&& get_value_or_throw() {
       return visit(
           detail::overloaded{
-              [](std::monostate&&) -> Out {
+              [](std::monostate&&) -> Out&& {
                 throw std::logic_error("Attempted to read when not ready.");
               },
-              [this](Out&& out) {
-                auto v = std::move(out);
+              [this](Out&& out) -> Out&& {
+                Out&& v = std::move(out);
                 value = std::monostate{};
-                return v;
+                return static_cast<Out&&>(v);
               },
-              [this](std::exception_ptr&& ptr) -> Out {
+              [this](std::exception_ptr&& ptr) -> Out&& {
                 auto p = std::move(ptr);
                 value = std::monostate{};
                 try {
@@ -253,5 +253,35 @@ struct [[nodiscard]] processor {
 
   handle_type handle_;
 };
+
+/** Compose two pipelines. */
+template <typename In, typename M1, typename M2, typename Out>
+processor<In, Out> compose(processor<In, M1> in, processor<M2, Out> out) {
+  bool done = false;
+  while (!done) {
+    try {
+      in.process(co_await next_input{});
+    } catch (reset&) {
+      in.reset();
+      out.reset();
+      continue;
+    } catch (eof&) {
+      in.finish();
+      done = true;
+    }
+    while (in) {
+      out.process(in());
+      while (out) co_yield out();
+    }
+  }
+  out.finish();
+  while (out) co_yield out();
+}
+
+/** Compose two pipelines. */
+template <typename In, typename M1, typename M2, typename Out>
+processor<In, Out> operator|(processor<In, M1>&& in, processor<M2, Out>&& out) {
+  return compose(std::move(in), std::move(out));
+}
 
 }  // namespace emil::processor
