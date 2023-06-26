@@ -3,6 +3,7 @@
     { include: ["@<__bit/.*>", "private", "<bit>", "public"] },
     { include: ["@<__charconv/.*>", "private", "<charconv>", "public"] },
     { include: ["@<__compare/.*>", "private", "<compare>", "public"] },
+    { include: ["@<__concepts/.*>", "private", "<concepts>", "public"] },
     { include: ["@<__coroutine/.*>", "private", "<coroutine>", "public"] },
     { include: ["@<__filesystem/.*>", "private", "<filesystem>", "public"] },
     { include: ["<__fwd/string.h>", "private", "<string>", "public"]},
