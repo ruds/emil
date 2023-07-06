@@ -35,7 +35,7 @@ struct next_input {};
 /** Marker class used by coroutines returning `processor` or
  * `processor_subtask` to request a preview of the `i`th future input item. */
 struct peek {
-  std::size_t i = 0;
+  std::size_t i = 1;
 };
 /** Thrown within coroutine bodies when the input stream has signaled a reset.
  */
@@ -816,6 +816,18 @@ struct [[nodiscard]] processor_subtask {
 
   handle_type handle_;
 };
+
+template <typename In, typename Out>
+processor<In, Out> repeatedly(processor_subtask<In, Out> (*t)()) {
+  while (true) {
+    try {
+      co_yield co_await t();
+    } catch (reset) {
+    } catch (eof) {
+      co_return;
+    }
+  }
+}
 
 template <typename T>
 using Expected = std::variant<T, std::exception_ptr>;

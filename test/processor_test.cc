@@ -1082,6 +1082,21 @@ TEST(ProcessorNestedTaskPeekTest, ResetRetainsBuffer) {
   ASSERT_THAT(p(), Eq("oop"));
 }
 
+TEST(ProcessorRepeatedlyTest, BasicOperation) {
+  const char input[] = "The quick brown fox jumped over the lazy dog";
+  auto p = repeatedly(extract_word);
+  std::vector<std::string> words;
+  for (const char* c = input; *c; ++c) {
+    p.process(*c);
+    while (p) words.push_back(p());
+  }
+  p.finish();
+  while (p) words.push_back(p());
+
+  EXPECT_THAT(words, ElementsAre("The", "quick", "brown", "fox", "jumped",
+                                 "over", "the", "lazy", "dog"));
+}
+
 processor<std::string, std::string> alphabetize_words() {
   while (true) {
     try {
