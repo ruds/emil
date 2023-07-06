@@ -38,7 +38,7 @@ bool process_next_token(Lexer& lexer, std::ostreambuf_iterator<char>& out) {
     std::cerr << err.full_msg << "\n"
               << utf8::utf32to8(err.partial_token_text) << "\n";
     fmt::format_to(out, "{:04} ERROR\n", err.location.line);
-    lexer.advance_past(U"(*xx*)");
+    lexer.advance_past(U"\n");
     return true;
   }
 }
