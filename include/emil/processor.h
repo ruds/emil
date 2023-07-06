@@ -17,8 +17,12 @@
 #include <cassert>
 #include <concepts>
 #include <coroutine>
+#include <cstddef>
+#include <deque>
 #include <exception>
 #include <functional>
+#include <memory>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 #include <variant>
@@ -26,8 +30,13 @@
 namespace emil::processor {
 
 /** Marker class used by coroutines returning `processor` or
- * `processor_subtask`. */
+ * `processor_subtask` to request the next input item. */
 struct next_input {};
+/** Marker class used by coroutines returning `processor` or
+ * `processor_subtask` to request a preview of the `i`th future input item. */
+struct peek {
+  std::size_t i = 0;
+};
 /** Thrown within coroutine bodies when the input stream has signaled a reset.
  */
 struct reset {};
@@ -47,16 +56,12 @@ struct overloaded : Ts... {
 template <typename... Ts>
 overloaded(Ts...) -> overloaded<Ts...>;
 
-template <typename T>
-using InputCallback = std::function<T()>;
-
 /** Used to track the execution stack of `processor_subtask`s. */
 struct processor_stack_frame {
   std::coroutine_handle<> handle;
-  processor_stack_frame* outer = nullptr;
   processor_stack_frame* inner = nullptr;
-  /** Indicates that eof has been received on a descendant task. */
-  bool finished_on_inner = false;
+  /** If nonzero, a request to peek ahead the given number of inputs. */
+  std::size_t peek_request = 0;
 
   explicit processor_stack_frame(std::coroutine_handle<> h) : handle(h) {}
 
@@ -77,24 +82,110 @@ struct processor_stack_frame {
   }
 };
 
+/** Type traits for the input type for a processor/processor_subtask. */
+template <typename In>
+struct input_traits {
+  using peek_type = const In*;
+  using input_type = const In&;
+
+  static peek_type from_pointer(const In* in) { return in; }
+};
+
+template <typename T>
+concept scalar = std::is_scalar_v<T>;
+
+template <scalar In>
+struct input_traits<In> {
+  using peek_type = std::optional<In>;
+  using input_type = In;
+
+  static peek_type from_pointer(const In* in) {
+    return in ? std::make_optional(*in) : std::nullopt;
+  }
+};
+
+/** Interface that allows promises to interact with the processor input. */
+template <typename In>
+struct InputInterface {
+  virtual ~InputInterface() = default;
+  /** May throw eof or reset. */
+  virtual In get_input() = 0;
+  /** May throw reset. */
+  virtual typename input_traits<In>::peek_type peek(std::size_t i) = 0;
+  /**
+   * Determines whether the requested input has already been read.
+   *
+   * When i == 0, the requested input is the result of `co_await next_input{}`.
+   * Otherwise, it is `co_await peek{i};`
+   */
+  virtual bool input_ready(std::size_t i) const = 0;
+  /** When true, no more input is available. */
+  virtual bool input_complete() const = 0;
+  /** If nonzero, a request to peek ahead the given number of inputs. */
+  virtual void set_peek_request(std::size_t peek_request) = 0;
+};
+
+template <typename In>
+using InputInterfaceCallback =
+    std::function<std::shared_ptr<InputInterface<In>>()>;
+
+template <typename In>
+std::shared_ptr<InputInterface<In>> input_interface(
+    std::shared_ptr<InputInterface<In>>&& in) {
+  return std::move(in);
+}
+
+template <typename RequestedIn, typename AvailableIn>
+struct DelegatingInputInterface : public InputInterface<RequestedIn> {
+  explicit DelegatingInputInterface(
+      std::shared_ptr<InputInterface<AvailableIn>>&& delegate)
+      : delegate_(std::move(delegate)) {}
+
+  RequestedIn get_input() override { return delegate_->get_input(); }
+
+  typename input_traits<RequestedIn>::peek_type peek(std::size_t i) override {
+    return delegate_->peek(i);
+  }
+
+  bool input_ready(std::size_t i) const override {
+    return delegate_->input_ready(i);
+  }
+
+  bool input_complete() const override { return delegate_->input_complete(); }
+
+  void set_peek_request(std::size_t peek_request) override {
+    delegate_->set_peek_request(peek_request);
+  }
+
+ private:
+  std::shared_ptr<InputInterface<AvailableIn>> delegate_;
+};
+
+template <typename RequestedIn, typename AvailableIn>
+std::shared_ptr<InputInterface<RequestedIn>> input_interface(
+    std::shared_ptr<InputInterface<AvailableIn>>&& in)
+  requires(!std::is_same_v<RequestedIn, AvailableIn>)
+{
+  return std::make_shared<DelegatingInputInterface<RequestedIn, AvailableIn>>(
+      std::move(in));
+}
+
 template <typename P>
 concept Promise = requires(P p) {
   typename P::input_type;
   p.get_value_or_throw();
-  { p.get_input_or_throw() } -> std::convertible_to<typename P::input_type>;
   { p.get_stack_frame() } -> std::same_as<processor_stack_frame*>;
   { p.output_ready() } -> std::convertible_to<bool>;
-};
-
-template <typename P>
-concept RootPromise = requires(P p) {
-  { p.input_ready() } -> std::convertible_to<bool>;
+  {
+    p.input_interface()
+  } -> std::same_as<std::shared_ptr<InputInterface<typename P::input_type>>>;
 };
 
 template <typename P>
 concept InnerPromise = requires(P p) {
   typename P::input_type;
-  p.set_input_callback(std::declval<InputCallback<typename P::input_type>>());
+  p.set_input_interface_callback(
+      std::declval<InputInterfaceCallback<typename P::input_type>>());
 };
 
 /** Manages the execution of `co_await processor_subtask`. */
@@ -121,22 +212,24 @@ struct subtask_awaiter {
     auto* outer_frame = caller.promise().get_stack_frame();
     auto* inner_frame = handle_.promise().get_stack_frame();
     outer_frame->inner = inner_frame;
-    inner_frame->outer = outer_frame;
+    outer_frame->peek_request = inner_frame->peek_request;
     // When we resume later, we'll need to read the input from the
     // root of the call tree. We don't have direct access to it, so we
     // need to call up the chain after each intervening level has been
     // linked in this way.
-    handle_.promise().set_input_callback([caller]() {
+    handle_.promise().set_input_interface_callback([caller]() {
       assert(caller);
-      return caller.promise().get_input_or_throw();
+      return input_interface<typename P::input_type>(
+          caller.promise().input_interface());
     });
-    if constexpr (RootPromise<P2>) {
+    auto input = caller.promise().input_interface();
+    if (input) {
       // If there's already input available, we can resume immediately.
-      if (caller.promise().input_ready()) {
+      if (input->input_ready(inner_frame->peek_request)) {
         outer_frame->resume();
+      } else {
+        input->set_peek_request(inner_frame->peek_request);
       }
-    } else {
-      static_assert(InnerPromise<P2>);
     }
   }
 
@@ -144,8 +237,6 @@ struct subtask_awaiter {
   auto await_resume() {
     assert(handle_);
     assert(handle_.promise().output_ready());
-    auto* frame = handle_.promise().get_stack_frame();
-    if (frame->outer) frame->outer->inner = nullptr;
     return handle_.promise().get_value_or_throw();
   }
 
@@ -155,7 +246,7 @@ struct subtask_awaiter {
 
 template <typename P>
 subtask_awaiter<P>::~subtask_awaiter() {
-  static_assert(Promise<P>);
+  static_assert(Promise<P> && InnerPromise<P>);
 }
 
 /** Manages the execution of `co_await next_input{}`. */
@@ -166,37 +257,21 @@ struct input_awaiter {
 
   bool await_ready() {
     assert(h_);
-    // If a subtask already get EOF, we know our answer already.
-    if (h_.promise().get_stack_frame()->finished_on_inner) return true;
-    if constexpr (RootPromise<P>) {
-      // We already have input, no need to suspend.
-      return h_.promise().input_ready();
-    } else {
-      static_assert(InnerPromise<P>);
-      // If we're an inner task, we always have to suspend when we're asking for
-      // input.
-      return false;
-    }
+    auto input = h_.promise().input_interface();
+    // If we already know the next input, no need to suspend.
+    return input && input->input_ready(0);
   }
 
-  void await_suspend(std::coroutine_handle<P> h) { h_ = h; }
+  void await_suspend(std::coroutine_handle<P> h) {
+    h_ = h;
+    h_.promise().get_stack_frame()->peek_request = 0;
+    auto input = h_.promise().input_interface();
+    if (input) input->set_peek_request(0);
+  }
 
   auto await_resume() {
-    auto* frame = h_.promise().get_stack_frame();
-    if (frame->finished_on_inner) {
-      frame->finished_on_inner = false;
-      throw eof{};
-    }
-    try {
-      return h_.promise().get_input_or_throw();
-    } catch (eof) {
-      frame = frame->outer;
-      while (frame) {
-        frame->finished_on_inner = true;
-        frame = frame->outer;
-      }
-      throw;
-    }
+    auto input = h_.promise().input_interface();
+    return input->get_input();
   }
 
  private:
@@ -207,6 +282,102 @@ template <typename P>
 input_awaiter<P>::~input_awaiter() {
   static_assert(Promise<P>);
 }
+
+/** Manages the execution of `co_await peek_input{i}`. */
+template <typename P>
+struct peek_awaiter {
+  peek_awaiter(std::coroutine_handle<P> h, std::size_t request)
+      : h_(h), request_(request) {
+    if (request == 0)
+      throw std::invalid_argument("Must peek a non-zero number");
+  }
+  ~peek_awaiter();
+
+  bool await_ready() {
+    assert(h_);
+    auto input = h_.promise().input_interface();
+    // If we already know the next input, no need to suspend.
+    return input && input->input_ready(request_);
+  }
+
+  void await_suspend(std::coroutine_handle<P> h) {
+    h_ = h;
+    h_.promise().get_stack_frame()->peek_request = request_;
+    auto input = h_.promise().input_interface();
+    if (input) input->set_peek_request(request_);
+  }
+
+  auto await_resume() {
+    auto input = h_.promise().input_interface();
+    return input->peek(request_);
+  }
+
+ private:
+  std::coroutine_handle<P> h_;
+  std::size_t request_;
+};
+
+template <typename P>
+peek_awaiter<P>::~peek_awaiter() {
+  static_assert(Promise<P>);
+}
+
+/** Holds the result of a processor or processor_subtask. */
+template <typename T>
+using result_holder = std::variant<std::monostate, T, std::exception_ptr>;
+
+template <typename R>
+struct coroutine_return_mixin {
+  result_holder<R> result;
+
+  bool output_ready() const { return result.index() != 0; }
+
+  R get_value_or_throw() {
+    return visit(detail::overloaded{[](std::monostate&&) -> R {
+                                      throw std::logic_error(
+                                          "Attempted to read prematurely.");
+                                    },
+                                    [this](R&& r) -> R {
+                                      auto v = std::move(r);
+                                      result = std::monostate{};
+                                      return v;
+                                    },
+                                    [this](std::exception_ptr&& ptr) -> R {
+                                      auto p = std::move(ptr);
+                                      result = std::monostate{};
+                                      std::rethrow_exception(p);
+                                    }},
+                 std::move(result));
+  }
+
+  void return_value(R&& r) { result = std::move(r); }
+  void unhandled_exception() { result = std::current_exception(); }
+};
+
+template <>
+struct coroutine_return_mixin<void> {
+  struct ready {};
+  result_holder<ready> result;
+
+  bool output_ready() const { return result.index() != 0; }
+
+  void get_value_or_throw() {
+    return visit(
+        overloaded{[](std::monostate&&) {
+                     throw std::logic_error("Attempated to ready prematurely.");
+                   },
+                   [this](ready) { result = std::monostate{}; },
+                   [this](std::exception_ptr&& ptr) {
+                     auto p = std::move(ptr);
+                     result = std::monostate{};
+                     std::rethrow_exception(p);
+                   }},
+        std::move(result));
+  }
+
+  void return_void() { result = ready{}; }
+  void unhandled_exception() { result = std::current_exception(); }
+};
 
 }  // namespace detail
 
@@ -220,13 +391,17 @@ struct processor_subtask;
  * data, read all output, and repeat. The stream can be reset if
  * necessary (e.g. because a lexing error requires that a
  * partially-parsed expression be abandoned). When the input stream is
- * complete, call `finish` and read any remaining output.
+ * complete, call `finish` and read any remaining output. Any of
+ * `process`, `reset`, or `finish` may advance the stream, so after
+ * calling one of those functions, the `processor` object must be
+ * checked for additional output.
  *
  * Example usage:
  *  p = <get processor from coroutine factory>;
  *  while (event = pollEvent()) {
  *    if (event.type == CTRL_C) {
  *      p.reset();
+ *      while (p) doSomethingWith(p());
  *    } else if (event.type == CTRL_D) {
  *      p.finish();
  *      while (p) doSomethingWith(p());
@@ -240,6 +415,18 @@ struct processor_subtask;
  * to get the next input; this will either return a value of type `In`
  * or throw `reset` or `eof` if `reset` or `finish` was called.
  *
+ * You may also co_await on an instance of `peek` to preview a future
+ * input. The return value for `peek{i}` is related to the ith future
+ * call to `co_await next_input{}` (1-indexed). It is a value of a
+ * type that can be evaluated in a boolean context (if true, a value
+ * is available; if false, eof will be thrown at or before the ith
+ * call to `co_await next_input{}`), or dereferenced with the `*`
+ * operator to obtain the requested value. Awaiting on `peek` may also
+ * throw `reset`. In this case, any output will be cleared, but any
+ * input previewed through peeking without being consumed by awaiting
+ * on `next_input` will still be returned by future awaits on
+ * `next_input`.
+ *
  * You may also co_await on a `processor_subtask` with a compatible
  * input type; see `processor_subtask`'s class documentation. If
  * `finish` has been called previously and intercepted by a subtask,
@@ -250,13 +437,20 @@ struct processor_subtask;
  * used to produce the final value (but `co_return;` may be used to
  * finish the coroutine).
  *
- * `co_await` may only be applied to `next_input` or `processor_subtask`s.
- * Awaiting on other types is not supported (and will not compile).
+ * `co_await` may only be applied to `next_input`, `peek` or
+ * `processor_subtask`s. Awaiting on other types is not supported (and
+ * will not compile).
  *
  * Example usage:
  *  processor<char, std::string> partition_into_words() {
  *      std::string word;
  *      while (true) {
+ *          try {
+ *              auto p = co_await peek{};
+ *              while (p && !std::isalpha(*p)) co_await next_input {};
+ *          } catch (reset) {
+ *              continue;
+ *          }
  *          char c;
  *          try {
  *              c = co_await next_input {};
@@ -298,23 +492,23 @@ struct [[nodiscard]] processor {
   }
 
   /** Provides data for processing. */
-  void process(const In& in) {
+  void process(typename detail::input_traits<In>::input_type in) {
     if (*this) {
       throw std::logic_error(
           "Must read all output before providing more input.");
     }
-    handle_.promise().provide_input(in);
-    resume();
+    if (handle_.promise().input->provide_input(in)) resume();
   }
 
   /** Provides data for processing. */
-  void process(In&& in) {
+  void process(In&& in)
+    requires(!std::is_scalar_v<In>)
+  {
     if (*this) {
       throw std::logic_error(
           "Must read all output before providing more input.");
     }
-    handle_.promise().provide_input(std::move(in));
-    resume();
+    if (handle_.promise().input->provide_input(std::move(in))) resume();
   }
 
   /** Discard any unprocessed data and start fresh. */
@@ -325,14 +519,96 @@ struct [[nodiscard]] processor {
 
   /** Signal that the input is complete. */
   void finish() {
-    handle_.promise().finish();
+    handle_.promise().input->finish();
     resume();
   }
 
   struct promise_type {
-    std::variant<std::monostate, Out, std::exception_ptr> value;
     using input_type = In;
-    std::variant<std::monostate, In, struct reset, eof> input;
+
+    /** The input interface at the root of a processor call stack. */
+    class root_input_interface : public detail::InputInterface<In> {
+     public:
+      using input_traits = detail::input_traits<In>;
+
+      In get_input() override {
+        if (reset_) {
+          reset_ = false;
+          struct reset r {};
+          throw r;
+        }
+
+        if (eof_ && buf_.empty()) {
+          throw eof{};
+        }
+
+        if (buf_.empty()) {
+          throw std::logic_error("Attempted to resume without input");
+        }
+
+        auto in = std::move(buf_.front());
+        buf_.pop_front();
+        return in;
+      }
+
+      typename input_traits::peek_type peek(std::size_t i) override {
+        if (i == 0) throw std::invalid_argument("i must be nonzero");
+
+        if (reset_) {
+          reset_ = false;
+          struct reset r {};
+          throw r;
+        }
+
+        if (i > buf_.size()) {
+          if (!eof_)
+            throw std::logic_error("Attempted to resume before peeking fully.");
+          return input_traits::from_pointer(nullptr);
+        }
+        return input_traits::from_pointer(&buf_[i - 1]);
+      }
+
+      bool input_ready(std::size_t i) const override {
+        return eof_ || reset_ || (i ? buf_.size() >= i : !buf_.empty());
+      }
+
+      bool input_complete() const override { return eof_ && buf_.empty(); }
+
+      void set_peek_request(std::size_t peek_request) override {
+        peek_request_ = peek_request;
+      }
+
+      void reset() {
+        if (reset_ || eof_) throw std::logic_error("Spurious reset");
+        reset_ = true;
+      }
+
+      void finish() {
+        if (reset_ || eof_) throw std::logic_error("Spurious eof");
+        eof_ = true;
+      }
+
+      template <typename T>
+      bool provide_input(T&& in) {
+        std::size_t target_size = peek_request_ + (peek_request_ == 0);
+        if (buf_.size() >= target_size) {
+          throw std::logic_error(
+              "Must read output before providing more input.");
+        }
+        buf_.push_back(std::forward<T>(in));
+        return buf_.size() == target_size;
+      }
+
+     private:
+      bool reset_ = false;
+      bool eof_ = false;
+      std::size_t peek_request_ = 0;
+      std::deque<In> buf_;
+    };
+
+    detail::result_holder<Out> value;
+    std::shared_ptr<root_input_interface> input =
+        std::make_shared<root_input_interface>();
 
     bool output_ready() const { return value.index() != 0; }
 
@@ -361,53 +637,16 @@ struct [[nodiscard]] processor {
           std::move(value));
     }
 
-    bool input_ready() const { return input.index() != 0; }
-
-    In get_input_or_throw() {
-      return visit(
-          detail::overloaded{[](std::monostate&&) -> In {
-                               throw std::logic_error(
-                                   "Attempted to resume without input.");
-                             },
-                             [this](In&& in) -> In {
-                               auto v = std::move(in);
-                               input = std::monostate{};
-                               return v;
-                             },
-                             [this](struct reset r) -> In {
-                               input = std::monostate{};
-                               throw r;
-                             },
-                             [this](eof e) -> In {
-                               input = std::monostate{};
-                               throw e;
-                             }},
-          std::move(input));
-    }
-
     detail::processor_stack_frame* get_stack_frame() { return &frame_; }
 
-    void provide_input(In&& in) {
-      if (input.index() != 0) {
-        throw std::logic_error("Must read output before providing more input.");
-      }
-      input = std::move(in);
-    }
-
-    void provide_input(const In& in) {
-      if (input.index() != 0) {
-        throw std::logic_error("Must read output before providing more input.");
-      }
-      input = in;
+    std::shared_ptr<detail::InputInterface<In>> input_interface() {
+      return input;
     }
 
     void reset() {
-      struct reset r {};
-      input = r;
+      input->reset();
       value = std::monostate{};
     }
-
-    void finish() { input = eof{}; }
 
     std::suspend_always yield_value(const Out& v) {
       value = v;
@@ -434,7 +673,8 @@ struct [[nodiscard]] processor {
     await_transform(processor_subtask<I, SubR> task)
       requires(std::is_convertible_v<In, I>)
     {
-      if (frame_.finished_on_inner) throw eof{};
+      // Don't enter subtasks if input is complete.
+      if (input->input_complete()) throw eof{};
       return detail::subtask_awaiter<
           typename processor_subtask<I, SubR>::promise_type>{task.handle_};
     }
@@ -443,6 +683,11 @@ struct [[nodiscard]] processor {
         next_input) {
       return detail::input_awaiter<promise_type>{
           handle_type::from_promise(*this)};
+    }
+
+    [[nodiscard]] detail::peek_awaiter<promise_type> await_transform(peek p) {
+      return detail::peek_awaiter<promise_type>{
+          handle_type::from_promise(*this), p.i};
     }
 
    private:
@@ -460,7 +705,6 @@ struct [[nodiscard]] processor {
   friend struct promise_type;
 
   static_assert(detail::Promise<promise_type>);
-  static_assert(detail::RootPromise<promise_type>);
 
   explicit processor(promise_type* p)
       : handle_(handle_type::from_promise(*p)) {}
@@ -481,11 +725,10 @@ struct [[nodiscard]] processor {
  * `eof`, or an exception thrown by the subtask, including potentially
  * `eof` or `reset`).
  *
- * Implementors of subtask coroutines may `co_await next_input{}` as
- * in `processor` coroutines to get the next input (or an `eof` or
- * `reset` being thrown). They may also `co_await` on other
- * `processor_subtask`s with compatible input types. A subtask
- * coroutine must `co_return` a single value or throw an exception.
+ * As in `processor`s, implementors of subtask coroutines may await on
+ * `next_input`, `peek`, or other `processor_subtask` objects, with
+ * the same semantics. A subtask coroutine must `co_return` a single
+ * value or throw an exception.
  *
  * A subtask coroutine may safely intercept an `eof` and still
  * `co_return` a value. However, if `co_await` causes `reset` to be
@@ -496,38 +739,17 @@ struct [[nodiscard]] processor_subtask {
   struct promise_type;
   using handle_type = std::coroutine_handle<promise_type>;
 
-  struct promise_type {
+  struct promise_type : public detail::coroutine_return_mixin<R> {
     using input_type = In;
 
-    std::variant<std::monostate, R, std::exception_ptr> result;
-
-    bool output_ready() const { return result.index() != 0; }
-
-    R get_value_or_throw() {
-      return visit(detail::overloaded{[](std::monostate&&) -> R {
-                                        throw std::logic_error(
-                                            "Attempted to read prematurely.");
-                                      },
-                                      [this](R&& r) -> R {
-                                        auto v = std::move(r);
-                                        result = std::monostate{};
-                                        return v;
-                                      },
-                                      [this](std::exception_ptr&& ptr) -> R {
-                                        auto p = std::move(ptr);
-                                        result = std::monostate{};
-                                        std::rethrow_exception(p);
-                                      }},
-                   std::move(result));
+    std::shared_ptr<detail::InputInterface<In>> input_interface() {
+      if (input_) return input_;
+      if (input_interface_callback_) input_ = input_interface_callback_();
+      return input_;
     }
 
-    In get_input_or_throw() {
-      assert(input_callback_);
-      return input_callback_();
-    }
-
-    void set_input_callback(detail::InputCallback<In>&& c) {
-      input_callback_ = std::move(c);
+    void set_input_interface_callback(detail::InputInterfaceCallback<In>&& c) {
+      input_interface_callback_ = std::move(c);
     }
 
     detail::processor_stack_frame* get_stack_frame() { return &frame_; }
@@ -535,10 +757,6 @@ struct [[nodiscard]] processor_subtask {
     processor_subtask get_return_object() noexcept {
       return processor_subtask{this};
     }
-
-    void return_value(R&& r) { result = std::move(r); }
-
-    void unhandled_exception() { result = std::current_exception(); }
 
     std::suspend_never initial_suspend() const noexcept { return {}; }
 
@@ -550,7 +768,7 @@ struct [[nodiscard]] processor_subtask {
     await_transform(processor_subtask<I, SubR> task)
       requires(std::is_convertible_v<In, I>)
     {
-      if (frame_.finished_on_inner) throw eof{};
+      if (input_ && input_->input_complete()) throw eof{};
       return detail::subtask_awaiter<
           typename processor_subtask<I, SubR>::promise_type>{task.handle_};
     }
@@ -561,12 +779,18 @@ struct [[nodiscard]] processor_subtask {
           handle_type::from_promise(*this)};
     }
 
+    [[nodiscard]] detail::peek_awaiter<promise_type> await_transform(peek p) {
+      return detail::peek_awaiter<promise_type>{
+          handle_type::from_promise(*this), p.i};
+    }
+
    private:
     template <typename I, typename O>
     friend struct processor;
 
     detail::processor_stack_frame frame_{handle_type::from_promise(*this)};
-    detail::InputCallback<In> input_callback_;
+    std::shared_ptr<detail::InputInterface<In>> input_;
+    detail::InputInterfaceCallback<In> input_interface_callback_;
   };
 
   processor_subtask(const processor_subtask&) = delete;
@@ -617,11 +841,11 @@ processor<In, Out> compose(processor<In, M1> in, processor<M2, Out> out) {
     } catch (reset) {
       in.reset();
       out.reset();
-      continue;
     } catch (eof) {
       in.finish();
       done = true;
     }
+    while (out) co_yield out();
     while (in) {
       out.process(in());
       while (out) co_yield out();
@@ -642,11 +866,11 @@ processor<In, Expected<Out>> compose(processor<In, Expected<M1>> in,
     } catch (reset) {
       in.reset();
       out.reset();
-      continue;
     } catch (eof) {
       in.finish();
       done = true;
     }
+    while (out) co_yield out();
     while (in) {
       auto val = in();
       if (val.index() == 0) {
@@ -654,8 +878,9 @@ processor<In, Expected<Out>> compose(processor<In, Expected<M1>> in,
         while (out) co_yield out();
       } else {
         assert(val.index() == 1);
-        out.reset();
         co_yield get<1>(std::move(val));
+        out.reset();
+        while (out) co_yield out();
       }
     }
   }

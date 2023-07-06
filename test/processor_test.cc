@@ -23,13 +23,16 @@
 #include <exception>
 #include <functional>
 #include <ostream>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace emil::processor::testing {
 namespace {
 
 using ::testing::ElementsAre;
+using ::testing::Eq;
 
 struct handled_exception_in_partition {};
 struct unhandled_exception_in_partition_at_finish {};
@@ -771,6 +774,314 @@ TEST(ProcessorNestedSubtaskTest, ErrorInTopLevelOnYield) {
   EXPECT_THROW(p(), score_sentences_error_on_yield);
 }
 
+struct subtask_unexpected_eof {};
+struct subtask_unexpected_input {};
+
+/**
+ * Processes one command.
+ *
+ * Reads one char to determine the command.
+ *
+ * If the command is:
+ * - 'C': Reads an additional character to determine the
+ *   count, then reads `count` characters and returns them
+ *   as a string. If eof is reached before `count`
+ *   characters have been read, throws subtask_unexpected_eof.
+ * - 'P': Reads an additional character to determine the
+ *   count, then peeks ahead `count` characters and returns
+ *   the last as a one-character string.
+ * - Anything else: throws subtask_unexpected_input.
+ */
+processor_subtask<char, std::string> peek_machine_subtask() {
+  try {
+    switch (co_await next_input{}) {
+      case 'P': {
+        std::size_t count = co_await next_input{};
+        auto c = co_await peek{count};
+        co_return c ? std::string(1, *c) : "∅";
+      }
+
+      case 'C': {
+        std::size_t count = co_await next_input{};
+        std::string out;
+        while (count--) {
+          out += co_await next_input{};
+        }
+        co_return out;
+      }
+
+      default:
+        throw subtask_unexpected_input{};
+    }
+  } catch (eof) {
+    throw subtask_unexpected_eof{};
+  }
+}
+
+struct task_unexpected_eof {};
+struct task_unexpected_input {};
+
+/**
+ * Processes one command.
+ *
+ * Reads one char to determine the command.
+ *
+ * If the command is:
+ * - 'C': Reads an additional character to determine the
+ *   count, then reads `count` characters and returns them
+ *   as a string. If eof is reached before `count`
+ *   characters have been read, throws task_unexpected_eof.
+ * - 'P': Reads an additional character to determine the
+ *   count, then peeks ahead `count` characters and returns
+ *   the last as a one-character string.
+ * - 'S': Calls peek_machine_subtask to process an additional
+ *   command.
+ * - Anything else: throws task_unexpected_input.
+ */
+processor_subtask<char, std::string> peek_machine_task() {
+  try {
+    auto command = co_await next_input{};
+    switch (command) {
+      case 'P': {
+        std::size_t count = co_await next_input{};
+        auto c = co_await peek{count};
+        co_return c ? std::string(1, *c) : "∅";
+      }
+
+      case 'C': {
+        std::size_t count = co_await next_input{};
+        std::string out;
+        while (count--) {
+          out += co_await next_input{};
+        }
+        co_return out;
+      }
+
+      case 'S': {
+        co_return co_await peek_machine_subtask();
+      }
+
+      default:
+        throw task_unexpected_input{};
+    }
+  } catch (eof) {
+    throw task_unexpected_eof{};
+  }
+}
+
+struct processor_unexpected_eof {};
+struct processor_unexpected_input {};
+
+/**
+ * Processes commands.
+ *
+ * As long as input lasts, reads one char to determine the command.
+ *
+ * If the command is:
+ * - 'C': Reads an additional character to determine the
+ *   count, then reads `count` characters and returns them
+ *   as a string. If eof is reached before `count`
+ *   characters have been read, throws processor_unexpected_eof.
+ * - 'P': Reads an additional character to determine the
+ *   count, then peeks ahead `count` characters and returns
+ *   the last as a one-character string.
+ * - 'T': Calls peek_machine_task to process an additional
+ *   command.
+ * - Anything else: throws processor_unexpected_input.
+ *
+ * If reset while processing a command, discards partial results
+ * and starts over with reading a command character.
+ */
+processor<char, std::string> peek_machine_processor() {
+  while (true) {
+    char command;
+    try {
+      command = co_await next_input{};
+    } catch (eof) {
+      co_return;
+    } catch (reset) {
+      continue;
+    }
+    try {
+      switch (command) {
+        case 'P': {
+          std::size_t count = co_await next_input{};
+          auto c = co_await peek{count};
+          co_yield c ? std::string(1, *c) : "∅";
+          break;
+        }
+
+        case 'C': {
+          std::size_t count = co_await next_input{};
+          std::string out;
+          while (count--) {
+            out += co_await next_input{};
+          }
+          co_yield out;
+          break;
+        }
+
+        case 'T': {
+          co_yield co_await peek_machine_task();
+          break;
+        }
+
+        default:
+          throw task_unexpected_input{};
+      }
+    } catch (eof) {
+      throw task_unexpected_eof{};
+    } catch (reset) {
+    }
+  }
+}
+
+template <typename P>
+void feed_string(std::string_view s, P& processor) {
+  for (char c : s) {
+    ASSERT_FALSE(processor);
+    processor.process(c);
+  }
+}
+
+TEST(ProcessorPeekTest, BasicOperation) {
+  // input: C5helloP3C5worldP5P1
+  auto p = peek_machine_processor();
+
+  feed_string("C\5hello", p);
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("hello"));
+  ASSERT_FALSE(p);
+
+  feed_string("P\3C\5w", p);
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("w"));
+  ASSERT_FALSE(p);
+
+  feed_string("orld", p);
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("world"));
+  ASSERT_FALSE(p);
+
+  feed_string("P\5P\1", p);
+  ASSERT_FALSE(p);
+
+  p.finish();
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("∅"));
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("∅"));
+  ASSERT_FALSE(p);
+}
+
+TEST(ProcessorPeekTest, ResetRetainsBuffer) {
+  auto p = peek_machine_processor();
+
+  feed_string("P\6C\3oop", p);
+  ASSERT_FALSE(p);
+  p.reset();
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("oop"));
+}
+
+TEST(ProcessorTaskPeekTest, BasicOperation) {
+  // input: TC5helloTP3C5worldTP5P1
+  auto p = peek_machine_processor();
+
+  feed_string("TC\5hello", p);
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("hello"));
+  ASSERT_FALSE(p);
+
+  feed_string("TP\3C\5w", p);
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("w"));
+  ASSERT_FALSE(p);
+
+  feed_string("orld", p);
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("world"));
+  ASSERT_FALSE(p);
+
+  feed_string("TP\5P\1", p);
+  ASSERT_FALSE(p);
+
+  p.finish();
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("∅"));
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("∅"));
+  ASSERT_FALSE(p);
+}
+
+TEST(ProcessorTaskPeekTest, ResetRetainsBuffer) {
+  auto p = peek_machine_processor();
+
+  feed_string("TP\6C\3oop", p);
+  ASSERT_FALSE(p);
+  p.reset();
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("oop"));
+
+  feed_string("TP\7TC\3oop", p);
+  ASSERT_FALSE(p);
+  p.reset();
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("oop"));
+}
+
+TEST(ProcessorNestedTaskPeekTest, BasicOperation) {
+  // input: TC5helloTSP4TC5worldTSP5P1
+  auto p = peek_machine_processor();
+
+  feed_string("TC\5hello", p);
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("hello"));
+  ASSERT_FALSE(p);
+
+  feed_string("TSP\4TC\5w", p);
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("w"));
+  ASSERT_FALSE(p);
+
+  feed_string("orld", p);
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("world"));
+  ASSERT_FALSE(p);
+
+  feed_string("TSP\5P\1", p);
+  ASSERT_FALSE(p);
+
+  p.finish();
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("∅"));
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("∅"));
+  ASSERT_FALSE(p);
+}
+
+TEST(ProcessorNestedTaskPeekTest, ResetRetainsBuffer) {
+  auto p = peek_machine_processor();
+
+  feed_string("TSP\6C\3oop", p);
+  ASSERT_FALSE(p);
+  p.reset();
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("oop"));
+
+  feed_string("TSP\7TC\3oop", p);
+  ASSERT_FALSE(p);
+  p.reset();
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("oop"));
+
+  feed_string("TSP\10TSC\3oop", p);
+  ASSERT_FALSE(p);
+  p.reset();
+  ASSERT_TRUE(p);
+  ASSERT_THAT(p(), Eq("oop"));
+}
+
 processor<std::string, std::string> alphabetize_words() {
   while (true) {
     try {
@@ -957,6 +1268,111 @@ TEST(ProcessorComposeTest, ExceptionThrownAfterFinishOutput) {
   EXPECT_THROW(p(), sentence_fragment_exception);
 }
 
+struct sentence_insufficient_lookahead {};
+
+processor<std::string, std::vector<std::string>> peeking_sentence_processor() {
+  std::deque<std::string> buf;
+  auto first = co_await next_input{};
+  std::size_t lookahead = std::stoul(first);
+  for (std::size_t i = 0; i < lookahead; ++i) {
+    auto p = co_await peek{i + 1};
+    if (!p) throw sentence_insufficient_lookahead{};
+    buf.push_back(*p);
+  }
+
+  bool needs_reset = false;
+  while (!buf.empty()) {
+    std::vector<std::string> sentence;
+
+    try {
+      while (!buf.empty() && (sentence.empty() || sentence.back() != "STOP")) {
+        auto p = co_await peek{lookahead + 1};
+        if (p) buf.push_back(*p);
+
+        sentence.push_back(co_await next_input{});
+        assert(sentence.back() == buf.front());
+        buf.pop_front();
+      }
+      if (sentence.back() == "STOP") sentence.pop_back();
+      if (needs_reset) {
+        sentence.clear();
+        needs_reset = false;
+      } else {
+        co_yield std::move(sentence);
+        sentence.clear();
+      }
+    } catch (reset) {
+      needs_reset = true;
+      continue;
+    }
+  }
+  try {
+    co_await next_input{};
+    assert(false);
+  } catch (eof) {
+    co_return;
+  }
+}
+
+TEST(ProcessorPeekComposeTest, BasicOperation) {
+  const char input[] = "P\5C\3hi5C\5worldC\4STOPP\11C\1uC\5there";
+  auto p = peek_machine_processor() | peeking_sentence_processor();
+  std::vector<std::vector<std::string>> sentences;
+  for (const char* c = input; *c; ++c) {
+    p.process(*c);
+    while (p) sentences.push_back(p());
+  }
+  p.finish();
+  while (p) sentences.push_back(p());
+
+  EXPECT_THAT(sentences, ElementsAre(ElementsAre("hi5", "world"),
+                                     ElementsAre("r", "u", "there")));
+}
+
+TEST(ProcessorPeekComposeTest, ResetInput) {
+  const char wont_see[] = "C\0011C\4oopsP\10C\4STOP";
+  const char input[] = "C\3hi5C\5worldC\4STOPP\11C\1uC\5there";
+  auto p = peek_machine_processor() | peeking_sentence_processor();
+  std::vector<std::vector<std::string>> sentences;
+  for (const char* c = wont_see; *c; ++c) {
+    p.process(*c);
+    while (p) sentences.push_back(p());
+  }
+  p.reset();
+  while (p) sentences.push_back(p());
+  for (const char* c = input; *c; ++c) {
+    p.process(*c);
+    while (p) sentences.push_back(p());
+  }
+  p.finish();
+  while (p) sentences.push_back(p());
+
+  EXPECT_THAT(sentences, ElementsAre(ElementsAre("hi5", "world"),
+                                     ElementsAre("r", "u", "there")));
+}
+
+TEST(ProcessorPeekComposeTest, ResetOutput) {
+  const char wont_see[] = "C\0011C\4oops";
+  const char input[] = "C\4STOPC\3hi5C\5worldC\4STOPP\11C\1uC\5there";
+  auto p = peek_machine_processor() | peeking_sentence_processor();
+  std::vector<std::vector<std::string>> sentences;
+  for (const char* c = wont_see; *c; ++c) {
+    p.process(*c);
+    while (p) sentences.push_back(p());
+  }
+  p.reset();
+  while (p) sentences.push_back(p());
+  for (const char* c = input; *c; ++c) {
+    p.process(*c);
+    while (p) sentences.push_back(p());
+  }
+  p.finish();
+  while (p) sentences.push_back(p());
+
+  EXPECT_THAT(sentences, ElementsAre(ElementsAre("hi5", "world"),
+                                     ElementsAre("r", "u", "there")));
+}
+
 /**
  * Partitions a stream into words.
  *
@@ -1053,6 +1469,7 @@ sort_sentences_with_errors() {
       buf.clear();
     } catch (eof) {
       if (!buf.empty()) throw unhandled_exception_in_sort_at_finish{};
+      co_return;
     }
   }
 }
@@ -1220,5 +1637,229 @@ TEST(ProcessorComposeWithErrorsTest, ExceptionAtSortFinish) {
   EXPECT_THROW(p(), unhandled_exception_in_sort_at_finish);
 }
 
+processor_subtask<char, void> advance_past_semicolon() {
+  while ((co_await next_input{}) != ';') {
+  }
+}
+
+processor<char, Expected<std::string>> peek_machine_processor_with_errors() {
+  bool needs_reset = false;
+  while (true) {
+    if (needs_reset) {
+      co_await advance_past_semicolon();
+      needs_reset = false;
+    }
+    char command;
+    try {
+      command = co_await next_input{};
+    } catch (eof) {
+      co_return;
+    } catch (reset) {
+      continue;
+    }
+    try {
+      switch (command) {
+        case 'P': {
+          std::size_t count = co_await next_input{};
+          auto c = co_await peek{count};
+          if ((co_await next_input{}) != ';') {
+            co_yield std::make_exception_ptr(processor_unexpected_input{});
+            needs_reset = true;
+            break;
+          }
+          co_yield c ? std::string(1, *c) : "∅";
+          break;
+        }
+
+        case 'C': {
+          std::size_t count = co_await next_input{};
+          std::string out;
+          while (count--) {
+            out += co_await next_input{};
+          }
+          if ((co_await next_input{}) != ';') {
+            co_yield std::make_exception_ptr(processor_unexpected_input{});
+            needs_reset = true;
+            break;
+          }
+          co_yield out;
+          break;
+        }
+
+        default:
+          co_yield std::make_exception_ptr(processor_unexpected_input{});
+          needs_reset = true;
+      }
+    } catch (eof) {
+      throw task_unexpected_eof{};
+    } catch (reset) {
+      needs_reset = true;
+    } catch (std::invalid_argument) {
+      needs_reset = true;
+    }
+  }
+}
+
+struct sentence_unexpected_input {};
+
+processor<std::string, Expected<std::vector<std::string>>>
+peeking_sentence_processor_with_errors() {
+  std::deque<std::string> buf;
+  auto first = co_await next_input{};
+  std::size_t lookahead = std::stoul(first);
+  for (std::size_t i = 0; i < lookahead; ++i) {
+    auto p = co_await peek{i + 1};
+    if (!p) throw sentence_insufficient_lookahead{};
+    buf.push_back(*p);
+  }
+
+  bool needs_reset = false;
+  while (!buf.empty()) {
+    std::vector<std::string> sentence;
+
+    try {
+      while (!buf.empty() && (sentence.empty() || sentence.back() != "STOP")) {
+        auto p = co_await peek{lookahead + 1};
+        if (p) buf.push_back(*p);
+
+        sentence.push_back(co_await next_input{});
+        assert(sentence.back() == buf.front());
+        buf.pop_front();
+        if (sentence.back() == "ERROR") {
+          co_yield std::make_exception_ptr(sentence_unexpected_input{});
+          needs_reset = true;
+        }
+      }
+      if (sentence.back() == "STOP") sentence.pop_back();
+      if (needs_reset) {
+        sentence.clear();
+        needs_reset = false;
+      } else {
+        co_yield std::move(sentence);
+        sentence.clear();
+      }
+    } catch (reset) {
+      needs_reset = true;
+      continue;
+    }
+  }
+  try {
+    co_await next_input{};
+    assert(false);
+  } catch (eof) {
+    co_return;
+  }
+}
+
+TEST(ProcessorPeekComposeWithErrorsTest, BasicOperation) {
+  const char input[] = "P\6;C\3hi5;C\5world;C\4STOP;P\13;C\1u;C\5there;";
+  auto p = peek_machine_processor_with_errors() |
+           peeking_sentence_processor_with_errors();
+  std::vector<std::vector<std::string>> sentences;
+  for (const char* c = input; *c; ++c) {
+    p.process(*c);
+    while (p) sentences.push_back(get_value_or_throw(p()));
+  }
+  p.finish();
+  while (p) sentences.push_back(get_value_or_throw(p()));
+
+  EXPECT_THAT(sentences, ElementsAre(ElementsAre("hi5", "world"),
+                                     ElementsAre("r", "u", "there")));
+}
+
+TEST(ProcessorPeekComposeWithErrorsTest, ResetPeekMachine) {
+  const char wont_see[] = "C\0011;C\4oops;P\10;C\4STOP;";
+  const char input[] = "C\3hi5;C\5world;C\4STOP;P\13;C\1u;C\5there;";
+  auto p = peek_machine_processor_with_errors() |
+           peeking_sentence_processor_with_errors();
+  std::vector<std::vector<std::string>> sentences;
+  for (const char* c = wont_see; *c; ++c) {
+    p.process(*c);
+    while (p) sentences.push_back(get_value_or_throw(p()));
+  }
+  p.reset();
+  while (p) sentences.push_back(get_value_or_throw(p()));
+  for (const char* c = input; *c; ++c) {
+    p.process(*c);
+    while (p) sentences.push_back(get_value_or_throw(p()));
+  }
+  p.finish();
+  while (p) sentences.push_back(get_value_or_throw(p()));
+
+  EXPECT_THAT(sentences, ElementsAre(ElementsAre("hi5", "world"),
+                                     ElementsAre("r", "u", "there")));
+}
+
+TEST(ProcessorPeekComposeWithErrorsTest, ErrorInPeekMachine) {
+  const char wont_see[] = "C\0011;C\4oops;";
+  const char input[] =
+      "garbage;C\4STOP;C\3hi5;C\5world;C\4STOP;P\13;C\1u;C\5there;";
+  auto p = peek_machine_processor_with_errors() |
+           peeking_sentence_processor_with_errors();
+  std::vector<std::vector<std::string>> sentences;
+  for (const char* c = wont_see; *c; ++c) {
+    p.process(*c);
+    while (p) sentences.push_back(get_value_or_throw(p()));
+  }
+  p.process('Z');
+  ASSERT_THROW(get_value_or_throw(p()), processor_unexpected_input);
+  while (p) sentences.push_back(get_value_or_throw(p()));
+  for (const char* c = input; *c; ++c) {
+    p.process(*c);
+    while (p) sentences.push_back(get_value_or_throw(p()));
+  }
+  p.finish();
+  while (p) sentences.push_back(get_value_or_throw(p()));
+
+  EXPECT_THAT(sentences, ElementsAre(ElementsAre("hi5", "world"),
+                                     ElementsAre("r", "u", "there")));
+}
+
+TEST(ProcessorPeekComposeWithErrorsTest, ResetSentence) {
+  const char wont_see[] = "C\0011;C\4oops;";
+  const char input[] = "C\4STOP;C\3hi5;C\5world;C\4STOP;P\13;C\1u;C\5there;";
+  auto p = peek_machine_processor_with_errors() |
+           peeking_sentence_processor_with_errors();
+  std::vector<std::vector<std::string>> sentences;
+  for (const char* c = wont_see; *c; ++c) {
+    p.process(*c);
+    while (p) sentences.push_back(get_value_or_throw(p()));
+  }
+  p.reset();
+  while (p) sentences.push_back(get_value_or_throw(p()));
+  for (const char* c = input; *c; ++c) {
+    p.process(*c);
+    while (p) sentences.push_back(get_value_or_throw(p()));
+  }
+  p.finish();
+  while (p) sentences.push_back(get_value_or_throw(p()));
+
+  EXPECT_THAT(sentences, ElementsAre(ElementsAre("hi5", "world"),
+                                     ElementsAre("r", "u", "there")));
+}
+
+TEST(ProcessorPeekComposeWithErrorsTest, ErrorInSentence) {
+  const char wont_see[] = "C\0011;C\5ERROR;C\4oops";
+  const char input[] = "C\4STOP;C\3hi5;C\5world;C\4STOP;P\13;C\1u;C\5there;";
+  auto p = peek_machine_processor_with_errors() |
+           peeking_sentence_processor_with_errors();
+  std::vector<std::vector<std::string>> sentences;
+  for (const char* c = wont_see; *c; ++c) {
+    p.process(*c);
+    while (p) sentences.push_back(get_value_or_throw(p()));
+  }
+  p.process(';');
+  ASSERT_THROW(get_value_or_throw(p()), sentence_unexpected_input);
+  while (p) sentences.push_back(get_value_or_throw(p()));
+  for (const char* c = input; *c; ++c) {
+    p.process(*c);
+    while (p) sentences.push_back(get_value_or_throw(p()));
+  }
+  p.finish();
+  while (p) sentences.push_back(get_value_or_throw(p()));
+
+  EXPECT_THAT(sentences, ElementsAre(ElementsAre("hi5", "world"),
+                                     ElementsAre("r", "u", "there")));
+}
 }  // namespace
 }  // namespace emil::processor::testing
