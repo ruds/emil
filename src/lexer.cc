@@ -165,6 +165,7 @@ class line_counting_source_iterator {
 
   proxy operator++(int) {
     proxy result{source->advance()};
+    if (result.value == '\n') ++*line_number;
     return result;
   }
 
@@ -397,7 +398,10 @@ void Lexer::advance_past(std::u32string_view substr) {
   dpx::single_pass_search(
       line_counting_source_iterator{source_.get(), &next_line_}, {},
       begin(substr), end(substr));
-  if (!source_->at_end()) source_->advance();
+  if (!source_->at_end()) {
+    char32_t c = source_->advance();
+    if (c == '\n') ++next_line_;
+  }
 }
 
 Token Lexer::make_token(TokenType type, token_auxiliary_t aux) const {
