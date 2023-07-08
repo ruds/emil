@@ -350,7 +350,16 @@ struct coroutine_return_mixin {
                  std::move(result));
   }
 
-  void return_value(R&& r) { result = std::move(r); }
+  void return_value(R&& r)
+    requires(!std::is_scalar_v<R>)
+  {
+    result = std::move(r);
+  }
+  void return_value(R r)
+    requires(std::is_scalar_v<R>)
+  {
+    result = r;
+  }
   void unhandled_exception() { result = std::current_exception(); }
 };
 
