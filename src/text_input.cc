@@ -32,7 +32,7 @@ namespace {
 
 using processor::next_input;
 using processor::peek;
-using processor::processor_subtask;
+using processor::subtask;
 using processor::unit;
 
 }  // namespace
@@ -55,7 +55,7 @@ processor::processor<unit, char32_t> read_string(std::u32string in) {
 
 namespace {
 
-using CharSeqMatcher = processor_subtask<char32_t, bool>;
+using CharSeqMatcher = subtask<char32_t, bool>;
 
 template <typename CharPtr>
 bool is_gcb(CharPtr c, UGraphemeClusterBreak cat) {
@@ -163,7 +163,7 @@ CharSeqMatcher match_core(std::u32string& out) {
   co_return co_await match_core_noncontrol(out);
 }
 
-processor_subtask<char32_t, void> match_postcore_seq(std::u32string& out) {
+subtask<char32_t, void> match_postcore_seq(std::u32string& out) {
   for (auto c = co_await peek{};
        is_gcb(c, U_GCB_EXTEND) || is_gcb(c, U_GCB_ZWJ) ||
        is_gcb(c, U_GCB_SPACING_MARK);
@@ -174,7 +174,7 @@ processor_subtask<char32_t, void> match_postcore_seq(std::u32string& out) {
 
 }  // namespace
 
-processor_subtask<char32_t, std::u32string> next_grapheme_cluster() {
+subtask<char32_t, std::u32string> next_grapheme_cluster() {
   std::u32string out;
   try {
     co_await append_next_grapheme_cluster(out);
@@ -185,8 +185,7 @@ processor_subtask<char32_t, std::u32string> next_grapheme_cluster() {
   co_return out;
 }
 
-processor_subtask<char32_t, void> append_next_grapheme_cluster(
-    std::u32string& out) {
+subtask<char32_t, void> append_next_grapheme_cluster(std::u32string& out) {
   if (co_await match_crlf(out)) co_return;
   if (is_gcb(co_await peek{}, U_GCB_CONTROL)) {
     out += co_await next_input{};

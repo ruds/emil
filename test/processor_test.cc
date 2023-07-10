@@ -231,7 +231,7 @@ TEST(ProcessorTest, ExceptionThrownAfterFinish) {
   EXPECT_THROW(p(), sentence_fragment_exception);
 }
 
-processor_subtask<char, std::string> extract_word() {
+subtask<char, std::string> extract_word() {
   std::string word;
   char c;
   try {
@@ -420,7 +420,7 @@ struct score_sentences_error_on_yield {};
  * If BADWORD (or any other word with a score of 515) is read, throws
  * `score_word_error_on_return`.
  */
-processor_subtask<int, int> score_word() {
+subtask<int, int> score_word() {
   std::string word;
   int c;
   while (!std::isalpha(c = co_await next_input{})) {
@@ -453,7 +453,7 @@ processor_subtask<int, int> score_word() {
  *
  * Also throws any exceptions thrown by `score_word`.
  */
-processor_subtask<char, int> score_sentence() {
+subtask<char, int> score_sentence() {
   int sum = 0;
   while (true) {
     int w = co_await score_word();
@@ -792,7 +792,7 @@ struct subtask_unexpected_input {};
  *   the last as a one-character string.
  * - Anything else: throws subtask_unexpected_input.
  */
-processor_subtask<char, std::string> peek_machine_subtask() {
+subtask<char, std::string> peek_machine_subtask() {
   try {
     switch (co_await next_input{}) {
       case 'P': {
@@ -838,7 +838,7 @@ struct task_unexpected_input {};
  *   command.
  * - Anything else: throws task_unexpected_input.
  */
-processor_subtask<char, std::string> peek_machine_task() {
+subtask<char, std::string> peek_machine_task() {
   try {
     auto command = co_await next_input{};
     switch (command) {
@@ -1163,7 +1163,7 @@ processor<char, char> format_sol_string() {
 
 bool is_whitespace(char c) { return c == ' ' || c == '\t' || c == '\n'; }
 
-processor_subtask<char, void> skip_whitespace() {
+subtask<char, void> skip_whitespace() {
   while (const auto c = co_await peek{}) {
     if (is_whitespace(*c))
       co_await next_input{};
@@ -1881,7 +1881,7 @@ TEST(ProcessorComposeWithErrorsTest, ExceptionAtSortFinish) {
   EXPECT_THROW(p(), unhandled_exception_in_sort_at_finish);
 }
 
-processor_subtask<char, void> advance_past_semicolon() {
+subtask<char, void> advance_past_semicolon() {
   while ((co_await next_input{}) != ';') {
   }
 }

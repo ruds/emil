@@ -12,6 +12,197 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/**
+ * @file processor.h
+ *
+ * @brief Provides a coroutine-based stream processing framework.
+ *
+ * The library provides three primary types for stream processor
+ * authors, one of which is important for stream processor users.
+ *
+ * Users
+ * =====
+ *
+ * This primary type is `processor<In, Out>`, a coroutine return
+ * object that processes a stream of `In` to produce a stream of
+ * `Out`. To use a `processor<In, Out>`, provide it with an
+ * element of input with `process()`, then read output as long
+ * as the `processor` evaluates to `true` with `operator()()`.
+ * When the input stream is complete, call `finish()` and read
+ * any final output.
+ *
+ * A brief example:
+ *
+ *     processor<char, std::string> words();
+ *
+ *     std::vector<std::string> w;
+ *     auto p = words();
+ *     for (char c : input) {
+ *         p.process(c);
+ *         while (p) w.push_back(p());
+ *     }
+ *     p.finish();
+ *     while (p) w.push_back(p());
+ *
+ * `processor<In, Out>` also provides `reset()`, which indicates to
+ * the stream processor that any partially processed input should be
+ * discarded. The exact semantics of this reset should be documented
+ * by the author of the stream processor. Just as with `process()`
+ * and `finish()`, after calling `reset()` any output should be
+ * drained from the `processor`. For example, a `processor` converting
+ * tokens to abstract syntax trees may need to be reset if a lexing
+ * error requires that the current token sequence be discarded.
+ *
+ * `processor`s can be composed using the `|` operator, where the
+ * output type of the left-hand side is convertible to the input type
+ * of the right-hand side. Composing two `processor`s that produce
+ * `Expected` values has special semantics; see the documentation for
+ * `operator|()`.
+ *
+ * A more complicated example:
+ *
+ *     processor<std::string, char> chars();
+ *     processor<char, std::string> words();
+ *
+ *     auto p = chars() | words();
+ *     while (event = pollConsole()) {
+ *         if (event.type == CTRL_C) {
+ *             p.reset();
+ *             while (p) doSomethingWith(p());
+ *         } else if (event.type == CTRL_D) {
+ *             p.finish();
+ *             while (p) doSomethingWith(p());
+ *             break;
+ *         } else {
+ *             p.process(event.data());
+ *             while (p) doSomethingWith(p());
+ *         }
+ *     }
+ *
+ * Library Authors
+ * ===============
+ *
+ * `processor`
+ * -----------
+ *
+ * To write a `processor` coroutine, there are only 5 concepts that can
+ * be `co_await`ed.
+ *
+ * 1. To consume the next element of the input stream,
+ *    `co_await next_input{}`. There are 3 possible outcomes:
+ *
+ *    - The next element of the input stream is returned due to the
+ *      caller's call to `process()`.
+ *    - `reset` is thrown due to the caller's call to `reset()`.
+ *    - `eof` is thrown due to the caller's call to `finish()`.
+ *
+ *    Neither `reset` nor `eof` may be propagated beyond the coroutine.
+ *
+ * 2. To look ahead the ith buffered future element of the input stream,
+ *    `co_await peek{i}`. The default value of `i` if omitted is 1, which
+ *    indicates that the next element should be buffered. This returns
+ *    something that acts like a pointer to the input type (but e.g. for
+ *    a scalar type is a `std::optional`). To get the exact type, use
+ *    `detail::input_type<T>::peek_type`, but generally it is best to
+ *    use `auto`, and interact only through boolean evaluation and
+ *    dereferencing using `operator*()`. The value will evaluate to
+ *    false if the input stream will end before the ith element can be
+ *    read, and true otherwise.
+ *
+ * 3. To call a `subtask`, you co_await on it, which will evaluate to
+ *    the value `co_return`ed by the `subtask` (or throw `eof`,
+ *    `reset`, or anything the `subtask` coroutine happens to throw).
+ *    In particular, it will throw `eof` if `finish()` has been called
+ *    and no further input is buffered. See below for more about subtasks.
+ *
+ * 4. To determine whether a `subprocess` has more output available,
+ *    `co_await` on the value returned by its `done()` function.
+ *
+ * 5. To read the next output element from a `subprocess`, `co_await`
+ *    on the `subprocess`. See below for more about `subprocesses.`
+ *
+ * Attempting to `co_await` on other types will not compile.
+ *
+ * To produce output elements, `co_yield` one at a time. `co_return`
+ * may only be called without a value.
+ *
+ * Example usage:
+ *
+ *     processor<char, std::string> words() {
+ *         std::string word;
+ *         while (true) {
+ *             auto p = co_await peek{};
+ *             while (p && !std::isalpha(*p)) {
+ *                 co_await next_input{};
+ *                 p = co_await peek{};
+ *             }
+ *         } catch (reset) {
+ *             continue;
+ *         }
+ *         char c;
+ *         try {
+ *             c = co_await next_input {};
+ *         } catch (reset) {
+ *             word.clear();
+ *             continue;
+ *         } catch (eof) {
+ *             break;
+ *         }
+ *         if (std::isalpha(c)) {
+ *             word.push_back(c);
+ *         } else if (!word.empty()) {
+ *             co_yield std::move(word);
+ *             word.clear();
+ *         }
+ *         if (!word.empty()) co_yield(std::move(word));
+ *     }
+ *
+ * `subprocess`
+ * ------------
+ *
+ * A `subprocess` is a `processor` that shares a lookahead buffer with
+ * its caller. This allows peeking ahead in either the caller or the
+ * subprocess coroutine without the danger of discarding input.
+ *
+ * A `subprocess<In, Out>` is obtained by calling `as_subprocess()` on
+ * an rvalue of type `processor<In, Out>`. This must be done before any
+ * other interaction with the `processor`, which is left in a null state
+ * and is only suitable for destruction.
+ *
+ * The `subprocess` will produce data as long as `co_await done()` is
+ * true; its output is obtained by `co_await`ing on the `subprocess`
+ * itself.
+ *
+ * Example usage:
+ *
+ *     auto subp = get_process().as_subprocess();
+ *     while (!co_await subp.done()) {
+ *         auto next = co_await subp;
+ *         // do something with next, e.g. co_yield.
+ *     }
+ *
+ * Unlike top-level processors, a subprocess coroutine may throw
+ * `reset` or `eof`, or alternatively it may swallow either. The rules
+ * for implementing a subprocess coroutine are otherwise identical to
+ * those for implementing a processor coroutine.
+ *
+ * `subtask`
+ * ---------
+ *
+ * A `subtask` is a coroutine that shares a lookahead buffer with its
+ * caller and may process 0 or more elements of the input stream,
+ * while producing a single value.
+ *
+ * A subtask coroutine may `co_await` on any of the first 3 types
+ * allowed by a `processor`; it may not `co_await` on
+ * `subprocess.done()` or `subprocess` objects.
+ *
+ * Unlike `processor`s, a `subtask` may allow `eof` to propagate to
+ * its caller, though it may also safely handle `eof` and still
+ * `co_return` a value. However, it *must* allow `reset` to propagate
+ * to its caller.
+ */
+
 #pragma once
 
 #include <cassert>
@@ -30,10 +221,10 @@
 namespace emil::processor {
 
 /** Marker class used by coroutines returning `processor` or
- * `processor_subtask` to request the next input item. */
+ * `subtask` to request the next input item. */
 struct next_input {};
 /** Marker class used by coroutines returning `processor` or
- * `processor_subtask` to request a preview of the `i`th future input item. */
+ * `subtask` to request a preview of the `i`th future input item. */
 struct peek {
   std::size_t i = 1;
 };
@@ -56,7 +247,7 @@ struct overloaded : Ts... {
 template <typename... Ts>
 overloaded(Ts...) -> overloaded<Ts...>;
 
-/** Used to track the execution stack of `processor_subtask`s. */
+/** Used to track the execution stack of `subtask`s. */
 struct processor_stack_frame {
   std::coroutine_handle<> handle;
   processor_stack_frame* inner = nullptr;
@@ -83,7 +274,7 @@ struct processor_stack_frame {
   }
 };
 
-/** Type traits for the input type for a processor/processor_subtask. */
+/** Type traits for the input type for a processor/subtask. */
 template <typename In>
 struct input_traits {
   using peek_type = const In*;
@@ -319,7 +510,7 @@ struct coro_awaiter {
   std::coroutine_handle<> h;
 };
 
-/** Manages the execution of `co_await processor_subtask`. */
+/** Manages the execution of `co_await subtask`. */
 template <typename P>
 struct subtask_awaiter {
   explicit subtask_awaiter(std::coroutine_handle<P> h) : handle_(h) {}
@@ -456,7 +647,7 @@ peek_awaiter<P>::~peek_awaiter() {
   static_assert(Promise<P>);
 }
 
-/** Holds the result of a processor or processor_subtask. */
+/** Holds the result of a processor or subtask. */
 template <typename T>
 using result_holder = std::variant<std::monostate, T, std::exception_ptr>;
 
@@ -679,93 +870,6 @@ struct subprocess {
 
 /**
  * A coroutine state object used to process streams.
- *
- * As a processor client, the idea is to provide one piece of input
- * data, read all output, and repeat. The stream can be reset if
- * necessary (e.g. because a lexing error requires that a
- * partially-parsed expression be abandoned). When the input stream is
- * complete, call `finish` and read any remaining output. Any of
- * `process`, `reset`, or `finish` may advance the stream, so after
- * calling one of those functions, the `processor` object must be
- * checked for additional output.
- *
- * Example usage:
- *  p = <get processor from coroutine factory>;
- *  while (event = pollEvent()) {
- *    if (event.type == CTRL_C) {
- *      p.reset();
- *      while (p) doSomethingWith(p());
- *    } else if (event.type == CTRL_D) {
- *      p.finish();
- *      while (p) doSomethingWith(p());
- *    } else {
- *      p.process(event.key);
- *      while (p) doSomethingWith(p());
- *    }
- *  }
- *
- * As a processor implementor, co_await on an instance of `next_input`
- * to get the next input; this will either return a value of type `In`
- * or throw `reset` or `eof` if `reset` or `finish` was called.
- *
- * You may also co_await on an instance of `peek` to preview a future
- * input. The return value for `peek{i}` is related to the ith future
- * call to `co_await next_input{}` (1-indexed). It is a value of a
- * type that can be evaluated in a boolean context (if true, a value
- * is available; if false, eof will be thrown at or before the ith
- * call to `co_await next_input{}`), or dereferenced with the `*`
- * operator to obtain the requested value. Awaiting on `peek` may also
- * throw `reset`. In this case, any output will be cleared, but any
- * input previewed through peeking without being consumed by awaiting
- * on `next_input` will still be returned by future awaits on
- * `next_input`.
- *
- * You may also co_await on a `processor_subtask` with a compatible
- * input type; see `processor_subtask`'s class documentation. If
- * `finish` has been called previously and intercepted by a subtask,
- * `co_await`ing on a subtask or `next_input` will result in `eof`
- * being thrown.
- *
- * Values must be produced using `co_yield`; `co_return` cannot be
- * used to produce the final value (but `co_return;` may be used to
- * finish the coroutine).
- *
- * `co_await` may only be applied to `next_input`, `peek` or
- * `processor_subtask`s. Awaiting on other types is not supported (and
- * will not compile).
- *
- * Example usage:
- *  processor<char, std::string> partition_into_words() {
- *      std::string word;
- *      while (true) {
- *          try {
- *              auto p = co_await peek{};
- *              while (p && !std::isalpha(*p)) co_await next_input {};
- *          } catch (reset) {
- *              continue;
- *          }
- *          char c;
- *          try {
- *              c = co_await next_input {};
- *          } catch (reset) {
- *              word.clear();
- *              continue;
- *          } catch (eof) {
- *              break;
- *          }
- *          if (std::isalpha(c)) {
- *              word.push_back(c);
- *          } else {
- *              if (!word.empty()) {
- *                  co_yield std::move(word);
- *                  word.clear();
- *              }
- *          }
- *      }
- *      if (!word.empty()) co_yield(std::move(word));
- *  }
- *
- * Processors can be converted to subprocessors using `as_subprocess()`.
  */
 template <typename In, typename Out>
 struct [[nodiscard]] processor {
@@ -861,26 +965,9 @@ struct [[nodiscard]] processor {
 
 /**
  * A coroutine state object used for "helper" coroutines for `processor`s.
- *
- * A `processor_subtask` may be `co_await`ed upon either within a
- * `processor` coroutine, or within another `processor_subtask`
- * coroutine. The result of the `co_await` expression will be the
- * value of type `R` that was `co_return`ed by the subtask (or an
- * `eof` exception if a previously executed subtask intercepted an
- * `eof`, or an exception thrown by the subtask, including potentially
- * `eof` or `reset`).
- *
- * As in `processor`s, implementors of subtask coroutines may await on
- * `next_input`, `peek`, or other `processor_subtask` objects, with
- * the same semantics. A subtask coroutine must `co_return` a single
- * value or throw an exception.
- *
- * A subtask coroutine may safely intercept an `eof` and still
- * `co_return` a value. However, if `co_await` causes `reset` to be
- * thrown, it must be propagated to the caller.
  */
 template <typename In, typename R>
-struct [[nodiscard]] processor_subtask {
+struct [[nodiscard]] subtask {
   struct promise_type;
   using handle_type = std::coroutine_handle<promise_type>;
 
@@ -899,9 +986,7 @@ struct [[nodiscard]] processor_subtask {
 
     detail::processor_stack_frame* get_stack_frame() { return &frame_; }
 
-    processor_subtask get_return_object() noexcept {
-      return processor_subtask{this};
-    }
+    subtask get_return_object() noexcept { return subtask{this}; }
 
     std::suspend_never initial_suspend() const noexcept { return {}; }
 
@@ -915,13 +1000,13 @@ struct [[nodiscard]] processor_subtask {
 
     template <typename I, typename SubR>
     [[nodiscard]] detail::subtask_awaiter<
-        typename processor_subtask<I, SubR>::promise_type>
-    await_transform(processor_subtask<I, SubR> task)
+        typename subtask<I, SubR>::promise_type>
+    await_transform(subtask<I, SubR> task)
       requires(std::is_convertible_v<In, I>)
     {
       if (input_ && input_->input_complete()) throw eof{};
-      return detail::subtask_awaiter<
-          typename processor_subtask<I, SubR>::promise_type>{task.handle_};
+      return detail::subtask_awaiter<typename subtask<I, SubR>::promise_type>{
+          task.handle_};
     }
 
     [[nodiscard]] detail::input_awaiter<promise_type> await_transform(
@@ -944,11 +1029,10 @@ struct [[nodiscard]] processor_subtask {
     detail::InputInterfaceCallback<In> input_interface_callback_;
   };
 
-  processor_subtask(const processor_subtask&) = delete;
-  processor_subtask(processor_subtask&& o)
-      : handle_(std::exchange(o.handle_, nullptr)) {}
+  subtask(const subtask&) = delete;
+  subtask(subtask&& o) : handle_(std::exchange(o.handle_, nullptr)) {}
 
-  ~processor_subtask() {
+  ~subtask() {
     if (handle_) handle_.destroy();
   }
 
@@ -959,20 +1043,19 @@ struct [[nodiscard]] processor_subtask {
   template <typename, typename>
   friend struct processor;
   template <typename, typename>
-  friend struct processor_subtask;
+  friend struct subtask;
 
   static_assert(detail::Promise<promise_type>);
   static_assert(detail::SubtaskPromise<promise_type>);
 
-  explicit processor_subtask(promise_type* p)
-      : handle_(handle_type::from_promise(*p)) {}
+  explicit subtask(promise_type* p) : handle_(handle_type::from_promise(*p)) {}
 
   handle_type handle_;
 };
 
 /** Repeatedly call `t`, streaming its co_returned values. */
 template <typename In, typename Out>
-processor<In, Out> repeatedly(processor_subtask<In, Out> (*t)()) {
+processor<In, Out> repeatedly(subtask<In, Out> (*t)()) {
   while (true) {
     try {
       co_yield co_await t();
@@ -1233,16 +1316,15 @@ struct processor_promise {
   }
 
   template <typename I, typename SubR>
-  [[nodiscard]] detail::subtask_awaiter<
-      typename processor_subtask<I, SubR>::promise_type>
-  await_transform(processor_subtask<I, SubR> task)
+  [[nodiscard]] detail::subtask_awaiter<typename subtask<I, SubR>::promise_type>
+  await_transform(subtask<I, SubR> task)
     requires(std::is_convertible_v<In, I>)
   {
     yielded_last = false;
     // Don't enter subtasks if input is complete.
     if (input && input->input_complete()) throw eof{};
-    return detail::subtask_awaiter<
-        typename processor_subtask<I, SubR>::promise_type>{task.handle_};
+    return detail::subtask_awaiter<typename subtask<I, SubR>::promise_type>{
+        task.handle_};
   }
 
   [[nodiscard]] detail::input_awaiter<processor_promise> await_transform(
@@ -1304,7 +1386,9 @@ processor<In, Out> compose(processor<In, M1> in, processor<M2, Out> out) {
 /** Compose two pipelines that may produce handled errors. */
 template <typename In, typename M1, typename M2, typename Out>
 processor<In, Expected<Out>> compose(processor<In, Expected<M1>> in,
-                                     processor<M2, Expected<Out>> out) {
+                                     processor<M2, Expected<Out>> out)
+  requires(!std::is_convertible_v<Expected<M1>, M2>)
+{
   bool done = false;
   while (!done) {
     try {

@@ -26,8 +26,8 @@ processor::processor<processor::unit, char32_t> read_stream(
 
 processor::processor<processor::unit, char32_t> read_string(std::u32string in);
 
-processor::processor_subtask<char32_t, std::u32string> next_grapheme_cluster();
-processor::processor_subtask<char32_t, void> append_next_grapheme_cluster(
+processor::subtask<char32_t, std::u32string> next_grapheme_cluster();
+processor::subtask<char32_t, void> append_next_grapheme_cluster(
     std::u32string& out);
 
 }  // namespace emil
