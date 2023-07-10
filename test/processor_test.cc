@@ -1097,6 +1097,235 @@ TEST(ProcessorRepeatedlyTest, BasicOperation) {
                                  "over", "the", "lazy", "dog"));
 }
 
+processor<char, char> replicate(std::size_t num) {
+  while (true) {
+    try {
+      co_yield '0' + num;
+      const char c = co_await next_input{};
+      for (std::size_t i = 0; i < num; ++i) {
+        co_yield c;
+      }
+    } catch (eof) {
+      co_return;
+    } catch (reset) {
+    }
+  }
+}
+
+processor<char, char> replicator() {
+  try {
+    const int num = co_await next_input{};
+    auto p = replicate(num).as_subprocess();
+    while (!co_await p.done()) {
+      const char c = co_await p;
+      co_yield c;
+    }
+  } catch (eof) {
+  } catch (reset) {
+  }
+}
+
+TEST(ProcessorSubprocessTest, BasicOperation) {
+  const char input[] = "\3abc";
+  auto p = replicator();
+  std::string out;
+  for (const char* c = input; *c; ++c) {
+    p.process(*c);
+    while (p) out += p();
+  }
+  p.finish();
+  while (p) out += p();
+  EXPECT_THAT(out, Eq("3aaa3bbb3ccc3"));
+}
+
+struct invalid_sol {};
+struct unterminated_string : public invalid_sol {};
+struct unterminated_object : public invalid_sol {};
+struct eof_in_object_key : public invalid_sol {};
+struct missing_value_in_object : public invalid_sol {};
+struct missing_comma_in_object : public invalid_sol {};
+struct invalid_sol_value : public invalid_sol {};
+
+processor<char, char> format_sol_string() {
+  const char first = co_await next_input{};
+  assert(first == '"');
+  co_yield '"';
+  try {
+    while (true) {
+      const char c = co_await next_input{};
+      co_yield c;
+      if (c == '"') co_return;
+    }
+  } catch (eof) {
+    throw unterminated_string{};
+  }
+}
+
+bool is_whitespace(char c) { return c == ' ' || c == '\t' || c == '\n'; }
+
+processor_subtask<char, void> skip_whitespace() {
+  while (const auto c = co_await peek{}) {
+    if (is_whitespace(*c))
+      co_await next_input{};
+    else
+      co_return;
+  }
+}
+
+bool is_letter(char c) {
+  return c == '_' || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z');
+}
+
+processor<char, char> format_sol_object_key() {
+  while (const auto c = co_await peek{}) {
+    if (is_letter(*c))
+      co_yield co_await next_input{};
+    else
+      co_return;
+  }
+  throw eof_in_object_key{};
+}
+
+processor<char, char> format_sol_value(int indent_level);
+
+#define PROCESSOR_TEST_INDENT(indent_level) \
+  for (int i = 0; i < indent_level; ++i) co_yield ' '
+
+processor<char, char> format_sol_object(int indent_level) {
+  const char opening = co_await next_input{};
+  assert(opening == '{');
+  co_yield '{';
+  try {
+    co_await skip_whitespace();
+    const auto first = co_await peek{};
+    if (!first) throw unterminated_object{};
+    if (*first == '}') {
+      co_await next_input{};
+      co_yield '}';
+      co_return;
+    }
+    while (true) {
+      co_yield '\n';
+      PROCESSOR_TEST_INDENT(indent_level + 4);
+      auto key = format_sol_object_key().as_subprocess();
+      while (!co_await key.done()) co_yield co_await key;
+      co_await skip_whitespace();
+      if (co_await next_input{} != ':') throw missing_value_in_object{};
+      co_yield ':';
+      co_yield ' ';
+      co_await skip_whitespace();
+      auto value = format_sol_value(indent_level + 4).as_subprocess();
+      while (!co_await value.done()) co_yield co_await value;
+      co_await skip_whitespace();
+      const auto last = co_await next_input{};
+      if (last == '}') {
+        co_yield '\n';
+        PROCESSOR_TEST_INDENT(indent_level);
+        co_yield '}';
+        co_return;
+      }
+      if (last != ',') throw missing_comma_in_object{};
+      co_yield ',';
+      co_await skip_whitespace();
+    }
+  } catch (eof) {
+    throw unterminated_object{};
+  }
+}
+
+#undef PROCESSOR_TEST_INDENT
+
+processor<char, char> format_sol_value(int indent_level) {
+  const auto c = co_await peek{};
+  if (!c) throw eof{};
+  switch (*c) {
+    case '{': {
+      auto p = format_sol_object(indent_level).as_subprocess();
+      while (!co_await p.done()) {
+        const char c = co_await p;
+        co_yield c;
+      }
+      co_return;
+    }
+
+    case '"': {
+      auto p = format_sol_string().as_subprocess();
+      while (!co_await p.done()) {
+        const char c = co_await p;
+        co_yield c;
+      }
+      co_return;
+    }
+
+    default:
+      throw invalid_sol_value{};
+  }
+}
+
+processor<char, std::unique_ptr<std::string>> format_sol_stream() {
+  while (true) {
+    try {
+      auto out = std::make_unique<std::string>();
+      co_await skip_whitespace();
+      auto p = format_sol_value(0).as_subprocess();
+      while (!co_await p.done()) {
+        const char c = co_await p;
+        *out += c;
+      }
+      co_yield std::move(out);
+    } catch (eof) {
+      co_return;
+    } catch (reset) {
+    }
+  }
+}
+
+TEST(ProcessorSubprocessSolTest, BasicOperation) {
+  const char input[] = R"(""
+    "foo" "bar"
+"baz"
+{
+
+
+}
+{foo: "bar"}
+{foo: "bar", baz: "quux"}
+{foo: {
+  bar: "baz",
+  quux: {waldo: "xyzzy", plugh: { grault: "thud"}, fred: "garply"}
+}}
+)";
+  auto p = format_sol_stream();
+  std::vector<std::string> values;
+  for (const char* c = input; *c; ++c) {
+    p.process(*c);
+    while (p) values.push_back(std::move(*p()));
+  }
+  p.finish();
+  while (p) values.push_back(std::move(*p()));
+
+  EXPECT_THAT(values,
+              ElementsAre("\"\"", "\"foo\"", "\"bar\"", "\"baz\"", "{}", R"({
+    foo: "bar"
+})",
+                          R"({
+    foo: "bar",
+    baz: "quux"
+})",
+                          R"({
+    foo: {
+        bar: "baz",
+        quux: {
+            waldo: "xyzzy",
+            plugh: {
+                grault: "thud"
+            },
+            fred: "garply"
+        }
+    }
+})"));
+}
+
 processor<std::string, std::string> alphabetize_words() {
   while (true) {
     try {
