@@ -753,7 +753,9 @@ struct subprocess_done {
     return handle_;
   }
 
-  bool await_resume() const noexcept { return !handle_ || handle_.done(); }
+  bool await_resume() const noexcept {
+    return !handle_ || (handle_.done() && !handle_.promise().output_ready());
+  }
 
   explicit subprocess_done(handle_type h) : handle_(h) {}
 
@@ -796,7 +798,7 @@ struct subprocess {
   }
 
   bool await_ready() {
-    if (!handle_ || handle_.done())
+    if (!handle_ || (handle_.done() && !handle_.promise().output_ready()))
       throw std::logic_error("Can't co_await a finished subprocess");
     auto& p = handle_.promise();
     return p.state == detail::SUBPROCESS_LINKED && p.output_ready();
