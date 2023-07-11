@@ -24,6 +24,7 @@
 #include "emil/bigint.h"  // IWYU pragma: keep
 #include "emil/collections.h"
 #include "emil/gc.h"
+#include "emil/misc.h"
 #include "emil/tree.h"
 #include "emil/types.h"
 
@@ -92,18 +93,6 @@ typing::TypePtr pattern_t::arg_type() const {
   assert(is_constructed());
   return get<constructed_t>(repr_).arg_type;
 }
-
-namespace {
-
-template <typename... Ts>
-struct overloaded : Ts... {
-  using Ts::operator()...;
-};
-
-template <typename... Ts>
-overloaded(Ts...) -> overloaded<Ts...>;
-
-}  // namespace
 
 collections::ArrayPtr<pattern_t> pattern_t::subpatterns() const {
   assert(!is_wildcard());

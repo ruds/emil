@@ -167,7 +167,7 @@
  * A `subprocess<In, Out>` is obtained by calling `as_subprocess()` on
  * an rvalue of type `processor<In, Out>`. This must be done before any
  * other interaction with the `processor`, which is left in a null state
- * and is only suitable for destruction.
+ * and is only suitable for destruction or being assigned to.
  *
  * The `subprocess` will produce data as long as `co_await done()` is
  * true; its output is obtained by `co_await`ing on the `subprocess`
@@ -218,6 +218,8 @@
 #include <utility>
 #include <variant>
 
+#include "emil/misc.h"
+
 namespace emil::processor {
 
 /** Marker class used by coroutines returning `processor` or
@@ -238,14 +240,6 @@ struct eof {};
 struct unit {};
 
 namespace detail {
-
-template <typename... Ts>
-struct overloaded : Ts... {
-  using Ts::operator()...;
-};
-
-template <typename... Ts>
-overloaded(Ts...) -> overloaded<Ts...>;
 
 /** Used to track the execution stack of `subtask`s. */
 struct processor_stack_frame {
@@ -659,21 +653,21 @@ struct coroutine_return_mixin {
   bool output_ready() const { return result.index() != 0; }
 
   R get_value_or_throw() {
-    return visit(detail::overloaded{[](std::monostate&&) -> R {
-                                      throw std::logic_error(
-                                          "Attempted to read prematurely.");
-                                    },
-                                    [this](R&& r) -> R {
-                                      auto v = std::move(r);
-                                      result = std::monostate{};
-                                      return v;
-                                    },
-                                    [this](std::exception_ptr&& ptr) -> R {
-                                      auto p = std::move(ptr);
-                                      result = std::monostate{};
-                                      std::rethrow_exception(p);
-                                    }},
-                 std::move(result));
+    return visit(
+        overloaded{[](std::monostate&&) -> R {
+                     throw std::logic_error("Attempted to read prematurely.");
+                   },
+                   [this](R&& r) -> R {
+                     auto v = std::move(r);
+                     result = std::monostate{};
+                     return v;
+                   },
+                   [this](std::exception_ptr&& ptr) -> R {
+                     auto p = std::move(ptr);
+                     result = std::monostate{};
+                     std::rethrow_exception(p);
+                   }},
+        std::move(result));
   }
 
   void return_value(R&& r)
@@ -946,6 +940,8 @@ struct [[nodiscard]] processor {
     return *this;
   }
 
+  processor() : handle_(nullptr) {}
+
   ~processor() {
     if (handle_) handle_.destroy();
   }
@@ -1071,10 +1067,10 @@ using Expected = std::variant<T, std::exception_ptr>;
 
 template <typename T>
 T&& get_value_or_throw(Expected<T>&& e) {
-  return visit(detail::overloaded{[](T&& t) -> T&& { return std::move(t); },
-                                  [](std::exception_ptr&& p) -> T&& {
-                                    std::rethrow_exception(p);
-                                  }},
+  return visit(overloaded{[](T&& t) -> T&& { return std::move(t); },
+                          [](std::exception_ptr&& p) -> T&& {
+                            std::rethrow_exception(p);
+                          }},
                std::move(e));
 }
 
@@ -1199,7 +1195,7 @@ struct processor_promise {
 
   Out get_value_or_throw() {
     return visit(
-        detail::overloaded{
+        overloaded{
             [](std::monostate&&) -> Out {
               throw std::logic_error("Attempted to read when not ready.");
             },
