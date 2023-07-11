@@ -101,7 +101,7 @@ std::optional<GraphemeTestCase> parse_line(const std::string& line) {
                           .description = {it, e}};
 }
 
-TEST(SourceGraphemeClusterProcessorTest, UnicodeTestCases) {
+TEST(TextInputGraphemeClusterProcessorTest, UnicodeTestCases) {
   const char* test_data_dir = std::getenv("TEST_DATA_DIR");
   ASSERT_TRUE(test_data_dir) << "TEST_DATA_DIR must be set in the environment.";
   std::ifstream infile(fmt::format("{}/GraphemeBreakTest.txt", test_data_dir));

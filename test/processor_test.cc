@@ -234,6 +234,7 @@ TEST(ProcessorTest, ExceptionThrownAfterFinish) {
 subtask<char, std::string> extract_word() {
   std::string word;
   char c;
+  bool saw_eof = false;
   try {
     for (c = co_await next_input{}; std::isalpha(c);
          c = co_await next_input{}) {
@@ -241,8 +242,10 @@ subtask<char, std::string> extract_word() {
       word.push_back(c);
     }
   } catch (eof) {
+    saw_eof = true;
   }
   if (word.contains('Y')) throw unhandled_exception_in_partition_on_yield{};
+  if (word.empty() && saw_eof) throw eof{};
   co_return word;
 }
 

@@ -112,8 +112,7 @@
  * 3. To call a `subtask`, you co_await on it, which will evaluate to
  *    the value `co_return`ed by the `subtask` (or throw `eof`,
  *    `reset`, or anything the `subtask` coroutine happens to throw).
- *    In particular, it will throw `eof` if `finish()` has been called
- *    and no further input is buffered. See below for more about subtasks.
+ *    See below for more about subtasks.
  *
  * 4. To determine whether a `subprocess` has more output available,
  *    `co_await` on the value returned by its `done()` function.
@@ -305,8 +304,6 @@ struct InputInterface {
    * Otherwise, it is `co_await peek{i};`
    */
   virtual bool input_ready(std::size_t i) const = 0;
-  /** When true, no more input is available. */
-  virtual bool input_complete() const = 0;
   /** If nonzero, a request to peek ahead the given number of inputs. */
   virtual void set_peek_request(std::size_t peek_request) = 0;
 };
@@ -338,8 +335,6 @@ struct DelegatingInputInterface : public InputInterface<RequestedIn> {
   bool input_ready(std::size_t i) const override {
     return delegate_->input_ready(i);
   }
-
-  bool input_complete() const override { return delegate_->input_complete(); }
 
   void set_peek_request(std::size_t peek_request) override {
     delegate_->set_peek_request(peek_request);
@@ -409,8 +404,6 @@ struct DelegatingProcessorInputInterfaceBase
   bool input_ready(std::size_t i) const override {
     return delegate_->input_ready(i);
   }
-
-  bool input_complete() const override { return delegate_->input_complete(); }
 
   void set_peek_request(std::size_t peek_request) override {
     delegate_->set_peek_request(peek_request);
@@ -1000,7 +993,6 @@ struct [[nodiscard]] subtask {
     await_transform(subtask<I, SubR> task)
       requires(std::is_convertible_v<In, I>)
     {
-      if (input_ && input_->input_complete()) throw eof{};
       return detail::subtask_awaiter<typename subtask<I, SubR>::promise_type>{
           task.handle_};
     }
@@ -1123,8 +1115,6 @@ class processor_promise_input_interface_base
   bool input_ready(std::size_t i) const override {
     return eof_ || reset_ || (i ? buf_.size() >= i : !buf_.empty());
   }
-
-  bool input_complete() const override { return eof_ && buf_.empty(); }
 
   void set_peek_request(std::size_t peek_request) override {
     peek_request_ = peek_request;
@@ -1317,8 +1307,6 @@ struct processor_promise {
     requires(std::is_convertible_v<In, I>)
   {
     yielded_last = false;
-    // Don't enter subtasks if input is complete.
-    if (input && input->input_complete()) throw eof{};
     return detail::subtask_awaiter<typename subtask<I, SubR>::promise_type>{
         task.handle_};
   }
@@ -1340,8 +1328,6 @@ struct processor_promise {
   template <typename I, typename O>
   [[nodiscard]] subprocess<I, O>& await_transform(subprocess<I, O>& s) {
     yielded_last = false;
-    // Don't enter subprocesses if input is complete.
-    if (input && input->input_complete()) throw eof{};
     return s;
   }
 

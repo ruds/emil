@@ -176,12 +176,7 @@ subtask<char32_t, void> match_postcore_seq(std::u32string& out) {
 
 subtask<char32_t, std::u32string> next_grapheme_cluster() {
   std::u32string out;
-  try {
-    co_await append_next_grapheme_cluster(out);
-  } catch (processor::eof) {
-    if (!out.empty()) co_return out;
-    throw;
-  }
+  co_await append_next_grapheme_cluster(out);
   co_return out;
 }
 
@@ -192,7 +187,10 @@ subtask<char32_t, void> append_next_grapheme_cluster(std::u32string& out) {
     co_return;
   }
   const bool matched_precore = co_await match_precore_seq(out);
-  if (!co_await peek{}) co_return;
+  if (!co_await peek{}) {
+    if (out.empty()) throw processor::eof{};
+    co_return;
+  }
   if (!co_await match_core(out)) {
     if (!matched_precore) out += co_await next_input{};
     co_return;
