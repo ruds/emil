@@ -22,10 +22,39 @@
 #include <string>
 #include <string_view>
 
+#include "emil/processor.h"
 #include "emil/source.h"
 #include "emil/token.h"
 
 namespace emil {
+
+struct lexer_impl;
+
+/** Converts a stream of characters to a stream of tokens. */
+struct lexer {
+  /** The lexer needs the filename for accurate error reporting. */
+  explicit lexer(std::string filename);
+
+  ~lexer();
+
+  /** When true, more characters (or an eof indication) are necessary to
+   * complete a token. */
+  bool requires_more_input() const;
+
+  /**
+   * Provide a stream processor to convert characters to tokens.
+   *
+   * To avoid undefined behavior, ensure that the `lexer` outlives the
+   * `processor`.
+   *
+   * When a `LexingError` is produced instead of a `Token`, the
+   * stream will skip input until the next newline or eof.
+   */
+  processor::processor<char32_t, processor::Expected<Token>> lex();
+
+ private:
+  std::unique_ptr<lexer_impl> impl_;
+};
 
 /** An error detected during lexing. */
 class LexingError : public std::exception {
@@ -180,8 +209,6 @@ class Lexer {
   std::u8string normalize(std::u8string&& s);
 
   static TokenType to_token_type(FormatString fs);
-
-  void match_keyword_and_tyvar_in_id_word(Token& token);
 };
 
 std::unique_ptr<Source<Token>> make_lexer(std::string_view filename);
