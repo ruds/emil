@@ -13,15 +13,26 @@
 // limitations under the License.
 
 #include <fmt/core.h>
+#include <fmt/ostream.h>
 #include <linenoise.hpp>
 #include <pwd.h>
 #include <sys/errno.h>
 #include <unistd.h>
+#include <utf8.h>
 
+#include <cassert>
+#include <coroutine>
 #include <cstdlib>
 #include <iostream>
+#include <iterator>
 #include <string>
 #include <utility>
+#include <variant>
+#include <vector>
+
+#include "emil/lexer.h"
+#include "emil/processor.h"
+#include "emil/token.h"
 
 constexpr std::size_t HISTORY_LEN = 1000;
 
@@ -30,6 +41,27 @@ const char *get_config_dir() {
   if ((dir = getenv("XDG_CONFIG_HOME"))) return dir;
   if ((dir = getenv("HOME"))) return dir;
   return getpwuid(getuid())->pw_dir;
+}
+
+emil::processor::processor<std::string, char32_t> convert_lines() {
+  bool needs_reset = false;
+  while (true) {
+    try {
+      if (needs_reset) {
+        needs_reset = false;
+        co_yield U'\n';
+      }
+      auto line = co_await emil::processor::next_input{};
+      auto it = begin(line);
+      while (it != end(line)) {
+        co_yield utf8::next(it, end(line));
+      }
+      co_yield U'\n';
+    } catch (emil::processor::eof) {
+    } catch (emil::processor::reset) {
+      needs_reset = true;
+    }
+  }
 }
 
 int main(int argc, char *argv[]) {
@@ -44,7 +76,13 @@ int main(int argc, char *argv[]) {
   linenoise::SetHistoryMaxLen(HISTORY_LEN);
   linenoise::LoadHistory(history_path.c_str());
 
+  emil::lexer lexer("<stdin>");
+  auto tokens = convert_lines() | lexer.lex();
+  std::vector<emil::Token> batch;
   while (true) {
+    assert(!lexer.requires_more_input());
+    batch.clear();
+
     std::string line;
     errno = 0;
     auto quit = linenoise::Readline(" - ", line);
@@ -52,8 +90,41 @@ int main(int argc, char *argv[]) {
       if (errno == EAGAIN) continue;
       break;
     }
-    std::cout << "echo: " << line << std::endl;
+    tokens.process(line);
     linenoise::AddHistory(std::move(line));
+
+    try {
+      while (tokens)
+        batch.push_back(emil::processor::get_value_or_throw(tokens()));
+
+      while (lexer.requires_more_input()) {
+        std::string continuation;
+        errno = 0;
+        quit = linenoise::Readline(" = ", continuation);
+        if (quit) break;
+        tokens.process(continuation);
+        linenoise::AddHistory(std::move(continuation));
+
+        while (tokens)
+          batch.push_back(emil::processor::get_value_or_throw(tokens()));
+      }
+    } catch (emil::LexingError &err) {
+      std::cout << err.what() << std::endl;
+      continue;
+    }
+    if (quit) {
+      if (errno == EAGAIN) {
+        tokens.reset();
+        while (tokens) tokens();
+        continue;
+      }
+      break;
+    }
+
+    for (const auto &t : batch) {
+      fmt::print(std::cout, "{} ", t);
+    }
+    std::cout << std::endl;
   }
 
   linenoise::SaveHistory(history_path.c_str());

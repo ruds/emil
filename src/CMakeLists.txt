@@ -95,4 +95,4 @@ target_link_libraries(typer
 
 add_executable(repl repl.cc)
 add_emil_options(repl)
-target_link_libraries(repl linenoise fmt::fmt)
+target_link_libraries(repl lexer linenoise fmt::fmt utf8cpp)

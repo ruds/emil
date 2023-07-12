@@ -1353,6 +1353,8 @@ struct lexer_impl {
           needs_sync = true;
         }
       } catch (reset) {
+        if (!toplevel) throw;
+        requires_more_input = false;
         needs_sync = true;
       } catch (eof) {
         throw std::logic_error("Unexpected eof");
