@@ -29,6 +29,7 @@
 #include <variant>
 
 #include "emil/ast.h"
+#include "emil/misc.h"
 #include "emil/strconvert.h"
 #include "emil/token.h"
 
@@ -42,13 +43,6 @@ using ExprPtr = std::unique_ptr<Expr>;
 using DeclPtr = std::unique_ptr<Decl>;
 using PatternPtr = std::unique_ptr<Pattern>;
 using TypeExprPtr = std::unique_ptr<TypeExpr>;
-
-template <typename... Ts>
-struct overload : Ts... {
-  using Ts::operator()...;
-};
-template <typename... Ts>
-overload(Ts...) -> overload<Ts...>;
 
 #define NON_QUAL_OP_TYPES \
   TokenType::ID_OP, TokenType::EQUALS, TokenType::ASTERISK
@@ -354,17 +348,17 @@ ExprPtr Parser::match_left_expr(Token& first) {
 namespace {
 
 ExprPtr match_iliteral(Token& t) {
-  return visit(overload{[&t](int64_t i) -> ExprPtr {
-                          return std::make_unique<IntLiteralExpr>(t.location,
-                                                                  i);
-                        },
-                        [&t](BigintLiteralData& d) -> ExprPtr {
-                          return std::make_unique<BigintLiteralExpr>(
-                              t.location, std::move(d));
-                        },
-                        [](const auto&) -> ExprPtr {
-                          throw std::logic_error("Bad aux type for ILITERAL");
-                        }},
+  return visit(overloaded{[&t](int64_t i) -> ExprPtr {
+                            return std::make_unique<IntLiteralExpr>(t.location,
+                                                                    i);
+                          },
+                          [&t](BigintLiteralData& d) -> ExprPtr {
+                            return std::make_unique<BigintLiteralExpr>(
+                                t.location, std::move(d));
+                          },
+                          [](const auto&) -> ExprPtr {
+                            throw std::logic_error("Bad aux type for ILITERAL");
+                          }},
                t.aux);
 }
 
