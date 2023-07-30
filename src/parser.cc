@@ -131,37 +131,35 @@ bool Parser::at_end() const { return source_->at_end(); }
 
 std::unique_ptr<TopDecl> Parser::next() {
   current_.clear();
-  Token& t = advance();
+  const Token* next = peek();
+  if (!next) throw std::logic_error("Tried to read past EOF");
   try {
-    switch (t.type) {
-      case TokenType::END_OF_FILE:
-        return std::make_unique<EndOfFileTopDecl>(t.location);
-
-      case TokenType::SEMICOLON:
-        return std::make_unique<EmptyTopDecl>(t.location);
-
-      default: {
-        std::unique_ptr<TopDecl> top_decl;
-        if (starts_decl(t.type)) {
-          top_decl = std::make_unique<DeclTopDecl>(t.location, match_decl(t));
-        } else {
-          std::vector<std::unique_ptr<ValBind>> it_binding;
-          it_binding.push_back(std::make_unique<ValBind>(
-              t.location, make_id_pattern(t.location, {}, u8"it", false, false),
-              match_expr(t), false));
-          auto decl = std::make_unique<ValDecl>(
-              t.location, std::move(it_binding), std::vector<std::u8string>{});
-          top_decl = std::make_unique<DeclTopDecl>(t.location, std::move(decl));
-        }
-        consume(TokenType::SEMICOLON, "top-level declaration");
-        return top_decl;
-      }
+    if (next->type == TokenType::END_OF_FILE) {
+      advance();
+      return std::make_unique<EndOfFileTopDecl>(next->location);
     }
+    const Location& location = next->location;
+    std::vector<std::unique_ptr<Decl>> decls;
+    while (next && starts_decl(next->type)) {
+      decls.push_back(match_decl(advance()));
+      next = peek();
+    }
+    if (match(TokenType::SEMICOLON) || !decls.empty()) {
+      return std::make_unique<DeclTopDecl>(location, std::move(decls));
+    }
+    std::vector<std::unique_ptr<ValBind>> it_binding;
+    it_binding.push_back(std::make_unique<ValBind>(
+        location, make_id_pattern(location, {}, u8"it", false, false),
+        match_expr(advance()), false));
+    decls.push_back(std::make_unique<ValDecl>(location, std::move(it_binding),
+                                              std::vector<std::u8string>{}));
+    consume(TokenType::SEMICOLON, "top-level declaration");
+    return std::make_unique<DeclTopDecl>(location, std::move(decls));
   } catch (ParsingError&) {
     synchronize();
     throw;
   }
-  error("Unrecognized token", std::move(t));
+  error("Unrecognized token", std::move(*next));
 }
 
 Token& Parser::advance() {

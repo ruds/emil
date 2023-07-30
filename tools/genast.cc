@@ -134,9 +134,8 @@ const std::vector<Category> CATEGORIES{
     {"TopDecl",
      "TOPDECL",
      {
-         {"Empty", {}},
          {"EndOfFile", {}},
-         {"Decl", {"Decl* decl"}},
+         {"Decl", {"[Decl*] decls"}},
      }},
 };
 

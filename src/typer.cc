@@ -681,13 +681,11 @@ class TopDeclChangeDescriber : public TTopDecl::Visitor {
 
   explicit TopDeclChangeDescriber(TyperImpl &typer) : typer_(typer) {}
 
-  void visit(const TEmptyTopDecl &) override {}
-
   void visit(const TEndOfFileTopDecl &) override {}
 
   void visit(const TDeclTopDecl &d) override {
     DeclChangeDescriber v{typer_, out};
-    d.decl->accept(v);
+    for (const auto &decl : *d.decls) decl->accept(v);
   }
 
  private:
@@ -807,10 +805,6 @@ class TopDeclElaborator : public TopDecl::Visitor {
   TyperImpl &typer_;
 };
 
-void TopDeclElaborator::visitEmptyTopDecl(const EmptyTopDecl &node) {
-  typed = make_managed<TEmptyTopDecl>(node.location);
-}
-
 void TopDeclElaborator::visitEndOfFileTopDecl(const EndOfFileTopDecl &node) {
   typed = make_managed<TEndOfFileTopDecl>(node.location);
 }
@@ -846,15 +840,22 @@ typing::Substitutions compute_dummy_substitutions(TyperImpl &typer,
 }
 
 void TopDeclElaborator::visitDeclTopDecl(const DeclTopDecl &node) {
-  auto scopes = scope_explicit_type_variables(*node.decl);
-  auto r = typer_.elaborate_decl(B->as_context(), *node.decl, scopes);
-  auto subs = compute_dummy_substitutions(typer_, r.env, node.location);
-  if (!subs->empty()) {
-    r.decl = r.decl->apply_substitutions(subs, false);
-  }
-  B = B + r.decl->env;
+  typed = make_managed<TDeclTopDecl>(
+      node.location,
+      make_managed<collections::ManagedArray<TDecl>>(
+          node.decls.size(), [this, &node](std::size_t i) {
+            const auto &decl = node.decls[i];
+            auto scopes = scope_explicit_type_variables(*decl);
+            auto r = typer_.elaborate_decl(B->as_context(), *decl, scopes);
+            auto subs =
+                compute_dummy_substitutions(typer_, r.env, node.location);
+            if (!subs->empty()) {
+              r.decl = r.decl->apply_substitutions(subs, false);
+            }
+            B = B + r.decl->env;
 
-  typed = make_managed<TDeclTopDecl>(node.location, r.decl);
+            return std::move(r.decl);
+          }));
 }
 
 }  // namespace

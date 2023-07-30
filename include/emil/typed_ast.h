@@ -833,7 +833,6 @@ class TDtypeDecl : public TDecl {
   }
 };
 
-class TEmptyTopDecl;
 class TEndOfFileTopDecl;
 class TDeclTopDecl;
 
@@ -849,24 +848,11 @@ class TTopDecl : public Managed {
    public:
     virtual ~Visitor();
 
-    virtual void visit(const TEmptyTopDecl& v) = 0;
     virtual void visit(const TEndOfFileTopDecl& v) = 0;
     virtual void visit(const TDeclTopDecl& v) = 0;
   };
 
   virtual void accept(Visitor& visitor) const = 0;
-};
-
-class TEmptyTopDecl : public TTopDecl {
- public:
-  using TTopDecl::TTopDecl;
-
-  void accept(Visitor& visitor) const override { visitor.visit(*this); }
-
-  void visit_subobjects(const ManagedVisitor&) override {}
-  std::size_t managed_size() const noexcept override {
-    return sizeof(TEmptyTopDecl);
-  }
 };
 
 class TEndOfFileTopDecl : public TTopDecl {
@@ -883,9 +869,9 @@ class TEndOfFileTopDecl : public TTopDecl {
 
 class TDeclTopDecl : public TTopDecl {
  public:
-  managed_ptr<TDecl> decl;
+  collections::ArrayPtr<TDecl> decls;
 
-  TDeclTopDecl(const Location& location, managed_ptr<TDecl> decl);
+  TDeclTopDecl(const Location& location, collections::ArrayPtr<TDecl> decls);
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 

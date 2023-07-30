@@ -45,3 +45,4 @@ val (it, bar) = foo;
 val rec a = foo and len = fn [] => 0 | ((::) (_, xs)) => ((+) (1, len xs));
 val rec len = fn [] => 0 | ((::) (_, xs)) => ((+) (1, len xs)) and a = foo;
 val a = foo and rec len = fn [] => 0 | ((::) (_, xs)) => ((+) (1, len xs));
+val foo = bar val baz = quux;

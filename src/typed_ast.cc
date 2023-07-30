@@ -698,11 +698,12 @@ TTopDecl::TTopDecl(const Location& location) : location(location) {}
 TTopDecl::~TTopDecl() = default;
 TTopDecl::Visitor::~Visitor() = default;
 
-TDeclTopDecl::TDeclTopDecl(const Location& location, managed_ptr<TDecl> decl)
-    : TTopDecl(location), decl(std::move(decl)) {}
+TDeclTopDecl::TDeclTopDecl(const Location& location,
+                           collections::ArrayPtr<TDecl> decls)
+    : TTopDecl(location), decls(std::move(decls)) {}
 
 void TDeclTopDecl::visit_subobjects(const ManagedVisitor& visitor) {
-  decl.accept(visitor);
+  decls.accept(visitor);
 }
 
 }  // namespace emil
