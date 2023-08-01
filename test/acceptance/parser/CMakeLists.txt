@@ -16,7 +16,7 @@ add_golden_driver(parser-driver driver.cc)
 target_link_libraries(parser-driver parser)
 
 macro(parser_golden_test TESTNAME)
-  add_golden_test(parser-driver "${TESTNAME}")
+  add_golden_test(parser-driver "${TESTNAME}" VARIANT source)
 endmacro()
 
 parser_golden_test(literal)

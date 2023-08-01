@@ -15,11 +15,13 @@
 #include <fmt/core.h>
 
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <memory>
 #include <string>
+#include <string_view>
 
 #include "emil/ast.h"
 #include "emil/lexer.h"
@@ -40,21 +42,36 @@ void process_next_topdecl(Parser& parser, std::ostreambuf_iterator<char>& out) {
 
 }  // namespace emil::testing
 
+namespace {
+
+void print_usage(std::string_view program) {
+  fmt::print(stderr, "Usage: {} source INFILE OUTFILE", program);
+}
+
+}  // namespace
+
 int main(int argc, char* argv[]) {
-  if (argc != 3) {
-    fmt::print(stderr, "Usage: {} INFILE OUTFILE", argv[0]);
+  if (argc != 4) {
+    print_usage(argv[0]);
     return 1;
   }
 
-  const std::string infile(argv[1]);
-  emil::Parser parser(emil::make_lexer(infile));
+  const std::string infile(argv[2]);
+  std::basic_ifstream<char32_t> stream(infile);
 
-  const std::string outfile(argv[2]);
+  const std::string outfile(argv[3]);
   std::ofstream outstream(outfile);
   std::ostreambuf_iterator<char> out(outstream);
 
-  while (!parser.at_end()) {
-    emil::testing::process_next_topdecl(parser, out);
-    outstream.flush();
+  if (!std::strcmp(argv[1], "source")) {
+    emil::Parser parser(emil::make_lexer(infile));
+
+    while (!parser.at_end()) {
+      emil::testing::process_next_topdecl(parser, out);
+      outstream.flush();
+    }
+  } else {
+    print_usage(argv[0]);
+    return 2;
   }
 }
