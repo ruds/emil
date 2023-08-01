@@ -18,6 +18,7 @@
 #include <cassert>
 #include <cstdio>
 #include <cstring>
+#include <exception>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -89,8 +90,7 @@ int main(int argc, char* argv[]) {
       outstream.flush();
     }
   } else if (!std::strcmp(argv[1], "processor")) {
-    emil::lexer lexer(infile);
-    auto p = emil::read_stream(stream) | lexer.lex();
+    auto p = emil::read_stream(stream) | emil::lex(infile);
     p.finish();
     while (emil::testing::process_next_token(
         [&p]() {

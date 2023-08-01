@@ -1964,6 +1964,8 @@ lexer::~lexer() = default;
 
 bool lexer::requires_more_input() const { return impl_->requires_more_input; }
 
+const std::string& lexer::filename() const { return impl_->filename; }
+
 processor::processor<char32_t, Expected<Token>> lexer::lex() {
   return impl_->stream_tokens();
 }
@@ -2017,7 +2019,16 @@ const Token* LexerSource::peek(size_t lookahead) {
 bool LexerSource::at_end() const { return at_end_ && empty(buffer_); }
 
 void LexerSource::putback(Token t) { buffer_.push_front(std::move(t)); }
+
 }  // namespace
+
+processor::processor<char32_t, Expected<Token>> lex(std::string filename) {
+  lexer l{std::move(filename)};
+  auto p = l.lex().as_subprocess();
+  while (!co_await p.done()) {
+    co_yield co_await p;
+  }
+}
 
 std::unique_ptr<Source<Token>> make_lexer(std::string_view filename) {
   return std::make_unique<LexerSource>(filename);

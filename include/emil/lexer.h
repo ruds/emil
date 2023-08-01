@@ -41,20 +41,36 @@ struct lexer {
    * complete a token. */
   bool requires_more_input() const;
 
+  const std::string& filename() const;
+
   /**
    * Provide a stream processor to convert characters to tokens.
    *
    * To avoid undefined behavior, ensure that the `lexer` outlives the
    * `processor`.
    *
-   * When a `LexingError` is produced instead of a `Token`, the
-   * stream will skip input until the next newline or eof.
+   * When a `LexingError` is produced instead of a `Token`, or if the
+   * stream is reset, the stream will skip input until the next
+   * newline or eof.
    */
   processor::processor<char32_t, processor::Expected<Token>> lex();
 
  private:
   std::unique_ptr<lexer_impl> impl_;
 };
+
+/**
+ * Provide a stream processor to convert characters to tokens.
+ *
+ * When a `LexingError` is produced instead of a `Token`, or if the
+ * stream is reset, the stream will skip input until the next
+ * newline or eof.
+ *
+ * When it is necessary to access the current status of the lexer (e.g. whether
+ * a token is partially constructed), use `lexer::lex` instead.
+ */
+processor::processor<char32_t, processor::Expected<Token>> lex(
+    std::string filename);
 
 /** An error detected during lexing. */
 class LexingError : public std::exception {
