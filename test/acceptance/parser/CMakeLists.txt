@@ -17,6 +17,7 @@ target_link_libraries(parser-driver parser)
 
 macro(parser_golden_test TESTNAME)
   add_golden_test(parser-driver "${TESTNAME}" VARIANT source)
+  add_golden_test(parser-driver "${TESTNAME}" VARIANT processor)
 endmacro()
 
 parser_golden_test(literal)

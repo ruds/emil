@@ -1122,13 +1122,10 @@ class processor_promise_input_interface_base
     peek_request_ = peek_request;
   }
 
-  void reset() override {
-    if (reset_ || eof_) throw std::logic_error("Spurious reset");
-    reset_ = true;
-  }
+  void reset() override { reset_ = true; }
 
   void finish() override {
-    if (reset_ || eof_) throw std::logic_error("Spurious eof");
+    if (eof_) throw std::logic_error("Spurious eof");
     eof_ = true;
   }
 

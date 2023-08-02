@@ -25,6 +25,7 @@
 #include <utility>
 #include <vector>
 
+#include "emil/processor.h"
 #include "emil/source.h"
 #include "emil/token.h"
 
@@ -49,6 +50,48 @@ class TopDecl;
 class TypeExpr;
 class ValBind;
 class ValDecl;
+
+/** Converts a stream of characters to a stream of tokens. */
+struct parser {
+  ~parser();
+
+  /** When true, more tokens (or an eof indication) are necessary to
+   * complete a declaration. */
+  bool requires_more_input() const;
+
+  /**
+   * Provide a stream processor to convert tokens to ASTs.
+   *
+   * To avoid undefined behavior, ensure that the `parser` outlives the
+   * `processor`.
+   *
+   * When a `ParsingError` is produced instead of a `TopDecl` or the
+   * stream is reset, the stream will discard any AST in progress and
+   * start again with the next token.
+   */
+  processor::processor<Token, processor::Expected<std::unique_ptr<TopDecl>>>
+  parse();
+
+ private:
+  bool requires_more_input_ = false;
+};
+
+/**
+ * Provide a stream processor to convert tokens to ASTs.
+ *
+ * To avoid undefined behavior, ensure that the `parser` outlives the
+ * `processor`.
+ *
+ *
+ * When a `ParsingError` is produced instead of a `TopDecl` or the
+ * stream is reset, the stream will discard any AST in progress and
+ * start again with the next token.
+ *
+ * When it is necessary to access the current state of the parser (e.g. whether
+ * an AST node is partially constructed), use `parser::parse` instead.
+ */
+processor::processor<Token, processor::Expected<std::unique_ptr<TopDecl>>>
+parse();
 
 class ParsingError : public std::exception {
  public:

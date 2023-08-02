@@ -19,7 +19,10 @@
 
 #include <algorithm>
 #include <cassert>
+#include <coroutine>
 #include <cstdint>
+#include <exception>
+#include <functional>
 #include <initializer_list>
 #include <iterator>
 #include <memory>
@@ -30,6 +33,7 @@
 
 #include "emil/ast.h"
 #include "emil/misc.h"
+#include "emil/processor.h"
 #include "emil/strconvert.h"
 #include "emil/token.h"
 
@@ -56,8 +60,14 @@ bool is_op(const Token* t, bool allow_qualified) {
                (allow_qualified && t->type == TokenType::QUAL_ID_OP));
 }
 
-[[noreturn]] void error(std::string message, Token t) {
-  throw ParsingError(std::move(message), t.location);
+bool has_type(const Token* t, TokenType type) { return t && t->type == type; }
+
+[[noreturn]] void error(std::string message, const Location& location) {
+  throw ParsingError(std::move(message), location);
+}
+
+[[noreturn]] void error(std::string message, const Token& t) {
+  error(std::move(message), t.location);
 }
 
 bool starts_decl(TokenType t) {
@@ -138,7 +148,7 @@ std::unique_ptr<TopDecl> Parser::next() {
       advance();
       return std::make_unique<EndOfFileTopDecl>(next->location);
     }
-    const Location& location = next->location;
+    Location location = next->location;
     std::vector<std::unique_ptr<Decl>> decls;
     while (next && starts_decl(next->type)) {
       decls.push_back(match_decl(advance()));
@@ -1083,6 +1093,919 @@ TypeExprPtr Parser::match_paren_type(const Location& location) {
                          consume({TokenType::ID_WORD, TokenType::QUAL_ID_WORD},
                                  "type constructor expression"),
                          std::move(types));
+}
+
+namespace {
+
+using processor::eof;
+using processor::Expected;
+using processor::next_input;
+using processor::reset;
+using processor::subtask;
+
+using TopDeclPtr = std::unique_ptr<TopDecl>;
+using TokenRef = std::reference_wrapper<Token>;
+
+struct next_token {
+  std::deque<Token> tokens;
+  std::optional<Token> eof_token;
+
+  subtask<Token, TopDeclPtr> operator()() {
+    // If we start off with no tokens available, eof_token won't be set,
+    // so we skip the extra machinery of next_token::peek.
+    const Token* next = co_await processor::peek{};
+    if (!next) {
+      throw eof{};
+    }
+
+    if (next->type == TokenType::END_OF_FILE) {
+      const Token& t = co_await advance();
+      co_return std::make_unique<EndOfFileTopDecl>(t.location);
+    }
+
+    Location location = next->location;
+    std::vector<std::unique_ptr<Decl>> decls;
+
+    while (next && starts_decl(next->type)) {
+      decls.push_back(co_await consume_decl());
+      next = co_await peek();
+    }
+    if (co_await match(TokenType::SEMICOLON) || !decls.empty()) {
+      co_return std::make_unique<DeclTopDecl>(location, std::move(decls));
+    }
+
+    std::vector<std::unique_ptr<ValBind>> it_binding;
+    it_binding.push_back(std::make_unique<ValBind>(
+        location, make_id_pattern(location, {}, u8"it", false, false),
+        co_await consume_expr(), false));
+    decls.push_back(std::make_unique<ValDecl>(location, std::move(it_binding),
+                                              std::vector<std::u8string>{}));
+    co_await consume(TokenType::SEMICOLON, "top-level declaration");
+    co_return std::make_unique<DeclTopDecl>(location, std::move(decls));
+  }
+
+ private:
+  subtask<Token, TokenRef> advance() {
+    tokens.push_back(co_await next_input{});
+    if (!eof_token && tokens.back().type == TokenType::END_OF_FILE) {
+      eof_token = tokens.back();
+    }
+    co_return tokens.back();
+  }
+
+  subtask<Token, TokenRef> advance_safe(std::string_view production) {
+    if (!co_await peek()) {
+      assert(eof_token);
+      error(fmt::format("End of file while parsing {}.", production),
+            *eof_token);
+    }
+    co_return co_await advance();
+  }
+
+  subtask<Token, const Token*> peek(std::size_t i = 1) {
+    const Token* const peeked = co_await processor::peek{i};
+    while (!peeked && !eof_token) {
+      --i;
+      assert(i);
+      const Token* const p = co_await processor::peek{i};
+      if (p) eof_token = *p;
+    }
+    co_return peeked;
+  }
+
+  subtask<Token, bool> match(std::initializer_list<TokenType> ts) {
+    const Token* const next_token = co_await peek();
+    if (next_token &&
+        std::find(begin(ts), end(ts), next_token->type) != end(ts)) {
+      co_await advance();
+      co_return true;
+    }
+    co_return false;
+  }
+
+  subtask<Token, bool> match(TokenType t) { co_return co_await match({t}); }
+
+  Token ensure_token(const Token* t) const { return t ? *t : *eof_token; }
+
+  subtask<Token, TokenRef> consume(std::initializer_list<TokenType> ts,
+                                   std::string_view production) {
+    if (!co_await match(ts)) {
+      Token next_token = ensure_token(co_await peek());
+      const TokenType next_type = next_token.type;
+      error(
+          fmt::format(
+              "While parsing {}, expected token of type {} but instead got {}",
+              production, fmt::join(ts, " or "), next_type),
+          std::move(next_token));
+    }
+    co_return tokens.back();
+  }
+
+  subtask<Token, TokenRef> consume(TokenType t, std::string_view production) {
+    co_return co_await consume({t}, production);
+  }
+
+  subtask<Token, ExprPtr> consume_expr() {
+    auto expr = co_await consume_left_expr();
+    if (co_await match(TokenType::COLON)) {
+      co_return std::make_unique<TypedExpr>(expr->location, std::move(expr),
+                                            co_await consume_type());
+    }
+    co_return expr;
+  }
+
+  subtask<Token, ExprPtr> consume_left_expr() {
+    const Token* first = co_await peek();
+    switch (first->type) {
+      case TokenType::KW_IF:
+        error("Not implemented", *first);
+
+      case TokenType::KW_CASE:
+        co_return co_await consume_case_expr();
+
+      case TokenType::KW_FN:
+        co_return co_await consume_fn_expr();
+
+      default: {
+        std::vector<ExprPtr> exprs;
+        while (first && starts_atomic_expr(first->type)) {
+          exprs.push_back(co_await consume_atomic_expr());
+          first = co_await peek();
+        }
+        if (exprs.empty()) {
+          Token& t = co_await advance();
+          error(fmt::format("Expected an expression but found token of type {}",
+                            t.type),
+                t);
+        }
+        if (exprs.size() == 1) {
+          co_return std::move(exprs.front());
+        }
+        const Location& location = exprs.front()->location;
+        co_return std::make_unique<ApplicationExpr>(location, std::move(exprs));
+      }
+    }
+  }
+
+  subtask<Token, ExprPtr> consume_atomic_expr() {
+    const Token* const first = co_await peek();
+
+    switch (first->type) {
+      case TokenType::ILITERAL:
+        co_return match_iliteral(co_await advance());
+
+      case TokenType::FPLITERAL: {
+        Token& t = co_await advance();
+        co_return std::make_unique<FpLiteralExpr>(t.location,
+                                                  get<double>(t.aux));
+      }
+
+      case TokenType::STRING: {
+        Token& t = co_await advance();
+        co_return std::make_unique<StringLiteralExpr>(t.location,
+                                                      move_string(t));
+      }
+
+      case TokenType::CHAR: {
+        Token& t = co_await advance();
+        co_return std::make_unique<CharLiteralExpr>(t.location,
+                                                    get<char32_t>(t.aux));
+      }
+
+      case TokenType::FSTRING:
+        co_return co_await consume_fstring();
+
+      case TokenType::ID_WORD:
+      case TokenType::QUAL_ID_WORD:
+        co_return co_await consume_id();
+
+      case TokenType::LBRACE:
+        co_return co_await consume_record_expr();
+
+      case TokenType::LPAREN:
+        co_return co_await consume_paren_expr();
+
+      case TokenType::LBRACKET:
+        co_return co_await consume_list_expr();
+
+      case TokenType::KW_LET:
+        co_return co_await consume_let_expr();
+
+      default: {
+        Token& t = co_await advance();
+        error(fmt::format("Expression may not start with {}", t.type), t);
+      }
+    }
+  }
+
+  subtask<Token, ExprPtr> consume_fstring() {
+    Token& first = co_await consume(TokenType::FSTRING, "fstring");
+    std::vector<std::u8string> segments;
+    std::vector<ExprPtr> substitutions;
+    segments.push_back(move_string(first));
+
+    while (
+        co_await match({TokenType::FSTRING_IEXPR_S, TokenType::FSTRING_IVAR})) {
+      Token& t = tokens.back();
+      if (t.type == TokenType::FSTRING_IVAR) {
+        substitutions.push_back(std::make_unique<IdentifierExpr>(
+            t.location, std::vector<std::u8string>{}, move_string(t), false));
+      } else {
+        substitutions.push_back(co_await consume_expr());
+        co_await consume(TokenType::FSTRING_IEXPR_F, "fstring substitution");
+      }
+      Token& cont = co_await consume(TokenType::FSTRING_CONT, "fstring");
+      segments.push_back(move_string(cont));
+    }
+    co_return std::make_unique<FstringLiteralExpr>(
+        first.location, std::move(segments), std::move(substitutions));
+  }
+
+  subtask<Token, std::unique_ptr<IdentifierExpr>> consume_id() {
+    co_return parse_id_token(co_await advance_safe("identifier"));
+  }
+
+  std::unique_ptr<IdentifierExpr> parse_id_token(Token& t) {
+    switch (t.type) {
+      case TokenType::ID_WORD:
+      case TokenType::ID_OP:
+      case TokenType::EQUALS:
+      case TokenType::ASTERISK:
+        return std::make_unique<IdentifierExpr>(
+            t.location, std::vector<std::u8string>{}, move_string(t),
+            t.type != TokenType::ID_WORD);
+
+      case TokenType::QUAL_ID_OP:
+      case TokenType::QUAL_ID_WORD: {
+        auto& qual = get<QualifiedIdentifier>(t.aux);
+        return std::make_unique<IdentifierExpr>(
+            t.location, std::move(qual.qualifiers), std::move(qual.id),
+            t.type == TokenType::QUAL_ID_OP);
+      }
+
+      default:
+        error("Expected identifier", t);
+    }
+  }
+
+  subtask<Token, ExprPtr> consume_record_expr() {
+    Token& first = co_await consume(TokenType::LBRACE, "record expression");
+    std::vector<std::unique_ptr<RecRowExpr>> rows;
+    std::set<std::u8string> labels;
+    if (!co_await match(TokenType::RBRACE)) {
+      do {
+        rows.push_back(co_await consume_rec_row());
+        auto ins_res = labels.insert(rows.back()->label);
+        if (!ins_res.second)
+          error(fmt::format("Label '{}' bound twice in record expression",
+                            to_std_string(rows.back()->label)),
+                tokens.back());
+      } while ((co_await consume({TokenType::RBRACE, TokenType::COMMA},
+                                 "record expression"))
+                   .get()
+                   .type == TokenType::COMMA);
+    }
+    co_return std::make_unique<RecordExpr>(first.location, std::move(rows));
+  }
+
+  subtask<Token, std::unique_ptr<RecRowExpr>> consume_rec_row() {
+    Token& label =
+        co_await consume(TokenType::ID_WORD, "record expression row");
+    co_await consume(TokenType::EQUALS, "record expression row");
+    co_return std::make_unique<RecRowExpr>(label.location, move_string(label),
+                                           co_await consume_expr());
+  }
+
+  subtask<Token, ExprPtr> consume_paren_expr() {
+    const Location& location =
+        (co_await consume(TokenType::LPAREN, "parenthesized expression"))
+            .get()
+            .location;
+    if (co_await match(TokenType::RPAREN)) {
+      co_return std::make_unique<UnitExpr>(location);
+    }
+    if (co_await match(TokenType::KW_PREFIX)) {
+      Token& t = co_await consume({QUAL_OP_TYPES}, "prefix operator");
+      auto expr = parse_id_token(t);
+      expr->is_prefix_op = true;
+      co_await consume(TokenType::RPAREN, "prefix operator");
+      co_return expr;
+    }
+    if (is_op(co_await peek(), true) &&
+        has_type(co_await peek(2), TokenType::RPAREN)) {
+      auto expr = co_await consume_id();
+      co_await advance();
+      co_return expr;
+    }
+
+    std::vector<ExprPtr> exprs;
+    exprs.push_back(co_await consume_expr());
+    TokenType sep = (co_await consume({TokenType::SEMICOLON, TokenType::COMMA,
+                                       TokenType::RPAREN},
+                                      "parenthesized expression"))
+                        .get()
+                        .type;
+    std::string production;
+    switch (sep) {
+      case TokenType::SEMICOLON:
+        production = "sequenced expression";
+        break;
+      case TokenType::COMMA:
+        production = "tuple expression";
+        break;
+      default:
+        co_return std::move(exprs.front());
+    }
+    do {
+      exprs.push_back(co_await consume_expr());
+    } while (co_await match(sep));
+    co_await consume(TokenType::RPAREN, production);
+    if (sep == TokenType::SEMICOLON) {
+      co_return std::make_unique<SequencedExpr>(location, std::move(exprs));
+    } else {
+      co_return std::make_unique<TupleExpr>(location, std::move(exprs));
+    }
+  }
+
+  subtask<Token, ExprPtr> consume_list_expr() {
+    const Location& location =
+        (co_await consume(TokenType::LBRACKET, "list expression"))
+            .get()
+            .location;
+    std::vector<ExprPtr> exprs;
+    if (!co_await match(TokenType::RBRACKET)) {
+      do {
+        exprs.push_back(co_await consume_expr());
+      } while ((co_await consume({TokenType::RBRACKET, TokenType::COMMA},
+                                 "list expression"))
+                   .get()
+                   .type != TokenType::RBRACKET);
+    }
+    co_return std::make_unique<ListExpr>(location, std::move(exprs));
+  }
+
+  subtask<Token, ExprPtr> consume_let_expr() {
+    const Location& location =
+        (co_await consume(TokenType::KW_LET, "let expression")).get().location;
+    std::vector<DeclPtr> decls;
+    do {
+      decls.push_back(co_await consume_decl());
+    } while (!co_await match(TokenType::KW_IN));
+    std::vector<ExprPtr> exprs;
+    do {
+      exprs.push_back(co_await consume_expr());
+    } while ((co_await consume({TokenType::SEMICOLON, TokenType::KW_END},
+                               "let expresion"))
+                 .get()
+                 .type == TokenType::SEMICOLON);
+    co_return std::make_unique<LetExpr>(location, std::move(decls),
+                                        std::move(exprs));
+  }
+
+  subtask<Token, std::unique_ptr<CaseExpr>> consume_case_expr() {
+    Token& first = co_await consume(TokenType::KW_CASE, "case expression");
+    auto expr = co_await consume_expr();
+    co_await consume(TokenType::KW_OF, "case expression");
+    co_return std::make_unique<CaseExpr>(first.location, std::move(expr),
+                                         co_await consume_cases());
+  }
+
+  subtask<Token, std::vector<std::pair<PatternPtr, ExprPtr>>> consume_cases() {
+    std::vector<std::pair<PatternPtr, ExprPtr>> cases;
+    do {
+      auto pattern = co_await consume_pattern();
+      co_await consume(TokenType::TO_EXPR, "match expression");
+      cases.emplace_back(std::move(pattern), co_await consume_expr());
+    } while (co_await match(TokenType::PIPE));
+    co_return cases;
+  }
+
+  subtask<Token, std::unique_ptr<FnExpr>> consume_fn_expr() {
+    Token& first = co_await consume(TokenType::KW_FN, "fn expression");
+    co_return std::make_unique<FnExpr>(first.location,
+                                       co_await consume_cases());
+  }
+
+  subtask<Token, DeclPtr> consume_decl() {
+    const Token* first = co_await peek();
+    assert(first);
+    switch (first->type) {
+      case TokenType::KW_VAL:
+        co_return co_await consume_val_decl();
+
+      case TokenType::KW_DATATYPE:
+        co_return co_await consume_dtype_decl();
+
+      default:
+        error(
+            fmt::format("Expected decl but got token of type {}", first->type),
+            *first);
+    }
+  }
+
+  subtask<Token, DeclPtr> consume_val_decl() {
+    const Location& location =
+        (co_await consume(TokenType::KW_VAL, "val declaration")).get().location;
+    auto explicit_type_vars = co_await consume_type_id_seq();
+    std::sort(begin(explicit_type_vars), end(explicit_type_vars));
+    std::vector<std::unique_ptr<ValBind>> bindings;
+    bool is_recursive = false;
+    do {
+      bindings.push_back(co_await consume_val_bind(is_recursive));
+      is_recursive = is_recursive || bindings.back()->rec;
+    } while (co_await match(TokenType::KW_AND));
+    co_return std::make_unique<ValDecl>(location, std::move(bindings),
+                                        std::move(explicit_type_vars));
+  }
+
+  subtask<Token, std::vector<std::u8string>> consume_type_id_seq() {
+    std::vector<std::u8string> types;
+    if (co_await match(TokenType::ID_TYPE)) {
+      types.push_back(move_string(tokens.back()));
+    } else if (has_type(co_await peek(), TokenType::LPAREN) &&
+               has_type(co_await peek(2), TokenType::ID_TYPE)) {
+      std::set<std::u8string> types_deduped;
+      co_await advance();
+      do {
+        auto s = move_string(
+            (co_await consume(TokenType::ID_TYPE, "type id sequence")).get());
+        types.push_back(s);
+        if (!types_deduped.insert(s).second) {
+          error("type id sequence contains duplicate type ids", tokens.back());
+        }
+      } while (co_await match(TokenType::COMMA));
+      if (types.size() == 1) {
+        error("Illegal type id sequence with single type id in parentheses",
+              tokens.back());
+      }
+      co_await consume(TokenType::RPAREN, "type id sequence");
+    }
+    co_return types;
+  }
+
+  subtask<Token, std::unique_ptr<ValBind>> consume_val_bind(bool is_recursive) {
+    const Location location = (co_await peek())->location;
+    const bool rec = co_await match(TokenType::KW_REC);
+    auto pattern = co_await consume_pattern();
+    co_await consume(TokenType::EQUALS, "valbind declaration");
+    ExprPtr expr = rec || is_recursive ? co_await consume_fn_expr()
+                                       : co_await consume_expr();
+    co_return std::make_unique<ValBind>(location, std::move(pattern),
+                                        std::move(expr), rec);
+  }
+
+  subtask<Token, DeclPtr> consume_dtype_decl() {
+    const Location& location =
+        (co_await consume(TokenType::KW_DATATYPE, "datatype declaration"))
+            .get()
+            .location;
+    std::vector<std::unique_ptr<DtypeBind>> bindings;
+    do {
+      bindings.push_back(co_await consume_dtype_bind());
+    } while (co_await match(TokenType::KW_AND));
+    check_no_doublebind(bindings);
+    co_return std::make_unique<DtypeDecl>(location, std::move(bindings));
+  }
+
+  subtask<Token, std::unique_ptr<DtypeBind>> consume_dtype_bind() {
+    const Location& location = (co_await peek())->location;
+    auto types = co_await consume_type_id_seq();
+    Token& id = co_await consume(TokenType::ID_WORD, "dtype-bind");
+    co_await consume(TokenType::EQUALS, "dtype-bind");
+    std::vector<std::unique_ptr<ConBind>> constructors;
+    do {
+      constructors.push_back(co_await consume_con_bind());
+    } while (co_await match(TokenType::PIPE));
+    check_type_vars(location, types, constructors);
+    auto type_name = move_string(id);
+    check_names(location, type_name, constructors);
+    co_return std::make_unique<DtypeBind>(location, std::move(type_name),
+                                          std::move(types),
+                                          std::move(constructors));
+  }
+
+  subtask<Token, std::unique_ptr<ConBind>> consume_con_bind() {
+    switch ((co_await peek())->type) {
+      case TokenType::ID_WORD: {
+        // This could be a type expression: foo list list list list list...
+        std::size_t lookahead = 2;
+        while (has_type(co_await peek(lookahead), TokenType::ID_WORD)) {
+          ++lookahead;
+        }
+        if (has_type(co_await peek(lookahead), TokenType::ID_OP)) {
+          co_return co_await consume_infix_con_bind();
+        }
+        Token& id = co_await advance();
+        std::unique_ptr<TypeExpr> param;
+        if (co_await match(TokenType::KW_OF)) {
+          param = co_await consume_type();
+        }
+        co_return std::make_unique<ConBind>(id.location, move_string(id),
+                                            std::move(param), false, false);
+      }
+
+      case TokenType::ID_OP: {
+        Token& id = co_await advance();
+        auto param = co_await consume_type();
+        co_return std::make_unique<ConBind>(id.location, move_string(id),
+                                            std::move(param), true, true);
+      }
+
+      case TokenType::LPAREN: {
+        const Token* const first = co_await peek(2);
+        if (first->type == TokenType::KW_PREFIX ||
+            first->type == TokenType::ID_OP) {
+          const Location& location = (co_await advance()).get().location;
+          const bool prefix = co_await match(TokenType::KW_PREFIX);
+          Token& id = co_await consume(TokenType::ID_OP, "con-bind paren op");
+          co_await consume(TokenType::RPAREN, "con-bind paren op");
+          TypeExprPtr param;
+          if (co_await match(TokenType::KW_OF)) {
+            param = co_await consume_type();
+          }
+          co_return std::make_unique<ConBind>(location, move_string(id),
+                                              std::move(param), true, prefix);
+        } else {
+          co_return co_await consume_infix_con_bind();
+        }
+      }
+
+      default:
+        co_return co_await consume_infix_con_bind();
+    }
+  }
+
+  subtask<Token, std::unique_ptr<ConBind>> consume_infix_con_bind() {
+    std::vector<TypeExprPtr> types;
+    types.push_back(co_await consume_type());
+    Token& id = co_await consume(TokenType::ID_OP, "con-bind infix op");
+    types.push_back(co_await consume_type());
+    const Location& location = types.front()->location;
+    co_return std::make_unique<ConBind>(
+        location, move_string(id),
+        std::make_unique<TupleTypeExpr>(location, std::move(types)), true,
+        false);
+  }
+
+  subtask<Token, PatternPtr> consume_pattern() {
+    const Token* const second = co_await peek(2);
+    const Token* const first = co_await peek();
+    if (has_type(first, TokenType::ID_WORD) &&
+        (has_type(second, TokenType::COLON) ||
+         has_type(second, TokenType::KW_AS))) {
+      Token& id = co_await advance();
+      TypeExprPtr type;
+      if (co_await match(TokenType::COLON)) {
+        type = co_await consume_type();
+      }
+      if (co_await match(TokenType::KW_AS)) {
+        auto pattern = std::make_unique<LayeredPattern>(
+            id.location, move_string(id), co_await consume_pattern());
+        if (type) {
+          co_return std::make_unique<TypedPattern>(
+              id.location, std::move(pattern), std::move(type));
+        }
+        co_return pattern;
+      }
+      co_return std::make_unique<TypedPattern>(id.location, make_id_pattern(id),
+                                               std::move(type));
+    }
+    auto pattern = co_await consume_left_pattern();
+    // TODO: support infix precedence
+    if (co_await match(TokenType::COLON)) {
+      const Location& location = pattern->location;
+      co_return std::make_unique<TypedPattern>(location, std::move(pattern),
+                                               co_await consume_type());
+    }
+    co_return pattern;
+  }
+
+  subtask<Token, PatternPtr> consume_left_pattern() {
+    const Token* const first = co_await peek();
+    const Location location = first->location;
+    auto maybe_id = co_await match_parenthesized_op_pattern(true);
+    if (!maybe_id && (has_type(first, TokenType::QUAL_ID_WORD) ||
+                      has_type(first, TokenType::ID_WORD))) {
+      maybe_id = make_id_pattern(co_await advance());
+    }
+    if (maybe_id) {
+      if (can_start_atomic_pattern(co_await peek())) {
+        auto pattern = co_await consume_atomic_pattern();
+        co_return std::make_unique<DatatypePattern>(
+            location, std::move(maybe_id), std::move(pattern));
+      } else if (maybe_id->qualifiers.empty() || !maybe_id->is_op) {
+        co_return maybe_id;
+      } else {
+        error("Qualified operator not permitted as atomic pattern", location);
+      }
+    }
+    co_return co_await consume_atomic_pattern();
+  }
+
+  subtask<Token, std::unique_ptr<IdentifierPattern>>
+  match_parenthesized_op_pattern(bool allow_qualified) {
+    const Token* const first = co_await peek();
+    assert(first);
+
+    if (first->type != TokenType::LPAREN) co_return nullptr;
+
+    const Token* const second = co_await peek(2);
+
+    if (has_type(second, TokenType::KW_PREFIX)) {
+      co_await advance();
+      co_await advance();
+      Token& id = allow_qualified
+                      ? co_await consume({QUAL_OP_TYPES}, "prefix op")
+                      : co_await consume({NON_QUAL_OP_TYPES}, "prefix op");
+      co_await consume(TokenType::RPAREN, "prefix op");
+      co_return make_id_pattern(id, true);
+    }
+
+    if (is_op(second, allow_qualified) &&
+        has_type(co_await peek(3), TokenType::RPAREN)) {
+      co_await advance();
+      Token& id = co_await advance();
+      co_await advance();
+      co_return make_id_pattern(id, false);
+    }
+
+    co_return nullptr;
+  }
+
+  subtask<Token, PatternPtr> consume_atomic_pattern() {
+    auto maybe_op = co_await match_parenthesized_op_pattern(false);
+    if (maybe_op) co_return maybe_op;
+
+    const Token* const first = co_await peek();
+    assert(first);
+
+    switch (first->type) {
+      case TokenType::KW_UNDERSCORE:
+        co_return std::make_unique<WildcardPattern>(
+            (co_await advance()).get().location);
+
+      case TokenType::ILITERAL:
+      case TokenType::STRING: {
+        auto expr = co_await consume_atomic_expr();
+        const Location& location = expr->location;
+        co_return std::make_unique<LiteralPattern>(location, std::move(expr));
+      }
+
+      case TokenType::ID_WORD:
+      case TokenType::QUAL_ID_WORD:
+        co_return make_id_pattern(co_await advance(), false);
+
+      case TokenType::LBRACE:
+        co_return co_await consume_record_pattern();
+
+      case TokenType::LBRACKET:
+        co_return co_await consume_list_pattern();
+
+      case TokenType::LPAREN:
+        co_return co_await consume_paren_pattern();
+
+      default:
+        error("Unexpected token when parsing atomic pattern",
+              co_await advance());
+    }
+  }
+
+  subtask<Token, PatternPtr> consume_record_pattern() {
+    std::vector<std::unique_ptr<RecRowPattern>> rows;
+    std::set<std::u8string> labels;
+    bool has_wildcard = false;
+    const Location& location =
+        (co_await consume(TokenType::LBRACE, "record pattern")).get().location;
+    if (!co_await match(TokenType::RBRACE)) {
+      do {
+        if (co_await match(TokenType::ELLIPSIS)) {
+          if (has_wildcard) {
+            error("'...' may not appear twice in a single pattern.",
+                  tokens.back());
+          } else {
+            has_wildcard = true;
+          }
+        } else {
+          Token& label =
+              co_await consume(TokenType::ID_WORD, "record row pattern");
+          std::u8string label_name = get<std::u8string>(label.aux);
+          PatternPtr pattern;
+          if (co_await match(TokenType::EQUALS)) {
+            pattern = co_await consume_pattern();
+          } else {
+            TypeExprPtr type;
+            if (co_await match(TokenType::COLON)) {
+              type = co_await consume_type();
+            }
+            if (co_await match(TokenType::KW_AS)) {
+              pattern = std::make_unique<LayeredPattern>(
+                  label.location, label_name, co_await consume_pattern());
+            } else {
+              pattern =
+                  make_id_pattern(label.location, {}, label_name, false, false);
+            }
+            if (type) {
+              pattern = std::make_unique<TypedPattern>(
+                  label.location, std::move(pattern), std::move(type));
+            }
+          }
+          auto insres = labels.insert(label_name);
+          if (!insres.second) {
+            error(fmt::format("Label '{}' was specified twice in pattern",
+                              to_std_string(label_name)),
+                  label);
+          }
+          rows.push_back(std::make_unique<RecRowPattern>(
+              label.location, move_string(label), std::move(pattern)));
+        }
+      } while (co_await match(TokenType::COMMA));
+      co_await consume(TokenType::RBRACE, "record pattern");
+    }
+    co_return std::make_unique<RecordPattern>(location, std::move(rows),
+                                              has_wildcard);
+  }
+
+  subtask<Token, PatternPtr> consume_list_pattern() {
+    const Location& location =
+        (co_await consume(TokenType::LBRACKET, "list pattern")).get().location;
+    std::vector<PatternPtr> patterns;
+    if (!co_await match(TokenType::RBRACKET)) {
+      do {
+        patterns.push_back(co_await consume_pattern());
+      } while (co_await match(TokenType::COMMA));
+      co_await consume(TokenType::RBRACKET, "list pattern");
+    }
+    co_return std::make_unique<ListPattern>(location, std::move(patterns));
+  }
+
+  subtask<Token, PatternPtr> consume_paren_pattern() {
+    const Location& location =
+        (co_await consume(TokenType::LPAREN, "parenthesized pattern"))
+            .get()
+            .location;
+    if (co_await match(TokenType::RPAREN)) {
+      co_return std::make_unique<TuplePattern>(location,
+                                               std::vector<PatternPtr>{});
+    }
+    if (co_await match(TokenType::KW_PREFIX)) {
+      Token& id = co_await consume({NON_QUAL_OP_TYPES}, "prefix op pattern");
+      co_await consume(TokenType::RPAREN, "prefix op pattern");
+      co_return make_id_pattern(id, true);
+    }
+    if (is_op(co_await peek(), false) &&
+        has_type(co_await peek(2), TokenType::RPAREN)) {
+      Token& id = co_await advance();
+      co_await advance();
+      co_return make_id_pattern(id, false);
+    }
+
+    std::vector<PatternPtr> patterns;
+    do {
+      patterns.push_back(co_await consume_pattern());
+    } while (co_await match(TokenType::COMMA));
+    co_await consume(TokenType::RPAREN, "parenthesized pattern");
+    if (patterns.size() == 1) {
+      co_return std::move(patterns.front());
+    }
+    co_return std::make_unique<TuplePattern>(location, std::move(patterns));
+  }
+
+  subtask<Token, TypeExprPtr> consume_type() {
+    auto t = co_await consume_tuple_type();
+    const Location location = t->location;
+    if (co_await match(TokenType::TO_TYPE)) {
+      auto ret = co_await consume_type();
+
+      co_return std::make_unique<FuncTypeExpr>(location, std::move(t),
+                                               std::move(ret));
+    }
+    co_return t;
+  }
+
+  subtask<Token, TypeExprPtr> consume_tuple_type() {
+    std::vector<TypeExprPtr> types;
+    do {
+      types.push_back(co_await consume_atomic_type());
+    } while (co_await match(TokenType::ASTERISK));
+    if (types.size() == 1) {
+      co_return std::move(types.front());
+    }
+    const Location& location = types.front()->location;
+    co_return std::make_unique<TupleTypeExpr>(location, std::move(types));
+  }
+
+  subtask<Token, TypeExprPtr> consume_atomic_type() {
+    const Token* const first = co_await peek();
+    assert(first);
+    TypeExprPtr type;
+    switch (first->type) {
+      case TokenType::ID_TYPE: {
+        Token& t = co_await advance();
+        type = std::make_unique<VarTypeExpr>(t.location, move_string(t));
+        break;
+      }
+
+      case TokenType::LBRACE:
+        type = co_await consume_record_type();
+        break;
+
+      case TokenType::LPAREN:
+        type = co_await consume_paren_type();
+        break;
+
+      case TokenType::QUAL_ID_WORD:
+      case TokenType::ID_WORD: {
+        Token& t = co_await advance();
+        type = make_tycon_type(t.location, t);
+        break;
+      }
+
+      default:
+        error("Unexpected token in type expression", co_await advance());
+    }
+    const Location& location = type->location;
+    while (co_await match({TokenType::QUAL_ID_WORD, TokenType::ID_WORD})) {
+      type = make_tycon_type(location, tokens.back(), std::move(type));
+    }
+    co_return type;
+  }
+
+  subtask<Token, TypeExprPtr> consume_record_type() {
+    std::vector<std::pair<std::u8string, TypeExprPtr>> rows;
+    std::set<std::u8string> labels;
+    const Location& location =
+        (co_await consume(TokenType::LBRACE, "record type expresion"))
+            .get()
+            .location;
+    if (!co_await match(TokenType::RBRACE)) {
+      do {
+        Token& id =
+            co_await consume(TokenType::ID_WORD, "record row type expression");
+        co_await consume(TokenType::COLON, "record row type expression");
+        rows.emplace_back(move_string(id), co_await consume_type());
+        auto insres = labels.insert(rows.back().first);
+        if (!insres.second) {
+          error(fmt::format("Label '{}' bound twice in record type expression",
+                            to_std_string(rows.back().first)),
+                id);
+        }
+      } while (co_await match(TokenType::COMMA));
+      co_await consume(TokenType::RBRACE, "record type expression");
+    }
+    co_return std::make_unique<RecordTypeExpr>(location, std::move(rows));
+  }
+
+  subtask<Token, TypeExprPtr> consume_paren_type() {
+    const Location& location =
+        (co_await consume(TokenType::LPAREN, "parenthesized type expresion"))
+            .get()
+            .location;
+    std::vector<TypeExprPtr> types;
+    do {
+      types.push_back(co_await consume_type());
+    } while (co_await match(TokenType::COMMA));
+    co_await consume(TokenType::RPAREN, types.size() == 1
+                                            ? "parenthesized type expresion"
+                                            : "type sequence");
+    if (types.size() == 1) {
+      co_return std::move(types.front());
+    }
+    co_return make_tycon_type(
+        location,
+        co_await consume({TokenType::ID_WORD, TokenType::QUAL_ID_WORD},
+                         "type constructor expression"),
+        std::move(types));
+  }
+};
+
+}  // namespace
+
+parser::~parser() = default;
+
+processor::processor<Token, Expected<TopDeclPtr>> parser::parse() {
+  while (true) {
+    Expected<TopDeclPtr> result;
+    requires_more_input_ = true;
+    try {
+      result = co_await next_token()();
+    } catch (ParsingError& e) {
+      result = std::make_exception_ptr(e);
+    } catch (eof) {
+      co_return;
+    } catch (reset) {
+      continue;
+    }
+    requires_more_input_ = false;
+    co_yield std::move(result);
+  }
+}
+
+processor::processor<Token, Expected<TopDeclPtr>> parse() {
+  parser p;
+  auto s = p.parse().as_subprocess();
+  while (!co_await s.done()) {
+    co_yield co_await s;
+  }
 }
 
 }  // namespace emil
