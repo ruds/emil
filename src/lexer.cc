@@ -1980,6 +1980,7 @@ class LexerSource : public Source<Token> {
   const Token* peek(size_t lookahead) override;
   bool at_end() const override;
   void putback(Token t) override;
+  void sync() override;
 
  private:
   std::basic_ifstream<char32_t> file_;
@@ -2019,6 +2020,11 @@ const Token* LexerSource::peek(size_t lookahead) {
 bool LexerSource::at_end() const { return at_end_ && empty(buffer_); }
 
 void LexerSource::putback(Token t) { buffer_.push_front(std::move(t)); }
+
+void LexerSource::sync() {
+  buffer_.clear();
+  lexer_.advance_past(U"\n");
+}
 
 }  // namespace
 

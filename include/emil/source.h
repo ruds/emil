@@ -29,6 +29,7 @@ class Source {
   virtual T advance() = 0;
   virtual const T* peek(std::size_t lookahead = 0) = 0;
   virtual bool at_end() const = 0;
+  virtual void sync() = 0;
   /**
    * Implementations must permit at least one character of putback.
    *

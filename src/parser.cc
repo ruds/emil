@@ -217,17 +217,7 @@ Token Parser::ensure_token(const Token* t) const {
   return t ? *t : *eof_token_;
 }
 
-void Parser::synchronize() {
-  while (!at_end()) {
-    const auto& t = advance();
-    switch (t.type) {
-      case TokenType::SEMICOLON:
-        return;
-      default:
-        break;
-    }
-  }
-}
+void Parser::synchronize() { source_->sync(); }
 
 ExprPtr Parser::match_expr(Token& first) {
   auto expr = match_left_expr(first);
