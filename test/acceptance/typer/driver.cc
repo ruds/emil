@@ -17,20 +17,24 @@
 
 #include <cstdio>
 #include <cstring>
+#include <exception>
 #include <fstream>
 #include <iterator>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <variant>
 
 #include "emil/ast.h"
 #include "emil/collections.h"
 #include "emil/gc.h"
 #include "emil/lexer.h"
 #include "emil/parser.h"
+#include "emil/processor.h"
 #include "emil/reporter.h"
 #include "emil/runtime.h"
 #include "emil/strconvert.h"
+#include "emil/text_input.h"
 #include "emil/token.h"
 #include "emil/typed_ast.h"
 #include "emil/typer.h"
@@ -109,17 +113,23 @@ class TestReporter : public Reporter {
   const bool enable_type_judgements_;
 };
 
-void process_next_topdecl(DriverRoot& root, Parser& parser, OutIt& out) {
-  auto topdecl = parser.next();
-  auto e = root.typer->elaborate(root.B, *topdecl);
-  root.B = e.B;
-  root.last_topdecl = e.topdecl;
-  fmt::format_to(out, "@{:04}:\n{}", e.topdecl->location.line,
-                 root.typer->describe_basis_updates(*e.topdecl));
+void process_next_topdecl(DriverRoot& root, std::unique_ptr<TopDecl> topdecl,
+                          Reporter& reporter, OutIt& out) {
+  try {
+    auto e = root.typer->elaborate(root.B, *topdecl);
+    root.B = e.B;
+    root.last_topdecl = e.topdecl;
+    fmt::format_to(out, "@{:04}:\n{}", e.topdecl->location.line,
+                   root.typer->describe_basis_updates(*e.topdecl));
+  } catch (ElaborationError& e) {
+    reporter.report_error(e.location, e.msg);
+  }
 }
 
-void process_file(std::string_view infile, const std::string& outfile,
+void process_file(std::string infile, const std::string& outfile,
                   bool enable_type_judgement) {
+  std::basic_ifstream<char32_t> instream{infile};
+  auto in = read_stream(instream);
   std::ofstream outstream(outfile);
   std::ostreambuf_iterator<char> out(outstream);
   TestReporter reporter{out, enable_type_judgement};
@@ -131,14 +141,19 @@ void process_file(std::string_view infile, const std::string& outfile,
   DriverContextAccessor::install_context(rc);
   root.initialize(reporter);
 
-  Parser parser(emil::make_lexer(infile));
+  auto parser = lex(infile) | parse();
 
-  while (!parser.at_end()) {
-    try {
-      process_next_topdecl(root, parser, out);
-    } catch (ElaborationError& e) {
-      reporter.report_error(e.location, e.msg);
+  in.finish();
+  while (in) {
+    parser.process(in());
+    while (parser) {
+      process_next_topdecl(root, get<0>(parser()), reporter, out);
+      outstream.flush();
     }
+  }
+  parser.finish();
+  while (parser) {
+    process_next_topdecl(root, get<0>(parser()), reporter, out);
     outstream.flush();
   }
 }
