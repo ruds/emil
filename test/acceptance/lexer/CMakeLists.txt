@@ -16,7 +16,6 @@ add_golden_driver(lexer-driver driver.cc)
 target_link_libraries(lexer-driver lexer)
 
 macro(lexer_golden_test TESTNAME)
-  add_golden_test(lexer-driver "${TESTNAME}" VARIANT source)
   add_golden_test(lexer-driver "${TESTNAME}" VARIANT processor)
 endmacro()
 

@@ -28,7 +28,6 @@
 
 #include "emil/lexer.h"
 #include "emil/processor.h"
-#include "emil/source.h"
 #include "emil/text_input.h"
 #include "emil/token.h"
 
@@ -74,22 +73,7 @@ int main(int argc, char* argv[]) {
   std::ofstream outstream(outfile);
   std::ostreambuf_iterator<char> out(outstream);
 
-  if (!std::strcmp(argv[1], "source")) {
-    emil::Lexer lexer(infile, emil::make_source(stream));
-
-    while (emil::testing::process_next_token(
-        [&lexer]() {
-          try {
-            return lexer.next_token();
-          } catch (emil::LexingError&) {
-            lexer.advance_past(U"\n");
-            throw;
-          }
-        },
-        out)) {
-      outstream.flush();
-    }
-  } else if (!std::strcmp(argv[1], "processor")) {
+  if (!std::strcmp(argv[1], "processor")) {
     auto p = emil::read_stream(stream) | emil::lex(infile);
     p.finish();
     while (emil::testing::process_next_token(
