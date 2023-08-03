@@ -86,14 +86,7 @@ int main(int argc, char* argv[]) {
   std::ofstream outstream(outfile);
   std::ostreambuf_iterator<char> out(outstream);
 
-  if (!std::strcmp(argv[1], "source")) {
-    emil::Parser parser(emil::make_lexer(infile));
-
-    while (!parser.at_end()) {
-      emil::testing::process_next_topdecl([&]() { return parser.next(); }, out);
-      outstream.flush();
-    }
-  } else if (!std::strcmp(argv[1], "processor")) {
+  if (!std::strcmp(argv[1], "processor")) {
     std::basic_ifstream<char32_t> stream(infile);
     auto in = emil::read_stream(stream);
     in.finish();
