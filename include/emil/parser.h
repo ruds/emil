@@ -51,6 +51,8 @@ class TypeExpr;
 class ValBind;
 class ValDecl;
 
+struct next_token;
+
 /** Converts a stream of characters to a stream of tokens. */
 struct parser {
   ~parser();
@@ -73,7 +75,7 @@ struct parser {
   parse();
 
  private:
-  bool requires_more_input_ = false;
+  next_token* next_token_ = nullptr;
 };
 
 /**

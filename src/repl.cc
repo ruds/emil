@@ -25,14 +25,16 @@
 #include <cstdlib>
 #include <iostream>
 #include <iterator>
+#include <memory>
 #include <string>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include "emil/ast.h"
 #include "emil/lexer.h"
+#include "emil/parser.h"
 #include "emil/processor.h"
-#include "emil/token.h"
 
 constexpr std::size_t HISTORY_LEN = 1000;
 
@@ -77,8 +79,9 @@ int main(int argc, char *argv[]) {
   linenoise::LoadHistory(history_path.c_str());
 
   emil::lexer lexer("<stdin>");
-  auto tokens = convert_lines() | lexer.lex();
-  std::vector<emil::Token> batch;
+  emil::parser parser;
+  auto nodes = convert_lines() | lexer.lex() | parser.parse();
+  std::vector<std::unique_ptr<emil::TopDecl>> batch;
   while (true) {
     assert(!lexer.requires_more_input());
     batch.clear();
@@ -90,39 +93,44 @@ int main(int argc, char *argv[]) {
       if (errno == EAGAIN) continue;
       break;
     }
-    tokens.process(line);
+    nodes.process(line);
     linenoise::AddHistory(std::move(line));
 
     try {
-      while (tokens)
-        batch.push_back(emil::processor::get_value_or_throw(tokens()));
+      while (nodes)
+        batch.push_back(emil::processor::get_value_or_throw(nodes()));
 
-      while (lexer.requires_more_input()) {
+      while (lexer.requires_more_input() || parser.requires_more_input()) {
         std::string continuation;
         errno = 0;
         quit = linenoise::Readline(" = ", continuation);
         if (quit) break;
-        tokens.process(continuation);
+        nodes.process(continuation);
         linenoise::AddHistory(std::move(continuation));
 
-        while (tokens)
-          batch.push_back(emil::processor::get_value_or_throw(tokens()));
+        while (nodes)
+          batch.push_back(emil::processor::get_value_or_throw(nodes()));
       }
     } catch (emil::LexingError &err) {
       std::cout << err.what() << std::endl;
       continue;
+    } catch (emil::ParsingError &err) {
+      std::cout << err.what() << std::endl;
+      nodes.reset();
+      while (nodes) nodes();
+      continue;
     }
     if (quit) {
       if (errno == EAGAIN) {
-        tokens.reset();
-        while (tokens) tokens();
+        nodes.reset();
+        while (nodes) nodes();
         continue;
       }
       break;
     }
 
     for (const auto &t : batch) {
-      fmt::print(std::cout, "{} ", t);
+      fmt::print(std::cout, "{} ", print_ast(*t, 0));
     }
     std::cout << std::endl;
   }

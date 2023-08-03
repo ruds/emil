@@ -1106,6 +1106,8 @@ using processor::subtask;
 using TopDeclPtr = std::unique_ptr<TopDecl>;
 using TokenRef = std::reference_wrapper<Token>;
 
+}  // namespace
+
 struct next_token {
   std::deque<Token> tokens;
   std::optional<Token> eof_token;
@@ -1978,16 +1980,19 @@ struct next_token {
   }
 };
 
-}  // namespace
-
 parser::~parser() = default;
+
+bool parser::requires_more_input() const {
+  return next_token_ && !next_token_->tokens.empty();
+}
 
 processor::processor<Token, Expected<TopDeclPtr>> parser::parse() {
   while (true) {
     Expected<TopDeclPtr> result;
-    requires_more_input_ = true;
+    next_token n;
+    next_token_ = &n;
     try {
-      result = co_await next_token()();
+      result = co_await n();
     } catch (ParsingError& e) {
       result = std::make_exception_ptr(e);
     } catch (eof) {
@@ -1995,7 +2000,7 @@ processor::processor<Token, Expected<TopDeclPtr>> parser::parse() {
     } catch (reset) {
       continue;
     }
-    requires_more_input_ = false;
+    next_token_ = nullptr;
     co_yield std::move(result);
   }
 }
