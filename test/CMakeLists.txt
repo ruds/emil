@@ -49,7 +49,6 @@ endmacro()
 
 emil_add_gtest(bigint_test bigint_test.cc bigint util)
 target_compile_options(bigint_test PRIVATE -Wno-overlength-strings)
-emil_add_gtest(source_test source_test.cc lexer)
 emil_add_gtest(text_input_test text_input_test.cc lexer)
 emil_add_gtest(gc_test gc_test.cc runtime)
 emil_add_gtest(string_test string_test.cc runtime util)

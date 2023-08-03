@@ -43,7 +43,7 @@ add_emil_options(util)
 target_include_directories(util PUBLIC ../include)
 target_link_libraries(util PRIVATE fmt::fmt utf8cpp)
 
-add_library(lexer STATIC lexer.cc source.cc text_input.cc)
+add_library(lexer STATIC lexer.cc text_input.cc)
 add_emil_options(lexer)
 target_include_directories(lexer
   PUBLIC ../include
