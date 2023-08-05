@@ -97,8 +97,8 @@ add_library(interpreter STATIC interpreter.cc)
 add_emil_options(interpreter)
 target_include_directories(interpreter PUBLIC ../include)
 target_link_libraries(interpreter
-  PRIVATE ast lexer parser runtime typed_ast fmt::fmt utf8cpp)
+  PRIVATE ast lexer parser runtime typed_ast typer fmt::fmt utf8cpp)
 
 add_executable(repl repl.cc)
 add_emil_options(repl)
-target_link_libraries(repl ast lexer parser linenoise fmt::fmt utf8cpp)
+target_link_libraries(repl interpreter linenoise fmt::fmt)

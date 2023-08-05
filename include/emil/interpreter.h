@@ -36,6 +36,8 @@ class Interpreter {
    */
   bool process_line(std::string line);
 
+  void reset();
+
  private:
   std::unique_ptr<InterpreterImpl> impl_;
 };

@@ -13,28 +13,33 @@
 // limitations under the License.
 
 #include <fmt/core.h>
-#include <fmt/ostream.h>
 #include <linenoise.hpp>
 #include <pwd.h>
 #include <sys/errno.h>
 #include <unistd.h>
-#include <utf8.h>
 
-#include <cassert>
-#include <coroutine>
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
-#include <iterator>
-#include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
-#include <variant>
-#include <vector>
 
-#include "emil/ast.h"
-#include "emil/lexer.h"
-#include "emil/parser.h"
-#include "emil/processor.h"
+#include "emil/interpreter.h"
+#include "emil/reporter.h"
+#include "emil/token.h"
+
+namespace emil {
+class Expr;
+
+namespace typing {
+class Type;
+class TypeScheme;
+}  // namespace typing
+
+}  // namespace emil
+
+namespace {
 
 constexpr std::size_t HISTORY_LEN = 1000;
 
@@ -45,26 +50,51 @@ const char *get_config_dir() {
   return getpwuid(getuid())->pw_dir;
 }
 
-emil::processor::processor<std::string, char32_t> convert_lines() {
-  bool needs_reset = false;
-  while (true) {
-    try {
-      if (needs_reset) {
-        needs_reset = false;
-        co_yield U'\n';
-      }
-      auto line = co_await emil::processor::next_input{};
-      auto it = begin(line);
-      while (it != end(line)) {
-        co_yield utf8::next(it, end(line));
-      }
-      co_yield U'\n';
-    } catch (emil::processor::eof) {
-    } catch (emil::processor::reset) {
-      needs_reset = true;
-    }
+struct reporter : public emil::Reporter {
+  void report_error(const emil::Location &location,
+                    std::string_view text) override {
+    fmt::print(stdout, "{}:{}: error: {}\n", location.filename, location.line,
+               text);
   }
+
+  void report_warning(const emil::Location &location,
+                      std::string_view text) override {
+    fmt::print(stdout, "{}:{}: warning: {}\n", location.filename, location.line,
+               text);
+  }
+
+  void report_info(std::string_view text) override {
+    std::cout << text;
+    flush(std::cout);
+  }
+
+  void report_type_judgement(const emil::Location &, const emil::Expr &,
+                             const emil::typing::Type &) override {}
+  void report_type_judgement(const emil::Location &, std::string_view,
+                             const emil::typing::TypeScheme &) override {}
+};
+
+bool read_eval_print(emil::Interpreter &interpreter) {
+  static std::string line;
+  bool first = true;
+  bool quit;
+
+  do {
+    line.clear();
+    errno = 0;
+    quit = linenoise::Readline(first ? " - " : " = ", line);
+    first = false;
+    if (quit) {
+      interpreter.reset();
+      return errno == EAGAIN;
+    }
+    linenoise::AddHistory(line);
+  } while (interpreter.process_line(std::move(line)));
+
+  return true;
 }
+
+}  // namespace
 
 int main(int argc, char *argv[]) {
   if (argc != 1) {
@@ -78,61 +108,10 @@ int main(int argc, char *argv[]) {
   linenoise::SetHistoryMaxLen(HISTORY_LEN);
   linenoise::LoadHistory(history_path.c_str());
 
-  emil::lexer lexer("<stdin>");
-  emil::parser parser;
-  auto nodes = convert_lines() | lexer.lex() | parser.parse();
-  std::vector<std::unique_ptr<emil::TopDecl>> batch;
-  while (true) {
-    assert(!lexer.requires_more_input());
-    batch.clear();
+  reporter reporter;
+  emil::Interpreter interpreter{reporter};
 
-    std::string line;
-    errno = 0;
-    auto quit = linenoise::Readline(" - ", line);
-    if (quit) {
-      if (errno == EAGAIN) continue;
-      break;
-    }
-    nodes.process(line);
-    linenoise::AddHistory(std::move(line));
-
-    try {
-      while (nodes)
-        batch.push_back(emil::processor::get_value_or_throw(nodes()));
-
-      while (lexer.requires_more_input() || parser.requires_more_input()) {
-        std::string continuation;
-        errno = 0;
-        quit = linenoise::Readline(" = ", continuation);
-        if (quit) break;
-        nodes.process(continuation);
-        linenoise::AddHistory(std::move(continuation));
-
-        while (nodes)
-          batch.push_back(emil::processor::get_value_or_throw(nodes()));
-      }
-    } catch (emil::LexingError &err) {
-      std::cout << err.what() << std::endl;
-      continue;
-    } catch (emil::ParsingError &err) {
-      std::cout << err.what() << std::endl;
-      nodes.reset();
-      while (nodes) nodes();
-      continue;
-    }
-    if (quit) {
-      if (errno == EAGAIN) {
-        nodes.reset();
-        while (nodes) nodes();
-        continue;
-      }
-      break;
-    }
-
-    for (const auto &t : batch) {
-      fmt::print(std::cout, "{} ", print_ast(*t, 0));
-    }
-    std::cout << std::endl;
+  while (read_eval_print(interpreter)) {
   }
 
   linenoise::SaveHistory(history_path.c_str());

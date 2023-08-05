@@ -112,14 +112,17 @@ class InterpreterImpl {
       reporter_.report_error(e.location, e.msg);
     } catch (ParsingError& e) {
       reporter_.report_error(e.location, e.msg);
-      line_parser_.reset();
-      while (line_parser_) line_parser_();
+      reset();
     } catch (ElaborationError& e) {
       reporter_.report_error(e.location, e.msg);
-      line_parser_.reset();
-      while (line_parser_) line_parser_();
+      reset();
     }
     return lexer_.requires_more_input() || parser_.requires_more_input();
+  }
+
+  void reset() {
+    line_parser_.reset();
+    while (line_parser_) line_parser_();
   }
 
  private:
@@ -142,5 +145,7 @@ Interpreter::~Interpreter() = default;
 bool Interpreter::process_line(std::string line) {
   return impl_->process_line(std::move(line));
 }
+
+void Interpreter::reset() { impl_->reset(); }
 
 }  // namespace emil
