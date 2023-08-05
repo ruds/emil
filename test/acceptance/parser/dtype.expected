@@ -1,6 +1,6 @@
 0001 (DeclTopDecl
-         :decl
-         (DtypeDecl
+         :decls
+         ((DtypeDecl
              :bindings
              ((DtypeBind
                  :identifier
@@ -45,10 +45,10 @@
                          false
                          :is_prefix_op
                          false)
-                 )))))
+                 ))))))
 0002 (DeclTopDecl
-         :decl
-         (DtypeDecl
+         :decls
+         ((DtypeDecl
              :bindings
              (
                  (DtypeBind
@@ -139,10 +139,10 @@
                              :is_prefix_op
                              false)
                      ))
-             )))
+             ))))
 0004 (DeclTopDecl
-         :decl
-         (DtypeDecl
+         :decls
+         ((DtypeDecl
              :bindings
              ((DtypeBind
                  :identifier
@@ -233,10 +233,10 @@
                          true
                          :is_prefix_op
                          true)
-                 )))))
+                 ))))))
 0008 (DeclTopDecl
-         :decl
-         (DtypeDecl
+         :decls
+         ((DtypeDecl
              :bindings
              ((DtypeBind
                  :identifier
@@ -327,10 +327,10 @@
                          true
                          :is_prefix_op
                          true)
-                 )))))
+                 ))))))
 0012 (DeclTopDecl
-         :decl
-         (DtypeDecl
+         :decls
+         ((DtypeDecl
              :bindings
              ((DtypeBind
                  :identifier
@@ -456,10 +456,10 @@
                          true
                          :is_prefix_op
                          false)
-                 )))))
+                 ))))))
 0018 (DeclTopDecl
-         :decl
-         (DtypeDecl
+         :decls
+         ((DtypeDecl
              :bindings
              ((DtypeBind
                  :identifier
@@ -487,13 +487,13 @@
                      :is_op
                      false
                      :is_prefix_op
-                     false))))))
+                     false)))))))
 0019 ERROR
 0020 ERROR
 0021 ERROR
 0022 (DeclTopDecl
-         :decl
-         (DtypeDecl
+         :decls
+         ((DtypeDecl
              :bindings
              ((DtypeBind
                  :identifier
@@ -526,7 +526,7 @@
                      :is_op
                      false
                      :is_prefix_op
-                     false))))))
+                     false)))))))
 0024 ERROR
 0025 ERROR
 0026 ERROR

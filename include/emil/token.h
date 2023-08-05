@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "emil/enum.h"
+#include "emil/misc.h"
 #include "emil/strconvert.h"
 
 namespace emil {
@@ -164,13 +165,6 @@ struct fmt::formatter<emil::BigintLiteralData> {
 
 template <>
 struct fmt::formatter<emil::Token> {
-  template <typename... Ts>
-  struct overload : Ts... {
-    using Ts::operator()...;
-  };
-  template <typename... Ts>
-  overload(Ts...) -> overload<Ts...>;
-
   // cppcheck-suppress functionStatic
   constexpr auto parse(format_parse_context& ctx) -> decltype(ctx.begin()) {
     auto it = ctx.begin(), end = ctx.end();
@@ -187,15 +181,15 @@ struct fmt::formatter<emil::Token> {
     std::string aux;
     switch (t.type) {
       case TokenType::ILITERAL: {
-        aux = visit(
-            overload{[](int64_t i) { return format("{}i", i); },
-                     [](const emil::BigintLiteralData& d) {
-                       return fmt::format("{}", d);
-                     },
-                     [](const auto&) -> std::string {
-                       throw std::logic_error("Bad aux type for ILITERAL");
-                     }},
-            t.aux);
+        aux = visit(emil::overloaded{[](int64_t i) { return format("{}i", i); },
+                                     [](const emil::BigintLiteralData& d) {
+                                       return fmt::format("{}", d);
+                                     },
+                                     [](const auto&) -> std::string {
+                                       throw std::logic_error(
+                                           "Bad aux type for ILITERAL");
+                                     }},
+                    t.aux);
         break;
       }
 

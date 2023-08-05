@@ -16,16 +16,13 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <map>
-#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <variant>
 #include <vector>
 
-#include "emil/bigint.h"  // IWYU pragma: keep
-#include "emil/cons.h"
+#include "emil/collections.h"
 #include "emil/gc.h"
 #include "emil/string.h"
 #include "emil/token.h"
@@ -39,32 +36,72 @@
 
 namespace emil {
 
+class bigint;
 class TDecl;
 
 /** Describes how to access parts of a value to bind to identifiers. */
-struct bind_rule_t {
-  std::vector<std::u8string> names;  // bind the current value to these names
-  using record_field_access_t = std::pair<std::u8string, bind_rule_t>;
-  using tuple_access_t = std::pair<std::size_t, bind_rule_t>;
-  std::variant<std::vector<record_field_access_t>, std::vector<tuple_access_t>>
+struct bind_rule_t : public Managed {
+  // bind the current value to these names
+  collections::ConsPtr<ManagedString> names;
+
+  struct record_field_access_t : public Managed {
+    StringPtr field_name;
+    managed_ptr<bind_rule_t> rule;
+
+    record_field_access_t(StringPtr field_name, managed_ptr<bind_rule_t> rule)
+        : field_name(field_name), rule(rule) {}
+
+    void visit_subobjects(const ManagedVisitor& visitor) override {
+      field_name.accept(visitor);
+      rule.accept(visitor);
+    }
+    std::size_t managed_size() const noexcept override {
+      return sizeof(record_field_access_t);
+    }
+  };
+
+  struct tuple_access_t : public Managed {
+    std::size_t index;
+    managed_ptr<bind_rule_t> rule;
+
+    tuple_access_t(std::size_t index, managed_ptr<bind_rule_t> rule)
+        : index(index), rule(rule) {}
+
+    void visit_subobjects(const ManagedVisitor& visitor) override {
+      rule.accept(visitor);
+    }
+    std::size_t managed_size() const noexcept override {
+      return sizeof(tuple_access_t);
+    }
+  };
+
+  std::variant<collections::ArrayPtr<record_field_access_t>,
+               collections::ArrayPtr<tuple_access_t>>
       subtype_bindings;
 
   bool empty() const {
-    return names.empty() &&
-           visit([](const auto& l) { return l.empty(); }, subtype_bindings);
+    return !names && visit([](const auto& l) { return !l || l->empty(); },
+                           subtype_bindings);
   }
 
   bool is_tuple() const {
-    return subtype_bindings.index() == 1 && !get<1>(subtype_bindings).empty();
+    return subtype_bindings.index() == 1 && !get<1>(subtype_bindings)->empty();
   }
 
   bool is_record() const {
-    return subtype_bindings.index() == 0 && !get<0>(subtype_bindings).empty();
+    return subtype_bindings.index() == 0 && !get<0>(subtype_bindings)->empty();
   }
 
-  void clear() {
-    names.clear();
-    visit([](auto& l) { l.clear(); }, subtype_bindings);
+  void visit_subobjects(const ManagedVisitor& visitor) override {
+    if (names) names.accept(visitor);
+    visit(
+        [&](auto& l) {
+          if (l) l.accept(visitor);
+        },
+        subtype_bindings);
+  }
+  std::size_t managed_size() const noexcept override {
+    return sizeof(bind_rule_t);
   }
 };
 
@@ -83,16 +120,17 @@ struct bind_rule_t {
  *    field f1 matches p1, etc; the pattern need not be
  *    exhaustive over all the record's fields.
  */
-struct pattern_t {
-  static pattern_t wildcard();
-  static pattern_t constructed(std::u8string constructor,
-                               managed_ptr<typing::TypeName> type_name,
-                               typing::TypePtr arg_type,
-                               std::vector<pattern_t> subpatterns);
-  static pattern_t tuple(std::vector<pattern_t> subpatterns);
+struct pattern_t : public Managed {
+  static managed_ptr<pattern_t> wildcard();
+  static managed_ptr<pattern_t> constructed(
+      StringPtr constructor, managed_ptr<typing::TypeName> type_name,
+      typing::TypePtr arg_type, collections::ArrayPtr<pattern_t> subpatterns);
+  static managed_ptr<pattern_t> tuple(
+      collections::ArrayPtr<pattern_t> subpatterns);
   // field must be set on each subpattern; subpatterns must be sorted
   // by field name.
-  static pattern_t record(std::vector<pattern_t> subpatterns);
+  static managed_ptr<pattern_t> record(
+      collections::ArrayPtr<pattern_t> subpatterns);
 
   bool is_wildcard() const;
   bool is_tuple() const;
@@ -101,18 +139,18 @@ struct pattern_t {
   bool is_constructed() const;
 
   // is_constructed() must be true.
-  const std::u8string& constructor() const;
+  StringPtr constructor() const;
   // is_constructed() must be true.
   managed_ptr<typing::TypeName> type_name() const;
   // is_constructed() must be true. May be null.
   typing::TypePtr arg_type() const;
   // is_wildcard() must be false.
-  const std::vector<pattern_t>& subpatterns() const;
+  collections::ArrayPtr<pattern_t> subpatterns() const;
   // is_record_field() must be true.
-  const std::u8string& field() const;
+  StringPtr field() const;
 
   /** Convert this to a record field matcher. */
-  void set_field(std::u8string field);
+  void set_field(StringPtr field);
 
   /**
    * Expand this pattern based on match_type.
@@ -133,53 +171,67 @@ struct pattern_t {
    * - When match_type is a constructed type, put pattern into out.
    * - Otherwise, do not modify out.
    */
-  void expand(std::vector<const pattern_t*>& out,
-              const typing::Type& match_type) const;
+  friend void expand(managed_ptr<pattern_t> pat,
+                     std::vector<managed_ptr<pattern_t>>& out,
+                     const typing::Type& match_type);
 
   /** Apply substitutions to types stored in this pattern. */
-  void apply_substitutions(typing::Substitutions substitutions,
-                           bool enforce_timing_constraints);
+  managed_ptr<pattern_t> apply_substitutions(
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const;
+
+  void visit_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(pattern_t);
+  }
 
  private:
   struct wildcard_t {};
 
   struct constructed_t {
-    std::u8string constructor;
+    StringPtr constructor;
     managed_ptr<typing::TypeName> type_name;
     typing::TypePtr arg_type;
-    std::vector<pattern_t> subpatterns;
+    collections::ArrayPtr<pattern_t> subpatterns;
   };
 
   struct tuple_t {
-    std::vector<pattern_t> subpatterns;
+    collections::ArrayPtr<pattern_t> subpatterns;
   };
 
   struct record_t {
-    std::vector<pattern_t> subpatterns;
+    collections::ArrayPtr<pattern_t> subpatterns;
   };
 
   using repr = std::variant<wildcard_t, constructed_t, tuple_t, record_t>;
   repr repr_;
-  std::u8string field_;  // Used for matching records
+  StringPtr field_;  // Used for matching records
 
+ public:
   pattern_t(repr r);
 };
 
 /** A typed pattern. */
-class TPattern {
+class TPattern : public Managed {
  public:
   const Location location;
   const typing::TypePtr type;
-  const pattern_t pat;
+  const managed_ptr<pattern_t> pat;
   const managed_ptr<typing::ValEnv> bindings;
-  const bind_rule_t bind_rule;
+  const managed_ptr<bind_rule_t> bind_rule;
 
-  TPattern(const Location& location, typing::TypePtr type, pattern_t pat,
-           managed_ptr<typing::ValEnv> bindings, bind_rule_t bind_rule);
+  TPattern(const Location& location, typing::TypePtr type,
+           managed_ptr<pattern_t> pat, managed_ptr<typing::ValEnv> bindings,
+           managed_ptr<bind_rule_t> bind_rule);
 
-  std::unique_ptr<TPattern> apply_substitutions(
+  managed_ptr<TPattern> apply_substitutions(
       typing::Substitutions substitutions,
       bool enforce_timing_constraints) const;
+
+  void visit_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TPattern);
+  }
 };
 
 struct dt_leaf_t {
@@ -206,10 +258,34 @@ struct dt_switch_t;
  */
 using decision_tree_t = std::variant<dt_fail_t, dt_leaf_t, dt_switch_t>;
 
+void visit_subobjects(decision_tree_t& t, const ManagedVisitor& visitor);
+
+struct dt_switch_subtree_t;
+
 struct dt_switch_t {
   static const std::u8string DEFAULT_KEY;
   std::size_t index;
-  std::map<std::u8string, decision_tree_t> cases;
+  collections::MapPtr<ManagedString, dt_switch_subtree_t> cases;
+
+  explicit dt_switch_t(std::size_t index);
+
+  ~dt_switch_t();
+  dt_switch_t(const dt_switch_t&) noexcept;
+  dt_switch_t& operator=(const dt_switch_t&) noexcept;
+};
+
+struct dt_switch_subtree_t : public Managed {
+  decision_tree_t t;
+
+  dt_switch_subtree_t(decision_tree_t&& t) : t(std::move(t)) {}
+  const decision_tree_t& operator*() const { return t; }
+
+  void visit_subobjects(const ManagedVisitor& visitor) override {
+    emil::visit_subobjects(t, visitor);
+  }
+  std::size_t managed_size() const noexcept override {
+    return sizeof(dt_switch_subtree_t);
+  }
 };
 
 class TBigintLiteralExpr;
@@ -230,7 +306,7 @@ class TCaseExpr;
 class TFnExpr;
 
 /** A typed expression. */
-class TExpr {
+class TExpr : public Managed {
  public:
   /** The source location the expression starts. */
   const Location location;
@@ -278,24 +354,35 @@ class TExpr {
 
   /** Apply substitutions for undetermined types in this expression
    * and all its subexpressions. */
-  virtual std::unique_ptr<TExpr> apply_substitutions(
+  virtual managed_ptr<TExpr> apply_substitutions(
       typing::Substitutions substitutions,
       bool enforce_timing_constraints) const = 0;
+
+  void visit_subobjects(const ManagedVisitor& visitor) final;
+  virtual void visit_texpr_subobjects(const ManagedVisitor& visitor) = 0;
 };
 
 /** The elaboration of a pattern match. */
-struct match_t {
+struct match_t : public Managed {
  public:
-  struct outcome_t {
+  struct outcome_t : public Managed {
     managed_ptr<typing::ValEnv> bindings;
-    bind_rule_t bind_rule;
-    std::unique_ptr<TExpr> result;
+    managed_ptr<bind_rule_t> bind_rule;
+    managed_ptr<TExpr> result;
 
-    outcome_t(managed_ptr<typing::ValEnv> bindings, bind_rule_t bind_rule,
-              std::unique_ptr<TExpr> result)
-        : bindings(bindings),
-          bind_rule(std::move(bind_rule)),
-          result(std::move(result)) {}
+    outcome_t(managed_ptr<typing::ValEnv> bindings,
+              managed_ptr<bind_rule_t> bind_rule, managed_ptr<TExpr> result)
+        : bindings(bindings), bind_rule(bind_rule), result(result) {}
+
+    void visit_subobjects(const ManagedVisitor& visitor) override {
+      bindings.accept(visitor);
+      bind_rule.accept(visitor);
+      result.accept(visitor);
+    }
+
+    std::size_t managed_size() const noexcept override {
+      return sizeof(outcome_t);
+    }
   };
 
   Location location;
@@ -310,13 +397,17 @@ struct match_t {
    */
   typing::TypePtr match_type;
   typing::TypePtr result_type;
-  std::vector<outcome_t> outcomes;
+  collections::ArrayPtr<outcome_t> outcomes;
   decision_tree_t decision_tree;
   bool nonexhaustive;
 
   /** Applies substitutions to the result_type and outcomes. */
-  match_t apply_substitutions(typing::Substitutions substitutions,
-                              bool enforce_timing_constraints) const;
+  managed_ptr<match_t> apply_substitutions(
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const;
+
+  void visit_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override { return sizeof(match_t); }
 };
 
 /** A bigint literal. Nonexpansive. */
@@ -328,9 +419,14 @@ class TBigintLiteralExpr : public TExpr {
                      managed_ptr<bigint> value);
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
-  std::unique_ptr<TExpr> apply_substitutions(
+  managed_ptr<TExpr> apply_substitutions(
       typing::Substitutions substitutions,
       bool enforce_timing_constraints) const override;
+
+  void visit_texpr_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TBigintLiteralExpr);
+  }
 };
 
 /** An int literal. Nonexpansive. */
@@ -342,9 +438,14 @@ class TIntLiteralExpr : public TExpr {
                   std::int64_t value);
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
-  std::unique_ptr<TExpr> apply_substitutions(
+  managed_ptr<TExpr> apply_substitutions(
       typing::Substitutions substitutions,
       bool enforce_timing_constraints) const override;
+
+  void visit_texpr_subobjects(const ManagedVisitor&) override {}
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TIntLiteralExpr);
+  }
 };
 
 /** A floating point literal. Nonexpansive. */
@@ -355,9 +456,14 @@ class TFpLiteralExpr : public TExpr {
   TFpLiteralExpr(const Location& location, typing::TypePtr type, double value);
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
-  std::unique_ptr<TExpr> apply_substitutions(
+  managed_ptr<TExpr> apply_substitutions(
       typing::Substitutions substitutions,
       bool enforce_timing_constraints) const override;
+
+  void visit_texpr_subobjects(const ManagedVisitor&) override {}
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TFpLiteralExpr);
+  }
 };
 
 /** A string literal. Nonexpansive. */
@@ -370,9 +476,14 @@ class TStringLiteralExpr : public TExpr {
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
-  std::unique_ptr<TExpr> apply_substitutions(
+  managed_ptr<TExpr> apply_substitutions(
       typing::Substitutions substitutions,
       bool enforce_timing_constraints) const override;
+
+  void visit_texpr_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TStringLiteralExpr);
+  }
 };
 
 /** A character literal. Nonexpansive. */
@@ -385,46 +496,61 @@ class TCharLiteralExpr : public TExpr {
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
-  std::unique_ptr<TExpr> apply_substitutions(
+  managed_ptr<TExpr> apply_substitutions(
       typing::Substitutions substitutions,
       bool enforce_timing_constraints) const override;
+
+  void visit_texpr_subobjects(const ManagedVisitor&) override {}
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TCharLiteralExpr);
+  }
 };
 
 /** A formatted string literal. Nonexpansive iff all substitutions are
  * nonexpanisive. */
 class TFstringLiteralExpr : public TExpr {
  public:
-  collections::ConsPtr<ManagedString> segments;
-  std::vector<std::unique_ptr<TExpr>> substitutions;
+  collections::ArrayPtr<ManagedString> segments;
+  collections::ArrayPtr<TExpr> substitutions;
 
   TFstringLiteralExpr(const Location& location, typing::TypePtr type,
-                      collections::ConsPtr<ManagedString> segments,
-                      std::vector<std::unique_ptr<TExpr>> substitutions);
+                      collections::ArrayPtr<ManagedString> segments,
+                      collections::ArrayPtr<TExpr> substitutions);
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
-  std::unique_ptr<TExpr> apply_substitutions(
+  managed_ptr<TExpr> apply_substitutions(
       typing::Substitutions substitutions,
       bool enforce_timing_constraints) const override;
+
+  void visit_texpr_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TFstringLiteralExpr);
+  }
 };
 
 /** An identifier expression. Nonexpansive. */
 class TIdentifierExpr : public TExpr {
  public:
   typing::IdStatus status;
-  collections::ConsPtr<ManagedString> qualifiers;
+  collections::ArrayPtr<ManagedString> qualifiers;
   StringPtr canonical_identifier;
 
   TIdentifierExpr(const Location& location, typing::TypePtr type,
                   typing::IdStatus status,
-                  collections::ConsPtr<ManagedString> qualifiers,
+                  collections::ArrayPtr<ManagedString> qualifiers,
                   StringPtr canonical_identifier);
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
-  std::unique_ptr<TExpr> apply_substitutions(
+  managed_ptr<TExpr> apply_substitutions(
       typing::Substitutions substitutions,
       bool enforce_timing_constraints) const override;
+
+  void visit_texpr_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TIdentifierExpr);
+  }
 };
 
 /**
@@ -437,97 +563,127 @@ class TIdentifierExpr : public TExpr {
 class TRecRowExpr : public TExpr {
  public:
   StringPtr label;
-  std::unique_ptr<TExpr> value;
+  managed_ptr<TExpr> value;
 
   TRecRowExpr(const Location& location, typing::TypePtr type, StringPtr label,
-              std::unique_ptr<TExpr> value);
+              managed_ptr<TExpr> value);
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
-  std::unique_ptr<TRecRowExpr> apply_substitutions_as_rec_row(
+  managed_ptr<TRecRowExpr> apply_substitutions_as_rec_row(
       typing::Substitutions substitutions,
       bool enforce_timing_constraints) const;
-  std::unique_ptr<TExpr> apply_substitutions(typing::Substitutions,
-                                             bool) const override {
+  managed_ptr<TExpr> apply_substitutions(typing::Substitutions,
+                                         bool) const override {
     throw std::logic_error("unreachable");
+  }
+
+  void visit_texpr_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TRecRowExpr);
   }
 };
 
 /** A record expression. Nonexpansive iff all its rows are nonexpansive. */
 class TRecordExpr : public TExpr {
  public:
-  std::vector<std::unique_ptr<TRecRowExpr>> rows;
+  collections::ArrayPtr<TRecRowExpr> rows;
 
   TRecordExpr(const Location& location, typing::TypePtr type,
-              std::vector<std::unique_ptr<TRecRowExpr>> rows);
+              collections::ArrayPtr<TRecRowExpr> rows);
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
-  std::unique_ptr<TExpr> apply_substitutions(
+  managed_ptr<TExpr> apply_substitutions(
       typing::Substitutions substitutions,
       bool enforce_timing_constraints) const override;
+
+  void visit_texpr_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TRecordExpr);
+  }
 };
 
 /** A tuple expression. Nonexpansive iff all its elements are nonexpansive. */
 class TTupleExpr : public TExpr {
  public:
-  std::vector<std::unique_ptr<TExpr>> exprs;
+  collections::ArrayPtr<TExpr> exprs;
 
   TTupleExpr(const Location& location, typing::TypePtr type,
-             std::vector<std::unique_ptr<TExpr>> exprs);
+             collections::ArrayPtr<TExpr> exprs);
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
-  std::unique_ptr<TExpr> apply_substitutions(
+  managed_ptr<TExpr> apply_substitutions(
       typing::Substitutions substitutions,
       bool enforce_timing_constraints) const override;
+
+  void visit_texpr_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TTupleExpr);
+  }
 };
 
 /** A sequenced expression. Expansive. */
 class TSequencedExpr : public TExpr {
  public:
-  std::vector<std::unique_ptr<TExpr>> exprs;
+  collections::ArrayPtr<TExpr> exprs;
 
   TSequencedExpr(const Location& location, typing::TypePtr type,
-                 std::vector<std::unique_ptr<TExpr>> exprs);
+                 collections::ArrayPtr<TExpr> exprs);
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
-  std::unique_ptr<TExpr> apply_substitutions(
+  managed_ptr<TExpr> apply_substitutions(
       typing::Substitutions substitutions,
       bool enforce_timing_constraints) const override;
+
+  void visit_texpr_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TSequencedExpr);
+  }
 };
 
 /** A list expression. Nonexpansive iff all its elements are nonexpansive. */
 class TListExpr : public TExpr {
  public:
-  std::vector<std::unique_ptr<TExpr>> exprs;
+  collections::ArrayPtr<TExpr> exprs;
 
   TListExpr(const Location& location, typing::TypePtr type,
-            std::vector<std::unique_ptr<TExpr>> exprs);
+            collections::ArrayPtr<TExpr> exprs);
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
-  std::unique_ptr<TExpr> apply_substitutions(
+  managed_ptr<TExpr> apply_substitutions(
       typing::Substitutions substitutions,
       bool enforce_timing_constraints) const override;
+
+  void visit_texpr_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TListExpr);
+  }
 };
 
 /** A let expression. Expansive. */
 class TLetExpr : public TExpr {
  public:
-  std::vector<std::unique_ptr<TDecl>> decls;
-  std::vector<std::unique_ptr<TExpr>> exprs;
+  collections::ArrayPtr<TDecl> decls;
+  collections::ArrayPtr<TExpr> exprs;
 
   TLetExpr(const Location& location, typing::TypePtr type,
-           std::vector<std::unique_ptr<TDecl>> decls,
-           std::vector<std::unique_ptr<TExpr>> exprs);
+           collections::ArrayPtr<TDecl> decls,
+           collections::ArrayPtr<TExpr> exprs);
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
-  std::unique_ptr<TExpr> apply_substitutions(
+  managed_ptr<TExpr> apply_substitutions(
       typing::Substitutions substitutions,
       bool enforce_timing_constraints) const override;
+
+  void visit_texpr_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TLetExpr);
+  }
 };
 
 /**
@@ -544,54 +700,67 @@ class TLetExpr : public TExpr {
  */
 class TApplicationExpr : public TExpr {
  public:
-  std::vector<std::unique_ptr<TExpr>> exprs;
+  collections::ArrayPtr<TExpr> exprs;
 
   TApplicationExpr(const Location& location, typing::TypePtr type,
-                   bool is_nonexpansive,
-                   std::vector<std::unique_ptr<TExpr>> exprs);
+                   bool is_nonexpansive, collections::ArrayPtr<TExpr> exprs);
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
-  std::unique_ptr<TExpr> apply_substitutions(
+  managed_ptr<TExpr> apply_substitutions(
       typing::Substitutions substitutions,
       bool enforce_timing_constraints) const override;
+
+  void visit_texpr_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TApplicationExpr);
+  }
 };
 
 /** A case expression. Expansive. */
 class TCaseExpr : public TExpr {
  public:
-  std::unique_ptr<TExpr> expr;
-  match_t match;
+  managed_ptr<TExpr> expr;
+  managed_ptr<match_t> match;
 
-  TCaseExpr(const Location& location, std::unique_ptr<TExpr> expr,
-            match_t match);
+  TCaseExpr(const Location& location, managed_ptr<TExpr> expr,
+            managed_ptr<match_t> match);
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
-  std::unique_ptr<TExpr> apply_substitutions(
+  managed_ptr<TExpr> apply_substitutions(
       typing::Substitutions substitutions,
       bool enforce_timing_constraints) const override;
+
+  void visit_texpr_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TCaseExpr);
+  }
 };
 
 /** A function literal expression. Nonexpansive. */
 class TFnExpr : public TExpr {
  public:
-  match_t match;
+  managed_ptr<match_t> match;
 
-  TFnExpr(const Location& location, typing::TypePtr type, match_t match);
+  TFnExpr(const Location& location, typing::TypePtr type,
+          managed_ptr<match_t> match);
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
 
-  std::unique_ptr<TExpr> apply_substitutions(
+  managed_ptr<TExpr> apply_substitutions(
       typing::Substitutions substitutions,
       bool enforce_timing_constraints) const override;
+
+  void visit_texpr_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override { return sizeof(TFnExpr); }
 };
 
 class TValDecl;
 class TDtypeDecl;
 
 /** A typed declaration. */
-class TDecl {
+class TDecl : public Managed {
  public:
   const Location location;
   const managed_ptr<typing::Env> env;
@@ -608,44 +777,67 @@ class TDecl {
   };
 
   virtual void accept(Visitor& visitor) const = 0;
-  virtual std::unique_ptr<TDecl> apply_substitutions(
+  virtual managed_ptr<TDecl> apply_substitutions(
       typing::Substitutions substitutions,
       bool enforce_timing_constraints) const = 0;
+
+  void visit_subobjects(const ManagedVisitor& visitor) final;
+  virtual void visit_tdecl_subobjects(const ManagedVisitor& visitor) = 0;
+};
+
+class TValBind : public Managed {
+ public:
+  managed_ptr<match_t> match;
+  managed_ptr<TExpr> expr;
+
+  explicit TValBind(managed_ptr<match_t> match);
+  TValBind(managed_ptr<match_t> match, managed_ptr<TExpr> expr);
+
+  void visit_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TValBind);
+  }
 };
 
 class TValDecl : public TDecl {
  public:
-  const std::vector<std::pair<match_t, std::unique_ptr<TExpr>>> bindings;
+  const collections::ArrayPtr<TValBind> bindings;
 
-  TValDecl(const Location& location,
-           std::vector<std::pair<match_t, std::unique_ptr<TExpr>>> bindings,
+  TValDecl(const Location& location, collections::ArrayPtr<TValBind> bindings,
            managed_ptr<typing::Env> env);
 
-  std::unique_ptr<TDecl> apply_substitutions(
+  managed_ptr<TDecl> apply_substitutions(
       typing::Substitutions substitutions,
       bool enforce_timing_constraints) const override;
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
+  void visit_tdecl_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TValDecl);
+  }
 };
 
 class TDtypeDecl : public TDecl {
  public:
   TDtypeDecl(const Location& location, managed_ptr<typing::Env> env);
 
-  std::unique_ptr<TDecl> apply_substitutions(typing::Substitutions,
-                                             bool) const override {
-    return std::make_unique<TDtypeDecl>(location, env);
+  managed_ptr<TDecl> apply_substitutions(typing::Substitutions,
+                                         bool) const override {
+    return make_managed<TDtypeDecl>(location, env);
   }
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
+  void visit_tdecl_subobjects(const ManagedVisitor&) override {}
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TDtypeDecl);
+  }
 };
 
-class TEmptyTopDecl;
 class TEndOfFileTopDecl;
 class TDeclTopDecl;
 
 /** A typed top-level declaration. */
-class TTopDecl {
+class TTopDecl : public Managed {
  public:
   const Location location;
 
@@ -656,7 +848,6 @@ class TTopDecl {
    public:
     virtual ~Visitor();
 
-    virtual void visit(const TEmptyTopDecl& v) = 0;
     virtual void visit(const TEndOfFileTopDecl& v) = 0;
     virtual void visit(const TDeclTopDecl& v) = 0;
   };
@@ -664,27 +855,30 @@ class TTopDecl {
   virtual void accept(Visitor& visitor) const = 0;
 };
 
-class TEmptyTopDecl : public TTopDecl {
- public:
-  using TTopDecl::TTopDecl;
-
-  void accept(Visitor& visitor) const override { visitor.visit(*this); }
-};
-
 class TEndOfFileTopDecl : public TTopDecl {
  public:
   using TTopDecl::TTopDecl;
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
+
+  void visit_subobjects(const ManagedVisitor&) override {}
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TEndOfFileTopDecl);
+  }
 };
 
 class TDeclTopDecl : public TTopDecl {
  public:
-  std::unique_ptr<TDecl> decl;
+  collections::ArrayPtr<TDecl> decls;
 
-  TDeclTopDecl(const Location& location, std::unique_ptr<TDecl> decl);
+  TDeclTopDecl(const Location& location, collections::ArrayPtr<TDecl> decls);
 
   void accept(Visitor& visitor) const override { visitor.visit(*this); }
+
+  void visit_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override {
+    return sizeof(TDeclTopDecl);
+  }
 };
 
 }  // namespace emil

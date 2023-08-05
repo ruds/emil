@@ -1,6 +1,6 @@
 0001 (DeclTopDecl
-         :decl
-         (ValDecl
+         :decls
+         ((ValDecl
              :bindings
              ((ValBind
                  :pat
@@ -37,10 +37,10 @@
                  :rec
                  false))
              :explicit_type_vars
-             ()))
+             ())))
 0002 (DeclTopDecl
-         :decl
-         (ValDecl
+         :decls
+         ((ValDecl
              :bindings
              ((ValBind
                  :pat
@@ -174,5 +174,5 @@
                  :rec
                  false))
              :explicit_type_vars
-             ()))
+             ())))
 0005 (EndOfFileTopDecl)

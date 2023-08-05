@@ -17,20 +17,24 @@
 
 #include <cstdio>
 #include <cstring>
+#include <exception>
 #include <fstream>
 #include <iterator>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <variant>
 
 #include "emil/ast.h"
 #include "emil/collections.h"
 #include "emil/gc.h"
 #include "emil/lexer.h"
 #include "emil/parser.h"
+#include "emil/processor.h"
 #include "emil/reporter.h"
 #include "emil/runtime.h"
 #include "emil/strconvert.h"
+#include "emil/text_input.h"
 #include "emil/token.h"
 #include "emil/typed_ast.h"
 #include "emil/typer.h"
@@ -42,7 +46,21 @@ using OutIt = std::ostreambuf_iterator<char>;
 
 class DriverRoot : public Root {
  public:
-  void visit_root(const ManagedVisitor&) override {}
+  std::unique_ptr<Typer> typer;
+  managed_ptr<typing::Basis> B;
+  managed_ptr<TTopDecl> last_topdecl;
+
+  void initialize(Reporter& reporter) {
+    auto hold = ctx().mgr->acquire_hold();
+    typer = std::make_unique<Typer>(reporter);
+    B = typer->initial_basis();
+  }
+
+  void visit_root(const ManagedVisitor& visitor) override {
+    if (typer) typer->visit_root(visitor);
+    if (B) B.accept(visitor);
+    if (last_topdecl) last_topdecl.accept(visitor);
+  }
 };
 
 class DriverContextAccessor {
@@ -70,6 +88,8 @@ class TestReporter : public Reporter {
                text);
   }
 
+  void report_info(std::string_view) override {}
+
   void report_type_judgement(const Location& location, const Expr& expr,
                              const typing::Type& type) override {
     if (enable_type_judgements_) {
@@ -95,38 +115,47 @@ class TestReporter : public Reporter {
   const bool enable_type_judgements_;
 };
 
-void process_next_topdecl(managed_ptr<typing::Basis>& B, Typer& typer,
-                          Parser& parser, OutIt& out) {
-  auto topdecl = parser.next();
-  auto e = typer.elaborate(B, *topdecl);
-  B = e.B;
-  fmt::format_to(out, "@{:04}:\n{}", e.topdecl->location.line,
-                 typer.describe_basis_updates(*e.topdecl));
+void process_next_topdecl(DriverRoot& root, std::unique_ptr<TopDecl> topdecl,
+                          Reporter& reporter, OutIt& out) {
+  try {
+    auto e = root.typer->elaborate(root.B, *topdecl);
+    root.B = e.B;
+    root.last_topdecl = e.topdecl;
+    fmt::format_to(out, "@{:04}:\n{}", e.topdecl->location.line,
+                   root.typer->describe_basis_updates(*e.topdecl));
+  } catch (ElaborationError& e) {
+    reporter.report_error(e.location, e.msg);
+  }
 }
 
-void process_file(std::string_view infile, const std::string& outfile,
+void process_file(std::string infile, const std::string& outfile,
                   bool enable_type_judgement) {
-  DriverRoot root;
-  MemoryManager mgr{root};
-  RuntimeContext rc{.mgr = &mgr};
-  DriverContextAccessor::install_context(rc);
-  auto hold = mgr.acquire_hold();
-
-  Parser parser(emil::make_lexer(infile));
-
+  std::basic_ifstream<char32_t> instream{infile};
+  auto in = read_stream(instream);
   std::ofstream outstream(outfile);
   std::ostreambuf_iterator<char> out(outstream);
   TestReporter reporter{out, enable_type_judgement};
-  Typer typer{reporter};
 
-  auto B = typer.initial_basis();
+  DriverRoot root;
+  MemoryManager mgr{root};
+  RuntimeContext rc{.mgr = &mgr};
 
-  while (!parser.at_end()) {
-    try {
-      process_next_topdecl(B, typer, parser, out);
-    } catch (ElaborationError& e) {
-      reporter.report_error(e.location, e.msg);
+  DriverContextAccessor::install_context(rc);
+  root.initialize(reporter);
+
+  auto parser = lex(infile) | parse();
+
+  in.finish();
+  while (in) {
+    parser.process(in());
+    while (parser) {
+      process_next_topdecl(root, get<0>(parser()), reporter, out);
+      outstream.flush();
     }
+  }
+  parser.finish();
+  while (parser) {
+    process_next_topdecl(root, get<0>(parser()), reporter, out);
     outstream.flush();
   }
 }

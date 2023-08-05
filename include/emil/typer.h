@@ -70,7 +70,7 @@ class Typer {
 
   struct elaborate_t {
     managed_ptr<typing::Basis> B;
-    std::unique_ptr<TTopDecl> topdecl;
+    managed_ptr<TTopDecl> topdecl;
   };
 
   /** Do typing analysis of a top-level declaration. */
@@ -79,6 +79,8 @@ class Typer {
   /** Produce a string describing changes to `B` due to a top-level declaration.
    */
   std::string describe_basis_updates(const TTopDecl& topdecl);
+
+  void visit_root(const ManagedVisitor& visitor);
 
  private:
   std::unique_ptr<TyperImpl> impl_;

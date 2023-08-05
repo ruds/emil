@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+find_package(fmt REQUIRED)
+
 option(EMIL_ACCEPTANCE_TESTS "Enable acceptance tests for Emil compiler" ON)
 
 if (EMIL_ACCEPTANCE_TESTS)
@@ -47,8 +49,10 @@ endmacro()
 
 emil_add_gtest(bigint_test bigint_test.cc bigint util)
 target_compile_options(bigint_test PRIVATE -Wno-overlength-strings)
-emil_add_gtest(source_test source_test.cc lexer)
+emil_add_gtest(text_input_test text_input_test.cc lexer)
 emil_add_gtest(gc_test gc_test.cc runtime)
 emil_add_gtest(string_test string_test.cc runtime util)
 emil_add_gtest(collections_test collections_test.cc runtime)
 emil_add_gtest(types_test types_test.cc runtime)
+emil_add_gtest(processor_test processor_test.cc fmt::fmt)
+target_include_directories(processor_test PRIVATE ../include)

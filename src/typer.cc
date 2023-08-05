@@ -34,6 +34,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -43,6 +44,7 @@
 #include "emil/collections.h"
 #include "emil/gc.h"
 #include "emil/reporter.h"
+#include "emil/runtime.h"
 #include "emil/strconvert.h"
 #include "emil/string.h"
 #include "emil/token.h"
@@ -114,6 +116,9 @@ namespace {
  *              let val 'a id2 = fn (y : 'a) => y in id2 end);
  * because the introduced `val` in the second element of the tuple guards 'a
  * from the outer declaration.
+ *
+ * This structure's lifetime is over before `elaborate` returns (i.e.
+ * it is not stored in the typed AST) so it can be unmanaged.
  */
 using ImplicitlyScopedVars = std::map<const Decl *, std::set<std::u8string>>;
 
@@ -126,7 +131,7 @@ class TyperImpl {
 
   struct elaborate_decl_t {
     managed_ptr<typing::Env> env;
-    std::unique_ptr<TDecl> decl;
+    managed_ptr<TDecl> decl;
   };
 
   /** Do typing analysis of a declaration. */
@@ -135,7 +140,7 @@ class TyperImpl {
 
   struct elaborate_decl_with_substitutions_t {
     managed_ptr<typing::Env> env;
-    std::unique_ptr<TDecl> decl;
+    managed_ptr<TDecl> decl;
     typing::Substitutions new_substitutions;
   };
 
@@ -145,11 +150,11 @@ class TyperImpl {
       const ImplicitlyScopedVars &scopes);
 
   /** Do typing analysis of an expression. */
-  std::unique_ptr<TExpr> elaborate_expr(ContextPtr C, const Expr &exp,
-                                        const ImplicitlyScopedVars &scopes);
+  managed_ptr<TExpr> elaborate_expr(ContextPtr C, const Expr &exp,
+                                    const ImplicitlyScopedVars &scopes);
 
   struct elaborate_expr_with_substitutions_t {
-    std::unique_ptr<TExpr> expr;
+    managed_ptr<TExpr> expr;
     typing::Substitutions new_substitutions;
   };
 
@@ -166,7 +171,7 @@ class TyperImpl {
       std::uint64_t maximum_type_name_id, const ImplicitlyScopedVars &scopes);
 
   struct elaborate_match_t {
-    match_t match;
+    managed_ptr<match_t> match;
     typing::Substitutions new_substitutions = typing::Substitutions::dflt();
   };
 
@@ -182,10 +187,9 @@ class TyperImpl {
                                     typing::Substitutions &substitutions,
                                     std::uint64_t maximum_type_name_id);
 
-  managed_ptr<typing::Type> elaborate_type_expr(ContextPtr C,
-                                                const TypeExpr &ty);
+  typing::TypePtr elaborate_type_expr(ContextPtr C, const TypeExpr &ty);
 
-  std::unique_ptr<TPattern> elaborate_pattern(ContextPtr C, const Pattern &pat);
+  managed_ptr<TPattern> elaborate_pattern(ContextPtr C, const Pattern &pat);
 
   managed_ptr<typing::Stamp> new_stamp();
   typing::StampGenerator &stamper() { return stamp_generator_; }
@@ -223,11 +227,13 @@ class TyperImpl {
     return make_managed<typing::FunctionType>(param, result);
   }
 
+  void visit_root(const ManagedVisitor &visitor) { builtins_.accept(visitor); }
+
  private:
   friend class Typer;
 
   typing::StampGenerator stamp_generator_;
-  typing::BuiltinTypes builtins_;
+  managed_ptr<typing::BuiltinTypes> builtins_;
   Reporter &reporter_;
 };
 
@@ -675,13 +681,11 @@ class TopDeclChangeDescriber : public TTopDecl::Visitor {
 
   explicit TopDeclChangeDescriber(TyperImpl &typer) : typer_(typer) {}
 
-  void visit(const TEmptyTopDecl &) override {}
-
   void visit(const TEndOfFileTopDecl &) override {}
 
   void visit(const TDeclTopDecl &d) override {
     DeclChangeDescriber v{typer_, out};
-    d.decl->accept(v);
+    for (const auto &decl : *d.decls) decl->accept(v);
   }
 
  private:
@@ -691,6 +695,7 @@ class TopDeclChangeDescriber : public TTopDecl::Visitor {
 }  // namespace
 
 std::string Typer::describe_basis_updates(const TTopDecl &topdecl) {
+  auto hold = ctx().mgr->acquire_hold();
   TopDeclChangeDescriber v{*impl_};
   topdecl.accept(v);
   return std::move(v.out);
@@ -724,9 +729,10 @@ void add_type(managed_ptr<typing::TypeEnv> &TE, managed_ptr<typing::ValEnv> &VE,
 }  // namespace
 
 managed_ptr<typing::Basis> Typer::initial_basis() const {
+  auto hold = ctx().mgr->acquire_hold();
   auto TE = typing::TypeEnv::empty();
   auto VE = typing::ValEnv::empty();
-  auto &b = impl_->builtins_;
+  auto &b = *impl_->builtins_;
 
   add_type(TE, VE, b.bigint_type());
   add_type(TE, VE, b.int_type());
@@ -751,15 +757,6 @@ managed_ptr<typing::Basis> Typer::initial_basis() const {
 }
 
 namespace {
-
-collections::ConsPtr<ManagedString> consify(
-    const std::vector<std::u8string> &names) {
-  collections::ConsPtr<ManagedString> l = nullptr;
-  for (const auto &n : std::ranges::reverse_view(names)) {
-    l = cons(make_string(n), l);
-  }
-  return l;
-}
 
 managed_ptr<bigint> parse_bigint_data(const BigintLiteralData &data) {
   switch (data.base) {
@@ -797,7 +794,7 @@ std::string id_to_string(const std::vector<std::u8string> &qualifiers,
 class TopDeclElaborator : public TopDecl::Visitor {
  public:
   managed_ptr<typing::Basis> B;
-  std::unique_ptr<TTopDecl> typed;
+  managed_ptr<TTopDecl> typed;
 
   TopDeclElaborator(TyperImpl &typer, managed_ptr<typing::Basis> B)
       : B(std::move(B)), typer_(typer) {}
@@ -808,12 +805,8 @@ class TopDeclElaborator : public TopDecl::Visitor {
   TyperImpl &typer_;
 };
 
-void TopDeclElaborator::visitEmptyTopDecl(const EmptyTopDecl &node) {
-  typed = std::make_unique<TEmptyTopDecl>(node.location);
-}
-
 void TopDeclElaborator::visitEndOfFileTopDecl(const EndOfFileTopDecl &node) {
-  typed = std::make_unique<TEndOfFileTopDecl>(node.location);
+  typed = make_managed<TEndOfFileTopDecl>(node.location);
 }
 
 /**
@@ -847,24 +840,32 @@ typing::Substitutions compute_dummy_substitutions(TyperImpl &typer,
 }
 
 void TopDeclElaborator::visitDeclTopDecl(const DeclTopDecl &node) {
-  auto scopes = scope_explicit_type_variables(*node.decl);
-  auto r = typer_.elaborate_decl(B->as_context(), *node.decl, scopes);
-  auto subs = compute_dummy_substitutions(typer_, r.env, node.location);
-  if (!subs->empty()) {
-    r.decl = r.decl->apply_substitutions(subs, false);
-  }
-  B = B + r.decl->env;
+  typed = make_managed<TDeclTopDecl>(
+      node.location,
+      make_managed<collections::ManagedArray<TDecl>>(
+          node.decls.size(), [this, &node](std::size_t i) {
+            const auto &decl = node.decls[i];
+            auto scopes = scope_explicit_type_variables(*decl);
+            auto r = typer_.elaborate_decl(B->as_context(), *decl, scopes);
+            auto subs =
+                compute_dummy_substitutions(typer_, r.env, node.location);
+            if (!subs->empty()) {
+              r.decl = r.decl->apply_substitutions(subs, false);
+            }
+            B = B + r.decl->env;
 
-  typed = std::make_unique<TDeclTopDecl>(node.location, std::move(r.decl));
+            return std::move(r.decl);
+          }));
 }
 
 }  // namespace
 
 Typer::elaborate_t Typer::elaborate(managed_ptr<typing::Basis> B,
                                     const TopDecl &topdec) {
-  TopDeclElaborator v(*impl_, std::move(B));
+  auto hold = ctx().mgr->acquire_hold();
+  TopDeclElaborator v(*impl_, B);
   topdec.accept(v);
-  return {std::move(v.B), std::move(v.typed)};
+  return {v.B, v.typed};
 }
 
 namespace {
@@ -873,7 +874,7 @@ namespace {
 class DeclElaborator : public Decl::Visitor {
  public:
   managed_ptr<typing::Env> env = typing::Env::empty();
-  std::unique_ptr<TDecl> decl;
+  managed_ptr<TDecl> decl;
   typing::Substitutions new_substitutions = typing::Substitutions::dflt();
 
   DeclElaborator(TyperImpl &typer, ContextPtr C,
@@ -937,8 +938,8 @@ managed_ptr<typing::ValEnv> close_for_valbind(ContextPtr C,
                                               const TExpr &expr) {
   auto closed =
       collections::managed_map<ManagedString, typing::ValueBinding>({});
-  for (const auto &outcome : match.outcomes) {
-    for (const auto &binding : *outcome.bindings->env()) {
+  for (const auto &outcome : *match.outcomes) {
+    for (const auto &binding : *outcome->bindings->env()) {
       managed_ptr<typing::TypeScheme> scheme = binding.second->scheme();
       assert(scheme->bound()->empty());
       scheme = generalize_for_valbind(match.location, C, scheme->t(), expr);
@@ -974,8 +975,7 @@ typing::StringSet get_scoped_type_vars(ContextPtr C,
   return type_vars;
 }
 
-using val_bind_bindings =
-    std::vector<std::pair<match_t, std::unique_ptr<TExpr>>>;
+using val_bind_bindings = collections::ArrayPtr<TValBind>;
 
 struct elaborate_val_bind_patterns_t {
   /** Context to be used to elaborate assignment expressions. */
@@ -997,11 +997,13 @@ elaborate_val_bind_patterns_t elaborate_val_bind_patterns(
     TyperImpl &typer, typing::Substitutions &substitutions, ContextPtr C,
     typing::StringSet type_vars, const ValDecl &node) {
   elaborate_val_bind_patterns_t result;
-  result.bindings.reserve(node.bindings.size());
   result.C_expr = C + type_vars;
-
   bool is_recursive = false;
-  for (const auto &binding : node.bindings) {
+
+  result.bindings =
+      make_managed<collections::ManagedArray<TValBind>>(node.bindings.size());
+  for (std::size_t i = 0; i < node.bindings.size(); ++i) {
+    const auto &binding = node.bindings[i];
     const auto &pat = binding->pat;
     TyperImpl::elaborate_match_t m;
     try {
@@ -1018,15 +1020,16 @@ elaborate_val_bind_patterns_t elaborate_val_bind_patterns(
           pat->location);
     }
     if (!m.new_substitutions->empty()) {
-      for (auto &b : result.bindings) {
-        b.first = b.first.apply_substitutions(m.new_substitutions, true);
+      for (std::size_t j = 0; j < i; ++j) {
+        auto &b = (*result.bindings)[j];
+        b->match = b->match->apply_substitutions(m.new_substitutions, true);
       }
       result.new_substitutions = result.new_substitutions | m.new_substitutions;
     }
     if (binding->rec) is_recursive = true;
     if (is_recursive)
-      result.C_expr = result.C_expr + m.match.outcomes.front().bindings;
-    result.bindings.emplace_back(std::move(m.match), nullptr);
+      result.C_expr = result.C_expr + (*m.match->outcomes->begin())->bindings;
+    (*result.bindings)[i] = make_managed<TValBind>(m.match);
   }
   return result;
 }
@@ -1046,41 +1049,40 @@ typing::Substitutions elaborate_val_bind_exprs(
   auto new_substitutions = typing::Substitutions::dflt();
   for (std::size_t i = 0; i < node.bindings.size(); ++i) {
     const auto &node_expr = node.bindings[i]->expr;
-    auto &match = bindings[i].first;
+    auto &match = (*bindings)[i]->match;
 
     auto e = typer.elaborate_expr(C_expr, *node_expr, substitutions,
                                   typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
                                   scopes);
     auto new_subs = e.new_substitutions;
     if (!new_subs->empty()) {
-      match = match.apply_substitutions(new_subs, true);
+      match = match->apply_substitutions(new_subs, true);
     }
 
     typing::unification_t u;
     try {
-      u = typing::unify(match.match_type, e.expr->type, substitutions);
+      u = typing::unify(match->match_type, e.expr->type, substitutions);
     } catch (typing::UnificationError &e) {
-      throw ElaborationError(e, match.location);
+      throw ElaborationError(e, match->location);
     }
     if (!u.new_substitutions->empty()) {
-      match = match.apply_substitutions(u.new_substitutions, true);
+      match = match->apply_substitutions(u.new_substitutions, true);
       e.expr = e.expr->apply_substitutions(u.new_substitutions, true);
       new_subs = new_subs | u.new_substitutions;
     }
     if (!new_subs->empty()) {
       for (std::size_t j = 0; j < i; ++j) {
-        bindings[j].first =
-            bindings[j].first.apply_substitutions(new_subs, true);
-        bindings[j].second =
-            bindings[j].second->apply_substitutions(new_subs, true);
+        auto &b = (*bindings)[j];
+        b->match = b->match->apply_substitutions(new_subs, true);
+        b->expr = b->expr->apply_substitutions(new_subs, true);
       }
-      for (std::size_t j = i + 1; j < bindings.size(); ++j) {
-        bindings[j].first =
-            bindings[j].first.apply_substitutions(new_subs, true);
+      for (std::size_t j = i + 1; j < bindings->size(); ++j) {
+        auto &b = (*bindings)[j];
+        b->match = b->match->apply_substitutions(new_subs, true);
       }
       new_substitutions = new_substitutions | new_subs;
     }
-    bindings[i].second = std::move(e.expr);
+    (*bindings)[i]->expr = e.expr;
   }
   return new_substitutions;
 }
@@ -1095,8 +1097,8 @@ managed_ptr<typing::Env> compute_val_decl_env(
     const Location &location, ContextPtr C, const val_bind_bindings &bindings,
     typing::StringSet scoped_type_vars) {
   auto env = typing::Env::empty();
-  for (const auto &b : bindings) {
-    auto VE = close_for_valbind(C, b.first, *b.second);
+  for (const auto &b : *bindings) {
+    auto VE = close_for_valbind(C, *b->match, *b->expr);
     auto overlap = env->val_env()->env() & VE->env();
     if (!overlap->empty()) {
       throw ElaborationError(
@@ -1133,8 +1135,7 @@ void DeclElaborator::visitValDecl(const ValDecl &node) {
     typer_.reporter().report_type_judgement(
         node.location, to_std_string(*b.first), *b.second->scheme());
   }
-  decl =
-      std::make_unique<TValDecl>(node.location, std::move(pats.bindings), env);
+  decl = make_managed<TValDecl>(node.location, pats.bindings, env);
 }
 
 /**
@@ -1180,40 +1181,6 @@ managed_ptr<typing::TypeEnv> seed_type_env(
   }
   return TE;
 }
-
-/**
- * Returns the first subtype of a tuple type.
- *
- * Requires that the type being visited actually is a tuple.
- */
-class Tuple0Extractor : public typing::TypeVisitor {
- public:
-  typing::TypePtr type;
-
-  void visit(const typing::TupleType &t) override {
-    if (t.types()->empty()) throw std::logic_error("ugh");
-    type = (*t.types())[0];
-  }
-
-  void visit(const typing::TypeWithAgeRestriction &) override {
-    throw std::logic_error("ugh");
-  }
-  void visit(const typing::TypeVar &) override {
-    throw std::logic_error("ugh");
-  }
-  void visit(const typing::UndeterminedType &) override {
-    throw std::logic_error("ugh");
-  }
-  void visit(const typing::RecordType &) override {
-    throw std::logic_error("ugh");
-  }
-  void visit(const typing::FunctionType &) override {
-    throw std::logic_error("ugh");
-  }
-  void visit(const typing::ConstructedType &) override {
-    throw std::logic_error("ugh");
-  }
-};
 
 struct elaborate_dtype_bind_t {
   managed_ptr<typing::TypeEnv> TE = typing::TypeEnv::empty();
@@ -1275,17 +1242,16 @@ void DeclElaborator::visitDtypeDecl(const DtypeDecl &node) {
     TE = TE + r.TE;
   }
   env = env + make_managed<typing::Env>(typing::StrEnv::empty(), TE, VE);
-  decl = std::make_unique<TDtypeDecl>(node.location, env);
+  decl = make_managed<TDtypeDecl>(node.location, env);
 }
 
 }  // namespace
 
 TyperImpl::elaborate_decl_t TyperImpl::elaborate_decl(
     ContextPtr C, const Decl &dec, const ImplicitlyScopedVars &scopes) {
-  typing::Substitutions subs =
-      collections::managed_map<typing::Stamp, typing::Type>({});
+  auto subs = typing::Substitutions::dflt();
   auto r = elaborate_decl(C, dec, subs, scopes);
-  return {r.env, std::move(r.decl)};
+  return {r.env, r.decl};
 }
 
 TyperImpl::elaborate_decl_with_substitutions_t TyperImpl::elaborate_decl(
@@ -1293,7 +1259,7 @@ TyperImpl::elaborate_decl_with_substitutions_t TyperImpl::elaborate_decl(
     const ImplicitlyScopedVars &scopes) {
   DeclElaborator v{*this, C, substitutions, scopes};
   dec.accept(v);
-  return {v.env, std::move(v.decl), v.new_substitutions};
+  return {v.env, v.decl, v.new_substitutions};
 }
 
 namespace {
@@ -1303,10 +1269,10 @@ class PatternElaborator : public Pattern::Visitor {
  public:
   ContextPtr C;
   typing::TypePtr type;
-  pattern_t pattern = pattern_t::wildcard();
+  managed_ptr<pattern_t> pattern = pattern_t::wildcard();
   managed_ptr<typing::ValEnv> bindings = make_managed<typing::ValEnv>(
       collections::managed_map<ManagedString, typing::ValueBinding>({}));
-  bind_rule_t bind_rule;
+  managed_ptr<bind_rule_t> bind_rule = make_managed<bind_rule_t>();
 
   PatternElaborator(ContextPtr C, TyperImpl &typer) : C(C), typer_(typer) {}
 
@@ -1315,7 +1281,7 @@ class PatternElaborator : public Pattern::Visitor {
  private:
   TyperImpl &typer_;
 
-  std::pair<std::u8string, std::optional<managed_ptr<typing::ValueBinding>>>
+  std::pair<StringPtr, std::optional<managed_ptr<typing::ValueBinding>>>
   lookup_val(const IdentifierPattern &pat) const;
 };
 
@@ -1409,7 +1375,8 @@ void PatternElaborator::visitLiteralPattern(const LiteralPattern &node) {
   node.val->accept(v);
   type = v.type;
   pattern =
-      pattern_t::constructed(std::move(v.value), v.type->name(), nullptr, {});
+      pattern_t::constructed(make_string(v.value), v.type->name(), nullptr,
+                             collections::make_array<pattern_t>({}));
 }
 
 class TypeNameExtractor : public typing::TypeVisitor {
@@ -1438,7 +1405,7 @@ void PatternElaborator::visitIdentifierPattern(const IdentifierPattern &node) {
       throw ElaborationError(
           fmt::format(
               "Variable bindings in patterns may not have qualifiers: {}",
-              id_to_string(node.qualifiers, id)),
+              id_to_string(node.qualifiers, *id)),
           node.location);
     }
     type = typer_.undetermined_type();
@@ -1448,7 +1415,7 @@ void PatternElaborator::visitIdentifierPattern(const IdentifierPattern &node) {
         make_managed<typing::TypeScheme>(
             type, collections::make_array<ManagedString>({})),
         typing::IdStatus::Variable, false);
-    bind_rule.names.push_back(id);
+    bind_rule->names = cons(id, bind_rule->names);
   } else {
     type = (*binding)->scheme()->instantiate(typer_.stamper());
     auto name = get_type_name(type);
@@ -1457,7 +1424,8 @@ void PatternElaborator::visitIdentifierPattern(const IdentifierPattern &node) {
                              node.location);
     }
 
-    pattern = pattern_t::constructed(id, name, nullptr, {});
+    pattern = pattern_t::constructed(id, name, nullptr,
+                                     collections::make_array<pattern_t>({}));
   }
 }
 
@@ -1468,34 +1436,53 @@ void PatternElaborator::visitRecRowPattern(const RecRowPattern &) {
 void PatternElaborator::visitRecordPattern(const RecordPattern &node) {
   typing::StringMap<typing::Type> row_types =
       collections::managed_map<ManagedString, typing::Type>({});
-  std::vector<pattern_t> row_patterns;
-  row_patterns.reserve(node.rows.size());
-  std::vector<bind_rule_t::record_field_access_t> row_bindings;
+  std::vector<managed_ptr<bind_rule_t::record_field_access_t>> row_bindings;
 
-  for (const auto &row : node.rows) {
-    row->pattern->accept(*this);
-    row_types = row_types->insert(make_string(row->label), type).first;
-    pattern.set_field(row->label);
-    row_patterns.push_back(std::move(pattern));
-    if (!bind_rule.empty()) {
-      row_bindings.emplace_back(row->label, std::move(bind_rule));
-    }
-  }
+  auto row_patterns = make_managed<collections::ManagedArray<pattern_t>>(
+      node.rows.size(), [&](std::size_t i) {
+        const auto &row = node.rows[i];
+        row->pattern->accept(*this);
+        auto label = make_string(row->label);
+        row_types = row_types->insert(label, type).first;
+        if (!bind_rule->empty()) {
+          row_bindings.push_back(
+              make_managed<bind_rule_t::record_field_access_t>(
+                  label, std::move(bind_rule)));
+        }
+        pattern->set_field(label);
+        return pattern;
+      });
 
   type = make_managed<typing::RecordType>(row_types, node.has_wildcard);
   pattern = pattern_t::record(std::move(row_patterns));
   if (!row_bindings.empty()) {
-    bind_rule.subtype_bindings = std::move(row_bindings);
+    bind_rule->subtype_bindings = collections::to_array(row_bindings);
   }
+}
+
+collections::ArrayPtr<bind_rule_t::tuple_access_t> make_tuple_bindings(
+    managed_ptr<bind_rule_t> r0, managed_ptr<bind_rule_t> r1) {
+  assert(!r0->empty() || !r1->empty());
+  if (!r0->empty()) {
+    auto t0 = make_managed<bind_rule_t::tuple_access_t>(0, r0);
+    if (!r1->empty()) {
+      return collections::make_array(
+          {t0, make_managed<bind_rule_t::tuple_access_t>(1, r1)});
+    } else {
+      return collections::make_array({t0});
+    }
+  }
+  return collections::make_array(
+      {make_managed<bind_rule_t::tuple_access_t>(1, r1)});
 }
 
 void PatternElaborator::visitListPattern(const ListPattern &node) {
   typing::TypePtr el_type = typer_.undetermined_type();
   auto subs = typing::Substitutions::dflt();
-  pattern_t cons_pattern =
-      pattern_t::constructed(std::u8string(typing::BuiltinTypes::NIL),
-                             typer_.builtins().list_name(), nullptr, {});
-  bind_rule_t cons_bind_rule;
+  managed_ptr<pattern_t> cons_pattern = pattern_t::constructed(
+      typer_.builtins().nil(), typer_.builtins().list_name(), nullptr,
+      collections::make_array<pattern_t>({}));
+  managed_ptr<bind_rule_t> cons_bind_rule = make_managed<bind_rule_t>();
 
   for (const auto &pat : node.patterns | std::views::reverse) {
     pat->accept(*this);
@@ -1506,59 +1493,48 @@ void PatternElaborator::visitListPattern(const ListPattern &node) {
       throw ElaborationError(e, node.location);
     }
     el_type = u.unified_type;
-    std::vector<pattern_t> subpatterns;
-    subpatterns.push_back(std::move(pattern));
-    subpatterns.push_back(std::move(cons_pattern));
-    std::vector<pattern_t> s;
-    s.push_back(pattern_t::tuple(std::move(subpatterns)));
     cons_pattern = pattern_t::constructed(
-        std::u8string(typing::BuiltinTypes::CONS),
-        typer_.builtins().list_name(),
+        typer_.builtins().cons(), typer_.builtins().list_name(),
         typer_.tuple_type(collections::make_array<typing::Type>(
             {el_type, typer_.builtins().list_type(el_type)})),
-        std::move(s));
-    if (!cons_bind_rule.empty() || !bind_rule.empty()) {
-      std::vector<bind_rule_t::tuple_access_t> subtype_bindings;
-      if (!bind_rule.empty()) {
-        subtype_bindings.emplace_back(0, std::move(bind_rule));
-      }
-      if (!cons_bind_rule.empty()) {
-        subtype_bindings.emplace_back(1, std::move(cons_bind_rule));
-      }
-      cons_bind_rule.names.clear();
-      cons_bind_rule.subtype_bindings = std::move(subtype_bindings);
+        collections::make_array({pattern_t::tuple(
+            collections::make_array({pattern, cons_pattern}))}));
+    if (!cons_bind_rule->empty() || !bind_rule->empty()) {
+      auto subtype_bindings = make_tuple_bindings(bind_rule, cons_bind_rule);
+      cons_bind_rule = make_managed<bind_rule_t>();
+      cons_bind_rule->subtype_bindings = subtype_bindings;
     }
   }
 
   if (!subs->empty()) {
     bindings = bindings->apply_substitutions(subs, true);
-    cons_pattern.apply_substitutions(subs, true);
+    cons_pattern->apply_substitutions(subs, true);
   }
   type = typer_.builtins().list_type(el_type);
-  pattern = std::move(cons_pattern);
-  bind_rule = std::move(cons_bind_rule);
+  pattern = cons_pattern;
+  bind_rule = cons_bind_rule;
 }
 
 void PatternElaborator::visitTuplePattern(const TuplePattern &node) {
   std::vector<typing::TypePtr> types;
   types.reserve(node.patterns.size());
-  std::vector<pattern_t> subpatterns;
-  subpatterns.reserve(node.patterns.size());
-  std::vector<bind_rule_t::tuple_access_t> subrules;
+  std::vector<managed_ptr<bind_rule_t::tuple_access_t>> subrules;
 
-  for (std::size_t i = 0; i < node.patterns.size(); ++i) {
-    node.patterns[i]->accept(*this);
-    types.push_back(type);
-    subpatterns.push_back(std::move(pattern));
-    if (!bind_rule.empty()) {
-      subrules.emplace_back(i, std::move(bind_rule));
-    }
-  }
+  auto subpatterns = make_managed<collections::ManagedArray<pattern_t>>(
+      node.patterns.size(), [&](std::size_t i) {
+        node.patterns[i]->accept(*this);
+        types.push_back(type);
+        if (!bind_rule->empty()) {
+          subrules.push_back(
+              make_managed<bind_rule_t::tuple_access_t>(i, bind_rule));
+        }
+        return pattern;
+      });
 
   type = typer_.tuple_type(collections::to_array(types));
   pattern = pattern_t::tuple(std::move(subpatterns));
   if (!subrules.empty()) {
-    bind_rule.subtype_bindings = std::move(subrules);
+    bind_rule->subtype_bindings = collections::to_array(subrules);
   }
 }
 
@@ -1567,7 +1543,7 @@ void PatternElaborator::visitDatatypePattern(const DatatypePattern &node) {
   if (!binding || (*binding)->status() == typing::IdStatus::Variable) {
     throw ElaborationError(
         fmt::format("Type constructor required but {} found instead",
-                    id_to_string(node.constructor->qualifiers, con_id)),
+                    id_to_string(node.constructor->qualifiers, *con_id)),
         node.constructor->location);
   }
   auto gf =
@@ -1575,7 +1551,7 @@ void PatternElaborator::visitDatatypePattern(const DatatypePattern &node) {
   if (!gf.fn) {
     throw ElaborationError(
         fmt::format("Expected type constructor to take an argument: {}",
-                    id_to_string(node.constructor->qualifiers, con_id)),
+                    id_to_string(node.constructor->qualifiers, *con_id)),
         node.constructor->location);
   }
   assert(gf.new_substitutions->empty());
@@ -1600,14 +1576,12 @@ void PatternElaborator::visitDatatypePattern(const DatatypePattern &node) {
     throw std::logic_error(
         "Impossible: value constructor does not produce constructed type.");
   }
-  std::vector<pattern_t> s;
-  s.push_back(std::move(pattern));
-  pattern = pattern_t::constructed(con_id, name, u.unified_type, std::move(s));
+  pattern = pattern_t::constructed(con_id, name, u.unified_type,
+                                   collections::make_array({pattern}));
 
-  if (!bind_rule.empty()) {
-    std::vector<bind_rule_t::tuple_access_t> r;
-    r.emplace_back(0, std::move(bind_rule));
-    bind_rule.subtype_bindings = std::move(r);
+  if (!bind_rule->empty()) {
+    bind_rule->subtype_bindings = collections::make_array(
+        {make_managed<bind_rule_t::tuple_access_t>(0, bind_rule)});
   }
 }
 
@@ -1622,13 +1596,14 @@ void PatternElaborator::visitLayeredPattern(const LayeredPattern &node) {
 
   node.pattern->accept(*this);
 
+  auto id = make_string(node.identifier);
   bindings = bindings->add_binding(
-      node.identifier,
+      id,
       make_managed<typing::TypeScheme>(
           type, collections::make_array<ManagedString>({})),
       typing::IdStatus::Variable, false);
 
-  bind_rule.names.push_back(node.identifier);
+  bind_rule->names = cons(id, bind_rule->names);
 }
 
 void PatternElaborator::visitTypedPattern(const TypedPattern &node) {
@@ -1643,26 +1618,26 @@ void PatternElaborator::visitTypedPattern(const TypedPattern &node) {
   }
   type = u.unified_type;
   if (!u.new_substitutions->empty()) {
-    pattern.apply_substitutions(u.new_substitutions, true);
+    pattern = pattern->apply_substitutions(u.new_substitutions, true);
     bindings = bindings->apply_substitutions(u.new_substitutions, true);
   }
 }
 
-std::pair<std::u8string, std::optional<managed_ptr<typing::ValueBinding>>>
+std::pair<StringPtr, std::optional<managed_ptr<typing::ValueBinding>>>
 PatternElaborator::lookup_val(const IdentifierPattern &pat) const {
   auto id = canonicalize_val_id(pat.identifier, pat.is_op, pat.is_prefix_op);
   auto binding = C->env()->lookup_val(pat.qualifiers, id);
-  return std::make_pair(std::move(id), std::move(binding));
+  return std::make_pair(make_string(std::move(id)), std::move(binding));
 }
 
 }  // namespace
 
-std::unique_ptr<TPattern> TyperImpl::elaborate_pattern(ContextPtr C,
-                                                       const Pattern &pat) {
+managed_ptr<TPattern> TyperImpl::elaborate_pattern(ContextPtr C,
+                                                   const Pattern &pat) {
   PatternElaborator v{C, *this};
   pat.accept(v);
-  return std::make_unique<TPattern>(pat.location, v.type, std::move(v.pattern),
-                                    v.bindings, std::move(v.bind_rule));
+  return make_managed<TPattern>(pat.location, v.type, v.pattern, v.bindings,
+                                v.bind_rule);
 }
 
 namespace {
@@ -1671,7 +1646,7 @@ namespace {
 class ExprElaborator : public Expr::Visitor {
  public:
   const ContextPtr C;
-  std::unique_ptr<TExpr> typed;
+  managed_ptr<TExpr> typed;
   typing::Substitutions new_substitutions =
       collections::managed_map<typing::Stamp, typing::Type>({});
 
@@ -1694,7 +1669,7 @@ class ExprElaborator : public Expr::Visitor {
   const ImplicitlyScopedVars &scopes_;
 
   struct elaborate_rec_row_t {
-    std::unique_ptr<TRecRowExpr> elaborated_row;
+    managed_ptr<TRecRowExpr> elaborated_row;
     typing::Substitutions new_substitutions;
   };
 
@@ -1702,53 +1677,58 @@ class ExprElaborator : public Expr::Visitor {
 };
 
 void ExprElaborator::visitBigintLiteralExpr(const BigintLiteralExpr &node) {
-  typed = std::make_unique<TBigintLiteralExpr>(node.location,
-                                               typer_.builtins().bigint_type(),
-                                               parse_bigint_data(node.val));
+  typed = make_managed<TBigintLiteralExpr>(node.location,
+                                           typer_.builtins().bigint_type(),
+                                           parse_bigint_data(node.val));
 }
 
 void ExprElaborator::visitIntLiteralExpr(const IntLiteralExpr &node) {
-  typed = std::make_unique<TIntLiteralExpr>(
-      node.location, typer_.builtins().int_type(), node.val);
+  typed = make_managed<TIntLiteralExpr>(node.location,
+                                        typer_.builtins().int_type(), node.val);
 }
 
 void ExprElaborator::visitFpLiteralExpr(const FpLiteralExpr &node) {
-  typed = std::make_unique<TFpLiteralExpr>(
+  typed = make_managed<TFpLiteralExpr>(
       node.location, typer_.builtins().float_type(), node.val);
 }
 
 void ExprElaborator::visitStringLiteralExpr(const StringLiteralExpr &node) {
-  typed = std::make_unique<TStringLiteralExpr>(
+  typed = make_managed<TStringLiteralExpr>(
       node.location, typer_.builtins().string_type(), make_string(node.val));
 }
 
 void ExprElaborator::visitCharLiteralExpr(const CharLiteralExpr &node) {
-  typed = std::make_unique<TCharLiteralExpr>(
+  typed = make_managed<TCharLiteralExpr>(
       node.location, typer_.builtins().char_type(), node.val);
 }
 
+collections::ArrayPtr<ManagedString> to_string_list(
+    const std::vector<std::u8string> &l) {
+  return make_managed<collections::ManagedArray<ManagedString>>(
+      l.size(), [&](std::size_t i) { return make_string(l[i]); });
+}
+
 void ExprElaborator::visitFstringLiteralExpr(const FstringLiteralExpr &node) {
-  collections::ConsPtr<ManagedString> segments = nullptr;
-  for (auto it = node.segments.rbegin(); it != node.segments.rend(); ++it) {
-    cons(make_string(*it), segments);
-  }
-  std::vector<std::unique_ptr<TExpr>> str_substitutions;
-  str_substitutions.reserve(node.substitutions.size());
-  for (const auto &ns : node.substitutions) {
+  auto segments = to_string_list(node.segments);
+  auto str_substitutions =
+      make_managed<collections::ManagedArray<TExpr>>(node.substitutions.size());
+  for (std::size_t i = 0; i < node.substitutions.size(); ++i) {
+    const auto &ns = node.substitutions[i];
     auto e = typer_.elaborate_expr(C, *ns, substitutions_,
                                    maximum_type_name_id_, scopes_);
     if (!e.new_substitutions->empty()) {
       new_substitutions = new_substitutions | e.new_substitutions;
-      for (auto &ss : str_substitutions) {
+      for (std::size_t j = 0; j < i; ++j) {
+        auto &ss = (*str_substitutions)[j];
         ss = ss->apply_substitutions(e.new_substitutions, true);
       }
     }
-    str_substitutions.push_back(std::move(e.expr));
+    (*str_substitutions)[i] = e.expr;
   }
   // TODO: Unify subexpression type with printable
-  typed = std::make_unique<TFstringLiteralExpr>(
-      node.location, typer_.builtins().string_type(), std::move(segments),
-      std::move(str_substitutions));
+  typed = make_managed<TFstringLiteralExpr>(node.location,
+                                            typer_.builtins().string_type(),
+                                            segments, str_substitutions);
 }
 
 void ExprElaborator::visitIdentifierExpr(const IdentifierExpr &node) {
@@ -1759,11 +1739,11 @@ void ExprElaborator::visitIdentifierExpr(const IdentifierExpr &node) {
     throw ElaborationError(
         fmt::format("{} is not defined", id_to_string(node.qualifiers, id)),
         node.location);
-  typed = std::make_unique<TIdentifierExpr>(
+  typed = make_managed<TIdentifierExpr>(
       node.location,
       typing::apply_substitutions(
           (*val)->scheme()->instantiate(typer_.stamper()), substitutions_),
-      (*val)->status(), consify(node.qualifiers), make_string(id));
+      (*val)->status(), to_string_list(node.qualifiers), make_string(id));
 }
 
 void ExprElaborator::visitRecRowExpr(const RecRowExpr &) {
@@ -1775,92 +1755,96 @@ ExprElaborator::elaborate_rec_row_t ExprElaborator::elaborate_rec_row(
   auto e = typer_.elaborate_expr(C, *node.val, substitutions_,
                                  maximum_type_name_id_, scopes_);
   auto t = e.expr->type;
-  return {.elaborated_row = std::make_unique<TRecRowExpr>(
-              node.location, std::move(t), make_string(node.label),
-              std::move(e.expr)),
+  return {.elaborated_row = make_managed<TRecRowExpr>(
+              node.location, t, make_string(node.label), e.expr),
           .new_substitutions = e.new_substitutions};
 }
 
 void ExprElaborator::visitRecordExpr(const RecordExpr &node) {
-  std::vector<std::unique_ptr<TRecRowExpr>> exprs;
-  exprs.reserve(node.rows.size());
-  for (const auto &r : node.rows) {
+  auto exprs =
+      make_managed<collections::ManagedArray<TRecRowExpr>>(node.rows.size());
+  for (std::size_t i = 0; i < node.rows.size(); ++i) {
+    const auto &r = node.rows[i];
     auto e = elaborate_rec_row(*r);
     if (!e.new_substitutions->empty()) {
       new_substitutions = new_substitutions | e.new_substitutions;
-      for (auto &expr : exprs) {
+      for (std::size_t j = 0; j < i; ++j) {
+        auto &expr = (*exprs)[j];
         expr = expr->apply_substitutions_as_rec_row(e.new_substitutions, true);
       }
     }
-    exprs.push_back(std::move(e.elaborated_row));
+    (*exprs)[i] = e.elaborated_row;
   }
   typing::StringMap<typing::Type> rows =
       collections::managed_map<ManagedString, typing::Type>({});
-  for (const auto &expr : exprs) {
+  for (const auto &expr : *exprs) {
     rows = rows->insert(expr->label, expr->type).first;
   }
-  typed = std::make_unique<TRecordExpr>(node.location, typer_.record_type(rows),
-                                        std::move(exprs));
+  typed = make_managed<TRecordExpr>(node.location, typer_.record_type(rows),
+                                    std::move(exprs));
 }
 
 void ExprElaborator::visitUnitExpr(const UnitExpr &node) {
-  typed = std::make_unique<TTupleExpr>(
+  typed = make_managed<TTupleExpr>(
       node.location,
       typer_.tuple_type(collections::make_array<typing::Type>({})),
-      std::vector<std::unique_ptr<TExpr>>{});
+      collections::make_array<TExpr>({}));
 }
 
 void ExprElaborator::visitTupleExpr(const TupleExpr &node) {
-  std::vector<std::unique_ptr<TExpr>> exprs;
-  exprs.reserve(node.exprs.size());
-  for (const auto &ne : node.exprs) {
+  auto exprs =
+      make_managed<collections::ManagedArray<TExpr>>(node.exprs.size());
+  for (std::size_t i = 0; i < node.exprs.size(); ++i) {
+    const auto &ne = node.exprs[i];
     auto e = typer_.elaborate_expr(C, *ne, substitutions_,
                                    maximum_type_name_id_, scopes_);
     if (!e.new_substitutions->empty()) {
       new_substitutions = new_substitutions | e.new_substitutions;
-      for (auto &expr : exprs) {
+      for (std::size_t j = 0; j < i; ++j) {
+        auto &expr = (*exprs)[j];
         expr = expr->apply_substitutions(e.new_substitutions, true);
       }
     }
-    exprs.push_back(std::move(e.expr));
+    (*exprs)[i] = e.expr;
   }
   auto types = make_managed<collections::ManagedArray<typing::Type>>(
-      exprs.size(), [&](std::size_t i) { return exprs[i]->type; });
-  typed = std::make_unique<TTupleExpr>(node.location, typer_.tuple_type(types),
-                                       std::move(exprs));
+      exprs->size(), [&](std::size_t i) { return (*exprs)[i]->type; });
+  typed =
+      make_managed<TTupleExpr>(node.location, typer_.tuple_type(types), exprs);
 }
 
 void ExprElaborator::visitSequencedExpr(const SequencedExpr &node) {
-  std::vector<std::unique_ptr<TExpr>> exprs;
-  exprs.reserve(node.exprs.size());
-  for (const auto &ne : node.exprs) {
+  auto exprs =
+      make_managed<collections::ManagedArray<TExpr>>(node.exprs.size());
+  for (std::size_t i = 0; i < node.exprs.size(); ++i) {
+    const auto &ne = node.exprs[i];
     auto e = typer_.elaborate_expr(C, *ne, substitutions_,
                                    typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
                                    scopes_);
     if (!e.new_substitutions->empty()) {
       new_substitutions = new_substitutions | e.new_substitutions;
-      for (auto &expr : exprs) {
+      for (std::size_t j = 0; j < i; ++j) {
+        auto &expr = (*exprs)[j];
         expr = expr->apply_substitutions(e.new_substitutions, true);
       }
     }
-    exprs.push_back(std::move(e.expr));
+    (*exprs)[i] = e.expr;
   }
-  auto type = exprs.back()->type;
+  auto type = (*exprs)[exprs->size() - 1]->type;
   if (type->id_of_youngest_typename() > maximum_type_name_id_) {
     throw ElaborationError(
         "Illegal substitution in sequenced expression (type escape).",
         node.location);
   }
-  typed =
-      std::make_unique<TSequencedExpr>(node.location, type, std::move(exprs));
+  typed = make_managed<TSequencedExpr>(node.location, type, exprs);
 }
 
 void ExprElaborator::visitListExpr(const ListExpr &node) {
-  std::vector<std::unique_ptr<TExpr>> exprs;
-  exprs.reserve(node.exprs.size());
-  typing::TypePtr type =
-      make_managed<typing::UndeterminedType>(typer_.new_stamp());
-  for (const auto &ne : node.exprs) {
+  typing::TypePtr type = typer_.undetermined_type();
+  auto exprs =
+      make_managed<collections::ManagedArray<TExpr>>(node.exprs.size());
+  for (std::size_t i = 0; i < node.exprs.size(); ++i) {
+    const auto &ne = node.exprs[i];
     auto e = typer_.elaborate_expr(C, *ne, substitutions_,
                                    maximum_type_name_id_, scopes_);
     typing::unification_t u;
@@ -1877,58 +1861,62 @@ void ExprElaborator::visitListExpr(const ListExpr &node) {
     if (!u.new_substitutions->empty() || !e.new_substitutions->empty()) {
       auto new_subs = e.new_substitutions | u.new_substitutions;
       new_substitutions = new_substitutions | new_subs;
-      for (auto &expr : exprs) {
+      for (std::size_t j = 0; j < i; ++j) {
+        auto &expr = (*exprs)[j];
         expr = expr->apply_substitutions(new_subs, true);
       }
     }
-    exprs.push_back(std::move(e.expr));
+    (*exprs)[i] = e.expr;
   }
-  typed = std::make_unique<TListExpr>(
-      node.location, typer_.builtins().list_type(type), std::move(exprs));
+  typed = make_managed<TListExpr>(node.location,
+                                  typer_.builtins().list_type(type), exprs);
 }
 
 void ExprElaborator::visitLetExpr(const LetExpr &node) {
-  std::vector<std::unique_ptr<TDecl>> decls;
-  decls.reserve(node.decls.size());
   ContextPtr Cprime = C;
-  for (const auto &nd : node.decls) {
+  auto decls =
+      make_managed<collections::ManagedArray<TDecl>>(node.decls.size());
+  for (std::size_t i = 0; i < node.decls.size(); ++i) {
+    const auto &nd = node.decls[i];
     auto e = typer_.elaborate_decl(Cprime, *nd, substitutions_, scopes_);
     if (!e.new_substitutions->empty()) {
       new_substitutions = new_substitutions | e.new_substitutions;
-      for (auto &decl : decls) {
+      for (std::size_t j = 0; j < i; ++j) {
+        auto &decl = (*decls)[j];
         decl = decl->apply_substitutions(e.new_substitutions, true);
       }
     }
     Cprime = Cprime + e.env;
-    decls.push_back(std::move(e.decl));
+    (*decls)[i] = e.decl;
   }
 
-  std::vector<std::unique_ptr<TExpr>> exprs;
-  exprs.reserve(node.exprs.size());
-  for (const auto &ne : node.exprs) {
+  auto exprs =
+      make_managed<collections::ManagedArray<TExpr>>(node.exprs.size());
+  for (std::size_t i = 0; i < node.exprs.size(); ++i) {
+    const auto &ne = node.exprs[i];
     auto e = typer_.elaborate_expr(Cprime, *ne, substitutions_,
                                    typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
                                    scopes_);
     if (!e.new_substitutions->empty()) {
       new_substitutions = new_substitutions | e.new_substitutions;
-      for (auto &decl : decls) {
+      for (auto &decl : *decls) {
         decl = decl->apply_substitutions(e.new_substitutions, true);
       }
-      for (auto &expr : exprs) {
+      for (std::size_t j = 0; j < i; ++j) {
+        auto &expr = (*exprs)[j];
         expr = expr->apply_substitutions(e.new_substitutions, true);
       }
     }
-    exprs.push_back(std::move(e.expr));
+    (*exprs)[i] = e.expr;
   }
 
-  auto type = exprs.back()->type;
+  auto type = (*exprs)[exprs->size() - 1]->type;
   if (type->id_of_youngest_typename() > maximum_type_name_id_) {
     throw ElaborationError(
         "Illegal substitution in let expression (type escape).", node.location);
   }
 
-  typed = std::make_unique<TLetExpr>(node.location, type, std::move(decls),
-                                     std::move(exprs));
+  typed = make_managed<TLetExpr>(node.location, type, decls, exprs);
 }
 
 /** Used to implement `get_identifier`. */
@@ -1966,11 +1954,11 @@ const TIdentifierExpr *get_identifier(const TExpr &expr) {
  *
  * See Section 4.7 of The Definition of Standard ML (Revised).
  */
-bool is_nonexpansive_application(
-    const std::vector<std::unique_ptr<TExpr>> &exprs, TyperImpl &typer) {
-  if (exprs.size() != 2) return false;
-  if (!exprs.back()->is_nonexpansive) return false;
-  const auto *id = get_identifier(*exprs.front());
+bool is_nonexpansive_application(collections::ArrayPtr<TExpr> exprs,
+                                 TyperImpl &typer) {
+  if (exprs->size() != 2) return false;
+  if (!(*exprs)[1]->is_nonexpansive) return false;
+  const auto *id = get_identifier(*(*exprs)[0]);
   if (!id) return false;
   switch (id->status) {
     case typing::IdStatus::Variable:
@@ -1991,15 +1979,16 @@ bool is_nonexpansive_application(
 
 void ExprElaborator::visitApplicationExpr(const ApplicationExpr &node) {
   assert(node.exprs.size() >= 2);
-  std::vector<std::unique_ptr<TExpr>> exprs;
-  exprs.reserve(node.exprs.size());
   typing::TypePtr type;
-  for (const auto &ne : node.exprs) {
+  auto exprs =
+      make_managed<collections::ManagedArray<TExpr>>(node.exprs.size());
+  for (std::size_t i = 0; i < node.exprs.size(); ++i) {
+    const auto &ne = node.exprs[i];
     auto e = typer_.elaborate_expr(C, *ne, substitutions_,
                                    typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
                                    scopes_);
     auto new_subs = e.new_substitutions;
-    if (exprs.empty()) {
+    if (!i) {
       type = e.expr->type;
     } else {
       if (!new_subs->empty()) {
@@ -2008,9 +1997,10 @@ void ExprElaborator::visitApplicationExpr(const ApplicationExpr &node) {
       auto gf = get_function(type, typer_);
       if (!gf.fn) {
         throw ElaborationError(
-            fmt::format("Expression must be a function but instead is {}.",
-                        to_std_string(typing::print_type(exprs.back()->type))),
-            exprs.back()->location);
+            fmt::format(
+                "Expression must be a function but instead is {}.",
+                to_std_string(typing::print_type((*exprs)[i - 1]->type))),
+            (*exprs)[i - 1]->location);
       }
       substitutions_ = substitutions_ | gf.new_substitutions;
       if (!gf.new_substitutions->empty()) {
@@ -2031,12 +2021,13 @@ void ExprElaborator::visitApplicationExpr(const ApplicationExpr &node) {
       }
     }
     if (!new_subs->empty()) {
-      for (auto &expr : exprs) {
+      for (std::size_t j = 0; j < i; ++j) {
+        auto &expr = (*exprs)[j];
         expr = expr->apply_substitutions(new_subs, true);
       }
       new_substitutions = new_substitutions | new_subs;
     }
-    exprs.push_back(std::move(e.expr));
+    (*exprs)[i] = e.expr;
   }
 
   if (type->id_of_youngest_typename() > maximum_type_name_id_) {
@@ -2047,8 +2038,8 @@ void ExprElaborator::visitApplicationExpr(const ApplicationExpr &node) {
   }
 
   const bool is_nonexpansive = is_nonexpansive_application(exprs, typer_);
-  typed = std::make_unique<TApplicationExpr>(node.location, type,
-                                             is_nonexpansive, std::move(exprs));
+  typed = make_managed<TApplicationExpr>(node.location, type, is_nonexpansive,
+                                         exprs);
 }
 
 void ExprElaborator::visitCaseExpr(const CaseExpr &node) {
@@ -2059,27 +2050,26 @@ void ExprElaborator::visitCaseExpr(const CaseExpr &node) {
                                  typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
                                  scopes_);
   if (!e.new_substitutions->empty()) {
-    m.match = m.match.apply_substitutions(e.new_substitutions, true);
+    m.match = m.match->apply_substitutions(e.new_substitutions, true);
     new_substitutions = new_substitutions | e.new_substitutions;
   }
   typing::unification_t u;
   try {
-    u = typing::unify(m.match.match_type, e.expr->type, substitutions_);
+    u = typing::unify(m.match->match_type, e.expr->type, substitutions_);
   } catch (typing::UnificationError &e) {
     throw ElaborationError(e, node.location);
   }
   if (!u.new_substitutions->empty()) {
-    m.match = m.match.apply_substitutions(u.new_substitutions, true);
+    m.match = m.match->apply_substitutions(u.new_substitutions, true);
     e.expr = e.expr->apply_substitutions(u.new_substitutions, true);
     new_substitutions = new_substitutions | u.new_substitutions;
   }
-  if (m.match.result_type->id_of_youngest_typename() > maximum_type_name_id_) {
+  if (m.match->result_type->id_of_youngest_typename() > maximum_type_name_id_) {
     throw ElaborationError(
         "Illegal substitution in case expression (type escape).",
         node.location);
   }
-  typed = std::make_unique<TCaseExpr>(node.location, std::move(e.expr),
-                                      std::move(m.match));
+  typed = make_managed<TCaseExpr>(node.location, e.expr, m.match);
 }
 
 void ExprElaborator::visitFnExpr(const FnExpr &node) {
@@ -2087,14 +2077,14 @@ void ExprElaborator::visitFnExpr(const FnExpr &node) {
                                   maximum_type_name_id_, scopes_);
   new_substitutions = new_substitutions | m.new_substitutions;
 
-  if (m.match.result_type->id_of_youngest_typename() > maximum_type_name_id_ ||
-      m.match.match_type->id_of_youngest_typename() > maximum_type_name_id_) {
+  if (m.match->result_type->id_of_youngest_typename() > maximum_type_name_id_ ||
+      m.match->match_type->id_of_youngest_typename() > maximum_type_name_id_) {
     throw ElaborationError(
         "Illegal substitution in fn expression (type escape).", node.location);
   }
-  auto type = make_managed<typing::FunctionType>(m.match.match_type,
-                                                 m.match.result_type);
-  typed = std::make_unique<TFnExpr>(node.location, type, std::move(m.match));
+  auto type = make_managed<typing::FunctionType>(m.match->match_type,
+                                                 m.match->result_type);
+  typed = make_managed<TFnExpr>(node.location, type, m.match);
 }
 
 void ExprElaborator::visitTypedExpr(const TypedExpr &node) {
@@ -2118,7 +2108,7 @@ void ExprElaborator::visitTypedExpr(const TypedExpr &node) {
 
 }  // namespace
 
-std::unique_ptr<TExpr> TyperImpl::elaborate_expr(
+managed_ptr<TExpr> TyperImpl::elaborate_expr(
     ContextPtr C, const Expr &exp, const ImplicitlyScopedVars &scopes) {
   typing::Substitutions s =
       collections::managed_map<typing::Stamp, typing::Type>({});
@@ -2141,7 +2131,7 @@ namespace {
 /** A single clause of a match. */
 struct clause {
   /** The not-yet-matched part of the pattern. */
-  std::vector<const pattern_t *> patterns;
+  std::vector<managed_ptr<pattern_t>> patterns;
   /** The clause's index in the list of outcomes. */
   std::size_t outcome;
 };
@@ -2158,13 +2148,13 @@ struct clause_matrix {
  * constructor, and expand the patterns matching the arguments to the
  * constructor.
  */
-clause_matrix specialize(const clause_matrix &P, std::u8string_view c,
+clause_matrix specialize(const clause_matrix &P, StringPtr c,
                          typing::TypePtr arg_type, std::size_t column) {
   clause_matrix out;
 
   for (const auto &clause : P.clauses) {
-    const auto *pat = clause.patterns[column];
-    if (pat->is_wildcard() || pat->constructor() == c) {
+    const auto &pat = clause.patterns[column];
+    if (pat->is_wildcard() || *pat->constructor() == *c) {
       out.clauses.push_back(clause);
       auto &patterns = out.clauses.back().patterns;
       if (column != patterns.size() - 1) {
@@ -2172,9 +2162,9 @@ clause_matrix specialize(const clause_matrix &P, std::u8string_view c,
       }
       patterns.pop_back();
       if (arg_type) {
-        assert(pat->is_wildcard() || pat->subpatterns().size() == 1);
-        (pat->is_wildcard() ? pat : &pat->subpatterns().front())
-            ->expand(patterns, *arg_type);
+        assert(pat->is_wildcard() || pat->subpatterns()->size() == 1);
+        expand((pat->is_wildcard() ? pat : (*pat->subpatterns())[0]), patterns,
+               *arg_type);
       }
     }
   }
@@ -2193,7 +2183,7 @@ clause_matrix compute_default_matrix(const clause_matrix &P,
                                      std::size_t column) {
   clause_matrix out;
   for (const auto &clause : P.clauses) {
-    const auto *pat = clause.patterns[column];
+    const auto &pat = clause.patterns[column];
     if (pat->is_wildcard()) {
       out.clauses.push_back(clause);
       auto &patterns = out.clauses.back().patterns;
@@ -2206,7 +2196,7 @@ clause_matrix compute_default_matrix(const clause_matrix &P,
   return out;
 }
 
-using TCase = std::pair<std::unique_ptr<TPattern>, std::unique_ptr<TExpr>>;
+using TCase = std::pair<managed_ptr<TPattern>, managed_ptr<TExpr>>;
 
 decision_tree_t compile_tree(const clause_matrix &P, bool &failure_possible,
                              std::set<std::size_t> &useful_clauses);
@@ -2214,24 +2204,29 @@ decision_tree_t compile_tree(const clause_matrix &P, bool &failure_possible,
 dt_switch_t compile_switch(const clause_matrix &P, std::size_t i,
                            bool &failure_possible,
                            std::set<std::size_t> &useful_clauses) {
-  dt_switch_t result{.index = i};
+  dt_switch_t result{i};
   managed_ptr<typing::TypeName> type_name;
   for (const auto &clause : P.clauses) {
-    const auto *pat = clause.patterns[i];
+    const auto &pat = clause.patterns[i];
     if (pat->is_wildcard()) continue;
     if (!type_name) type_name = pat->type_name();
-    const std::u8string &con = pat->constructor();
-    const auto it = result.cases.lower_bound(con);
-    if (it != result.cases.cend() && it->first == con) continue;
-    result.cases.emplace_hint(
-        it, con,
-        compile_tree(specialize(P, con, pat->arg_type(), i), failure_possible,
-                     useful_clauses));
+    auto con = pat->constructor();
+    const auto it = result.cases->find(*con);
+    if (it != result.cases->cend()) continue;
+    result.cases =
+        result.cases
+            ->insert(con, make_managed<dt_switch_subtree_t>(compile_tree(
+                              specialize(P, con, pat->arg_type(), i),
+                              failure_possible, useful_clauses)))
+            .first;
   }
-  if (result.cases.size() < type_name->span()) {
-    result.cases.emplace(dt_switch_t::DEFAULT_KEY,
-                         compile_tree(compute_default_matrix(P, i),
-                                      failure_possible, useful_clauses));
+  if (result.cases->size() < type_name->span()) {
+    result.cases = result.cases
+                       ->insert(make_string(dt_switch_t::DEFAULT_KEY),
+                                make_managed<dt_switch_subtree_t>(compile_tree(
+                                    compute_default_matrix(P, i),
+                                    failure_possible, useful_clauses)))
+                       .first;
   }
   return result;
 }
@@ -2267,17 +2262,17 @@ decision_tree_t compile_tree(const clause_matrix &P, bool &failure_possible,
  * the 2008 ACM SIGPLAN workshop on ML.
  */
 void compile_match(match_t &match, std::vector<TCase> cases) {
-  match.outcomes.reserve(cases.size());
   clause_matrix P;
   P.clauses.reserve(cases.size());
-  std::size_t i = 0;
-  for (auto &c : cases) {
-    match.outcomes.emplace_back(
-        c.first->bindings, std::move(c.first->bind_rule), std::move(c.second));
-    P.clauses.emplace_back();
-    c.first->pat.expand(P.clauses.back().patterns, *match.match_type);
-    P.clauses.back().outcome = i++;
-  }
+  match.outcomes = make_managed<collections::ManagedArray<match_t::outcome_t>>(
+      cases.size(), [&](std::size_t i) {
+        auto &c = cases[i];
+        P.clauses.emplace_back();
+        expand(c.first->pat, P.clauses.back().patterns, *match.match_type);
+        P.clauses.back().outcome = i;
+        return make_managed<match_t::outcome_t>(c.first->bindings,
+                                                c.first->bind_rule, c.second);
+      });
   std::set<std::size_t> useful_clauses;
 
   match.decision_tree = compile_tree(P, match.nonexhaustive, useful_clauses);
@@ -2392,11 +2387,12 @@ TyperImpl::elaborate_match_t elaborate_match_impl(
                                maximum_type_name_id, scopes);
   result.new_substitutions = cases.new_substitutions;
 
-  result.match = {.location = location,
-                  .match_type = cases.match_type,
-                  .result_type = cases.result_type};
-  compile_match(result.match, std::move(cases.tcases));
-  if (result.match.nonexhaustive) {
+  result.match = make_managed<match_t>();
+  result.match->location = location;
+  result.match->match_type = cases.match_type;
+  result.match->result_type = cases.result_type;
+  compile_match(*result.match, std::move(cases.tcases));
+  if (result.match->nonexhaustive) {
     typer.reporter().report_warning(location, "match nonexhaustive");
   }
   return result;
@@ -2501,6 +2497,10 @@ typing::TypePtr TyperImpl::elaborate_type_expr(ContextPtr C,
 
 managed_ptr<typing::Stamp> TyperImpl::new_stamp() { return stamp_generator_(); }
 
-const typing::BuiltinTypes &TyperImpl::builtins() const { return builtins_; }
+const typing::BuiltinTypes &TyperImpl::builtins() const { return *builtins_; }
+
+void Typer::visit_root(const ManagedVisitor &visitor) {
+  impl_->visit_root(visitor);
+}
 
 }  // namespace emil

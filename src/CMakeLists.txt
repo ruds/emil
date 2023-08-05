@@ -17,6 +17,7 @@ find_package(fmt REQUIRED)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 add_subdirectory("${PROJECT_SOURCE_DIR}/extern/utfcpp" "extern/utfcpp")
+add_subdirectory("${PROJECT_SOURCE_DIR}/extern/cpp-linenoise" "extern/cpp-linenoise")
 
 add_custom_command(
   OUTPUT
@@ -42,7 +43,7 @@ add_emil_options(util)
 target_include_directories(util PUBLIC ../include)
 target_link_libraries(util PRIVATE fmt::fmt utf8cpp)
 
-add_library(lexer STATIC lexer.cc source.cc)
+add_library(lexer STATIC lexer.cc text_input.cc)
 add_emil_options(lexer)
 target_include_directories(lexer
   PUBLIC ../include
@@ -91,3 +92,13 @@ target_include_directories(typer PUBLIC ../include)
 target_link_libraries(typer
   PUBLIC ast typed_ast runtime
   PRIVATE parser)
+
+add_library(interpreter STATIC interpreter.cc)
+add_emil_options(interpreter)
+target_include_directories(interpreter PUBLIC ../include)
+target_link_libraries(interpreter
+  PRIVATE ast lexer parser runtime typed_ast typer fmt::fmt utf8cpp)
+
+add_executable(repl repl.cc)
+add_emil_options(repl)
+target_link_libraries(repl interpreter linenoise fmt::fmt)

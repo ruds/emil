@@ -33,6 +33,7 @@ const RuntimeContext& ctx();
 
 /** Manages the shared context -- limited access interface. */
 class ContextManager {
+  friend class InterpreterImpl;
   friend class Runtime;
   friend class testing::DriverContextAccessor;
   friend class testing::TestContextHolder;

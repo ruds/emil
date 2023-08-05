@@ -707,8 +707,9 @@ corresponding to that pattern.
 ** Programs
 
 #+begin_src bnf
-  interactive-program -> [topdecl ';']*
-  topdecl -> decl | expr
+  program -> (topdecl | ';')*
+  topdecl -> decl | expr-topdecl
+  expr-topdecl -> expr ';'
 #+end_src
 
 *** TODO: This is hilariously simplified

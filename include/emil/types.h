@@ -389,7 +389,7 @@ class ConstructedType : public Type {
 
 class BuiltinTypes : public TypeObj {
  public:
-  static BuiltinTypes create(StampGenerator& g);
+  static managed_ptr<BuiltinTypes> create(StampGenerator& g);
 
   /** Type constructors from the initial basis. */
   static constexpr std::u8string_view TRUE = u8"true";
@@ -397,6 +397,12 @@ class BuiltinTypes : public TypeObj {
   static constexpr std::u8string_view NIL = u8"nil";
   static constexpr std::u8string_view CONS = u8"(::)";
   static constexpr std::u8string_view REF = u8"ref";
+
+  StringPtr tru() const { return tru_; }
+  StringPtr fals() const { return fals_; }
+  StringPtr nil() const { return nil_; }
+  StringPtr cons() const { return cons_; }
+  StringPtr ref() const { return ref_; }
 
   managed_ptr<ConstructedType> bigint_type() const { return bi_; }
   managed_ptr<ConstructedType> int_type() const { return i_; }
@@ -410,7 +416,18 @@ class BuiltinTypes : public TypeObj {
   managed_ptr<ConstructedType> ref_type(TypePtr type) const;
   managed_ptr<TypeName> ref_name() const { return r_; }
 
+  BuiltinTypes(managed_ptr<Stamp> bi, managed_ptr<Stamp> i,
+               managed_ptr<Stamp> by, managed_ptr<Stamp> fl,
+               managed_ptr<Stamp> bo, managed_ptr<Stamp> c,
+               managed_ptr<Stamp> s, managed_ptr<Stamp> l,
+               managed_ptr<Stamp> r);
+
  private:
+  const StringPtr tru_;
+  const StringPtr fals_;
+  const StringPtr nil_;
+  const StringPtr cons_;
+  const StringPtr ref_;
   const managed_ptr<ConstructedType> bi_;
   const managed_ptr<ConstructedType> i_;
   const managed_ptr<ConstructedType> by_;
@@ -420,12 +437,6 @@ class BuiltinTypes : public TypeObj {
   const managed_ptr<ConstructedType> s_;
   const managed_ptr<TypeName> l_;
   const managed_ptr<TypeName> r_;
-
-  BuiltinTypes(managed_ptr<Stamp> bi, managed_ptr<Stamp> i,
-               managed_ptr<Stamp> by, managed_ptr<Stamp> fl,
-               managed_ptr<Stamp> bo, managed_ptr<Stamp> c,
-               managed_ptr<Stamp> s, managed_ptr<Stamp> l,
-               managed_ptr<Stamp> r);
 
   void visit_additional_subobjects(const ManagedVisitor&) override;
   std::size_t managed_size() const noexcept override {

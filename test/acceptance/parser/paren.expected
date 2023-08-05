@@ -1,6 +1,6 @@
 0001 (DeclTopDecl
-         :decl
-         (ValDecl
+         :decls
+         ((ValDecl
              :bindings
              ((ValBind
                  :pat
@@ -18,10 +18,10 @@
                  :rec
                  false))
              :explicit_type_vars
-             ()))
+             ())))
 0002 (DeclTopDecl
-         :decl
-         (ValDecl
+         :decls
+         ((ValDecl
              :bindings
              ((ValBind
                  :pat
@@ -62,10 +62,10 @@
                  :rec
                  false))
              :explicit_type_vars
-             ()))
+             ())))
 0003 (DeclTopDecl
-         :decl
-         (ValDecl
+         :decls
+         ((ValDecl
              :bindings
              ((ValBind
                  :pat
@@ -104,10 +104,10 @@
                  :rec
                  false))
              :explicit_type_vars
-             ()))
+             ())))
 0004 (DeclTopDecl
-         :decl
-         (ValDecl
+         :decls
+         ((ValDecl
              :bindings
              ((ValBind
                  :pat
@@ -146,12 +146,11 @@
                  :rec
                  false))
              :explicit_type_vars
-             ()))
+             ())))
 0005 ERROR
 0006 ERROR
 0007 ERROR
 0008 ERROR
-0009 ERROR
 0009 ERROR
 0010 ERROR
 0011 (EndOfFileTopDecl)
