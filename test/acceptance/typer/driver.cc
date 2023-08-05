@@ -88,6 +88,8 @@ class TestReporter : public Reporter {
                text);
   }
 
+  void report_info(std::string_view) override {}
+
   void report_type_judgement(const Location& location, const Expr& expr,
                              const typing::Type& type) override {
     if (enable_type_judgements_) {

@@ -34,6 +34,12 @@ class Reporter {
                             std::string_view text) = 0;
   virtual void report_warning(const Location& location,
                               std::string_view text) = 0;
+  /**
+   * This should be used to report information to the user.
+   *
+   * Examples: type judgments and values of variables bound by a declaration.
+   */
+  virtual void report_info(std::string_view text) = 0;
   virtual void report_type_judgement(const Location& location, const Expr& expr,
                                      const typing::Type& type) = 0;
   virtual void report_type_judgement(const Location& location,
