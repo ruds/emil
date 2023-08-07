@@ -230,7 +230,7 @@ not be used as identifiers.
 #+end_example
 
 The equals sign ~=~ and asterisk ~*~ are used in the grammar, but may
-also be used as an identifier (and are in fact defined in the default
+also be used as identifiers (and are in fact defined in the default
 prelude).
 
 ** Comments
@@ -540,8 +540,8 @@ the value ~[1, 2, 3, 4]~ results in ~foo~ being bound to ~[1, 2, 3,
         | raise-expr
         | while-expr
 
-  infix-expr -> left-expr qual-op-id infix-expr
-              | qual-op-id infix-expr
+  infix-expr -> left-expr op-id infix-expr
+              | op-id infix-expr
               | left-expr
   left-expr -> application-expr
              | if-expr
@@ -551,7 +551,8 @@ the value ~[1, 2, 3, 4]~ results in ~foo~ being bound to ~[1, 2, 3,
 #+end_src
 
 Function application binds tightly in Emil; any sequence of atomic
-expressions is a function application. After that, there are a number
+expressions is a function application. For example, ~-foo bar~ parses
+as ~-(foo bar)~, not ~(-foo) bar~. After that, there are a number
 of "left expressions"; that is, expressions that can be on the
 left-hand side of a binary operator. The precedence of infix and
 prefix operators are determined by fixity declarations (see below).
@@ -694,13 +695,54 @@ corresponding to that pattern.
 #+begin_src bnf
   decl -> val-decl
           | dtype-decl
+          | fixity-decl
+#+end_src
 
+**** Value Declarations
+
+#+begin_src bnf
   val-decl -> 'val' [type-id-seq] val-bind ('and' val-bind)*
 
   val-bind -> pattern '=' expr
             | 'rec' pattern '=' fn-expr
 #+end_src
 
+Values are bound to identifiers using the value declaration.
+
+**** Fixity Declarations
+
+#+begin_src bnf
+  fixity->decl -> fixity-kw decimal-digit op-id+
+
+  fixity-kw -> 'infix' | 'infixr' | 'nonfix' | 'prefix'
+#+end_src
+
+These declarations set the precedence and associativity of operators.
+The scope of the declaration depends on where it is made.
+
+- If one of the declarations of a ~let~ expression, the fixity
+  remains in force until the corresponding ~end~.
+- Otherwise, if in a module, the fixity remains in force until the
+  end of the module, and will be propagated from any ~open~ of that
+  module.
+- Otherwise, the declaration is at the top level, and remains in
+  force unless and until it is overridden.
+
+The ~prefix~ fixity declaration sets the precedence of one or more
+prefix operators. The ~infix~, ~infixr~, and ~nonfix~ declarations
+each set the precedence of one or more binary operators, setting
+the associativity to left, right, or none, respectively.
+
+Precedence levels range from 0 to 9, with higher precedence
+corresponding to a tighter binding in an expression. Mixing left- and
+right-associative operators at the same precedence level is an error.
+A prefix operator binds more tightly than a binary operator at the
+same precedence level. If prefix ~-~ and binary ~*~ have precedence 7
+and binary ~^~ has precedence 8, ~-foo * bar~ parses as ~(-foo) * bar~
+and ~-foo^bar~ parses as ~-(foo^bar)~. Mixing a nonassociative binary
+operator with any binary operator at the same precedence level is an
+error, as is mixing left- and right-associative operators at the same
+precedence level.
 
 ** Modules
 

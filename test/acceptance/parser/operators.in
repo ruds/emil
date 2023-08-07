@@ -1,0 +1,40 @@
+infixr 8 ^
+prefix 7 + -
+infix  7 * / % //
+infix  6 + -
+infixr 5 ::
+nonfix 4 = != < <= > >=
+infix  4 &&
+infix  3 ||
+infix  2 :=
+infix  1 <<<
+infixr 1 >>>
+;
+infix +++; (* Error: no level *)
+infix 9; (* Error: no ops *)
+infix 10 +++; (* Error: bad level *)
+infix 1i +++; (* Error: bad level *)
+infix 0x1 +++; (* Error: bad level *)
+foo + bar;
+foo + bar + baz;
+foo ^ bar;
+foo ^ bar ^ baz;
+foo + bar - baz;
+foo + bar / baz;
+-foo + bar;
+foo + -bar;
+foo + -bar + -baz;
+-foo / bar;
+-foo ^ bar;
+foo = bar;
+foo = bar = baz; (* Error: nonassociative ops *)
+foo + bar = baz;
+foo = bar + baz;
+foo <<< bar <<< baz;
+foo >>> bar >>> baz;
+foo >>> bar <<< baz; (* Error: mixing assoc *)
+foo <<< bar >>> baz; (* Error: mixing assoc *)
+let infix 9 +
+ in foo + bar * baz
+end;
+foo + bar * baz;

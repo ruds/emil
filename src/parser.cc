@@ -29,16 +29,19 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <ranges>
 #include <set>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
 
 #include "emil/ast.h"
 #include "emil/misc.h"
+#include "emil/precedence.h"
 #include "emil/processor.h"
 #include "emil/strconvert.h"
 #include "emil/token.h"
@@ -132,6 +135,38 @@ std::unique_ptr<IdentifierPattern> make_id_pattern(Token& t,
   }
 }
 
+std::unique_ptr<IdentifierExpr> make_id_expr(
+    const Location& location, std::vector<std::u8string> qualifiers,
+    std::u8string id, bool is_op, bool is_prefix) {
+  return std::make_unique<IdentifierExpr>(location, std::move(qualifiers),
+                                          std::move(id), is_op, is_prefix);
+}
+
+std::unique_ptr<IdentifierExpr> make_id_expr(Token& t, bool is_prefix = false) {
+  switch (t.type) {
+    case TokenType::QUAL_ID_OP:
+    case TokenType::QUAL_ID_WORD: {
+      auto& qid = get<QualifiedIdentifier>(t.aux);
+      const bool is_op = t.type == TokenType::QUAL_ID_OP;
+      return make_id_expr(t.location, std::move(qid.qualifiers),
+                          std::move(qid.id), is_op, is_prefix && is_op);
+    }
+
+    case TokenType::ID_OP:
+    case TokenType::EQUALS:
+    case TokenType::ASTERISK:
+      return make_id_expr(t.location, {}, move_string(t), true, is_prefix);
+
+    case TokenType::FSTRING_IVAR:
+    case TokenType::ID_WORD:
+      return make_id_expr(t.location, {}, move_string(t), false, false);
+
+    default:
+      throw std::logic_error(
+          fmt::format("This token shouldn't make it here: {}.", t));
+  }
+}
+
 }  // namespace
 
 ParsingError::ParsingError(std::string msg, const Location& location)
@@ -174,6 +209,16 @@ ExprPtr match_iliteral(Token& t) {
                             throw std::logic_error("Bad aux type for ILITERAL");
                           }},
                t.aux);
+}
+
+int extract_precedence_level(Token& t) {
+  assert(t.type == TokenType::ILITERAL);
+  if (t.text.size() != 1 || t.text[0] < U'0' || U'9' < t.text[0]) {
+    error(
+        "Precedence level in fixity declaration must be a single decimal digit",
+        t);
+  }
+  return t.text[0] - U'0';
 }
 
 bool starts_atomic_expr(TokenType t) {
@@ -325,6 +370,10 @@ struct next_token {
   std::deque<Token> tokens;
   std::optional<Token> eof_token;
 
+  explicit next_token(precedence_table& pt) {
+    precedence_tables_.push_back(&pt);
+  }
+
   subtask<Token, TopDeclPtr> operator()() {
     // If we start off with no tokens available, eof_token won't be set,
     // so we skip the extra machinery of next_token::peek.
@@ -342,7 +391,8 @@ struct next_token {
     std::vector<std::unique_ptr<Decl>> decls;
 
     while (next && starts_decl(next->type)) {
-      decls.push_back(co_await consume_decl());
+      auto decl = co_await consume_decl();
+      if (decl) decls.push_back(std::move(decl));
       next = co_await peek();
     }
     if (co_await match(TokenType::SEMICOLON) || !decls.empty()) {
@@ -360,6 +410,8 @@ struct next_token {
   }
 
  private:
+  std::deque<precedence_table*> precedence_tables_;
+
   subtask<Token, TokenRef> advance() {
     tokens.push_back(co_await next_input{});
     if (!eof_token && tokens.back().type == TokenType::END_OF_FILE) {
@@ -421,12 +473,78 @@ struct next_token {
   }
 
   subtask<Token, ExprPtr> consume_expr() {
-    auto expr = co_await consume_left_expr();
+    auto expr = co_await consume_infix_expr({-1, fixity::NONE});
     if (co_await match(TokenType::COLON)) {
       co_return std::make_unique<TypedExpr>(expr->location, std::move(expr),
                                             co_await consume_type());
     }
     co_return expr;
+  }
+
+  subtask<Token, ExprPtr> consume_infix_expr(precedence_t prev_prec) {
+    const Token* const first = co_await peek();
+    ExprPtr left;
+    if (is_op(first, false)) {
+      auto id = make_id_expr(co_await advance(), true);
+      auto expr =
+          co_await consume_infix_expr(lookup_precedence(id->identifier, true));
+      std::vector<ExprPtr> exprs;
+      const Location& location = id->location;
+      exprs.push_back(std::move(id));
+      exprs.push_back(std::move(expr));
+      left = make_unique<ApplicationExpr>(location, std::move(exprs));
+    } else {
+      left = co_await consume_left_expr();
+    }
+    const Token* next = co_await peek();
+    while (is_op(next, false)) {
+      auto prec = lookup_precedence(get<std::u8string>(next->aux), false);
+      if (should_continue(prev_prec, prec, next->location)) {
+        std::vector<ExprPtr> appl_exprs;
+        appl_exprs.push_back(make_id_expr(co_await advance(), false));
+        const Location& location = left->location;
+        std::vector<ExprPtr> tuple_exprs;
+        tuple_exprs.push_back(std::move(left));
+        tuple_exprs.push_back(co_await consume_infix_expr(prec));
+        appl_exprs.push_back(
+            std::make_unique<TupleExpr>(location, std::move(tuple_exprs)));
+        left =
+            std::make_unique<ApplicationExpr>(location, std::move(appl_exprs));
+        next = co_await peek();
+      } else {
+        co_return left;
+      }
+    }
+    co_return left;
+  }
+
+  bool should_continue(precedence_t left, precedence_t right,
+                       const Location& location) {
+    if (right.fixity == fixity::PREFIX) {
+      throw std::logic_error("right-hand operator has prefix fixity");
+    }
+    if (left.level < right.level) return true;
+    if (left.level > right.level) return false;
+    if (left.fixity == fixity::PREFIX) return false;
+    if (left.fixity == fixity::NONE || right.fixity == fixity::NONE) {
+      error("Mixing one or more nonfix operators with the same precedence",
+            location);
+    }
+    if (left.fixity != right.fixity) {
+      error(
+          "Mixing left- and right-associative operators of the same precedence",
+          location);
+    }
+    return left.fixity == fixity::RIGHT;
+  }
+
+  precedence_t lookup_precedence(const std::u8string& id, bool prefix) const {
+    for (const auto& pt : precedence_tables_ | std::ranges::views::reverse) {
+      const auto& table = prefix ? pt->prefix_precedence : pt->infix_precedence;
+      const auto it = table.find(id);
+      if (it != table.end()) return it->second;
+    }
+    return prefix ? DEFAULT_PREFIX_PRECEDENCE : DEFAULT_INFIX_PRECEDENCE;
   }
 
   subtask<Token, ExprPtr> consume_left_expr() {
@@ -523,8 +641,7 @@ struct next_token {
         co_await match({TokenType::FSTRING_IEXPR_S, TokenType::FSTRING_IVAR})) {
       Token& t = tokens.back();
       if (t.type == TokenType::FSTRING_IVAR) {
-        substitutions.push_back(std::make_unique<IdentifierExpr>(
-            t.location, std::vector<std::u8string>{}, move_string(t), false));
+        substitutions.push_back(make_id_expr(t));
       } else {
         substitutions.push_back(co_await consume_expr());
         co_await consume(TokenType::FSTRING_IEXPR_F, "fstring substitution");
@@ -537,30 +654,7 @@ struct next_token {
   }
 
   subtask<Token, std::unique_ptr<IdentifierExpr>> consume_id() {
-    co_return parse_id_token(co_await advance_safe("identifier"));
-  }
-
-  std::unique_ptr<IdentifierExpr> parse_id_token(Token& t) {
-    switch (t.type) {
-      case TokenType::ID_WORD:
-      case TokenType::ID_OP:
-      case TokenType::EQUALS:
-      case TokenType::ASTERISK:
-        return std::make_unique<IdentifierExpr>(
-            t.location, std::vector<std::u8string>{}, move_string(t),
-            t.type != TokenType::ID_WORD);
-
-      case TokenType::QUAL_ID_OP:
-      case TokenType::QUAL_ID_WORD: {
-        auto& qual = get<QualifiedIdentifier>(t.aux);
-        return std::make_unique<IdentifierExpr>(
-            t.location, std::move(qual.qualifiers), std::move(qual.id),
-            t.type == TokenType::QUAL_ID_OP);
-      }
-
-      default:
-        error("Expected identifier", t);
-    }
+    co_return make_id_expr(co_await advance_safe("identifier"));
   }
 
   subtask<Token, ExprPtr> consume_record_expr() {
@@ -601,7 +695,7 @@ struct next_token {
     }
     if (co_await match(TokenType::KW_PREFIX)) {
       Token& t = co_await consume({QUAL_OP_TYPES}, "prefix operator");
-      auto expr = parse_id_token(t);
+      auto expr = make_id_expr(t);
       expr->is_prefix_op = true;
       co_await consume(TokenType::RPAREN, "prefix operator");
       co_return expr;
@@ -662,9 +756,12 @@ struct next_token {
   subtask<Token, ExprPtr> consume_let_expr() {
     const Location& location =
         (co_await consume(TokenType::KW_LET, "let expression")).get().location;
+    precedence_table table;
+    precedence_tables_.push_back(&table);
     std::vector<DeclPtr> decls;
     do {
-      decls.push_back(co_await consume_decl());
+      auto decl = co_await consume_decl();
+      if (decl) decls.push_back(std::move(decl));
     } while (!co_await match(TokenType::KW_IN));
     std::vector<ExprPtr> exprs;
     do {
@@ -673,6 +770,7 @@ struct next_token {
                                "let expresion"))
                  .get()
                  .type == TokenType::SEMICOLON);
+    precedence_tables_.pop_back();
     co_return std::make_unique<LetExpr>(location, std::move(decls),
                                         std::move(exprs));
   }
@@ -710,6 +808,13 @@ struct next_token {
 
       case TokenType::KW_DATATYPE:
         co_return co_await consume_dtype_decl();
+
+      case TokenType::KW_INFIX:
+      case TokenType::KW_INFIXR:
+      case TokenType::KW_NONFIX:
+      case TokenType::KW_PREFIX:
+        co_await consume_fixity_decl();
+        co_return nullptr;
 
       default:
         error(
@@ -860,6 +965,48 @@ struct next_token {
         location, move_string(id),
         std::make_unique<TupleTypeExpr>(location, std::move(types)), true,
         false);
+  }
+
+  subtask<Token, void> consume_fixity_decl() {
+    Token& kw = co_await consume({TokenType::KW_INFIX, TokenType::KW_INFIXR,
+                                  TokenType::KW_NONFIX, TokenType::KW_PREFIX},
+                                 "fixity declaration");
+    const int level = extract_precedence_level(
+        co_await consume(TokenType::ILITERAL, "fixity declaration"));
+
+    const Token* next;
+    do {
+      Token& id = co_await consume({NON_QUAL_OP_TYPES}, "fixity declaration");
+      set_fixity(kw.type, level, get<std::u8string>(id.aux));
+      next = co_await peek();
+    } while (is_op(next, false));
+  }
+
+  void set_fixity(TokenType type, int level, const std::u8string& id) {
+    switch (type) {
+      case TokenType::KW_INFIX:
+        precedence_tables_.back()->infix_precedence[id] = {
+            .level = level, .fixity = fixity::LEFT};
+        break;
+
+      case TokenType::KW_INFIXR:
+        precedence_tables_.back()->infix_precedence[id] = {
+            .level = level, .fixity = fixity::RIGHT};
+        break;
+
+      case TokenType::KW_NONFIX:
+        precedence_tables_.back()->infix_precedence[id] = {
+            .level = level, .fixity = fixity::NONE};
+        break;
+
+      case TokenType::KW_PREFIX:
+        precedence_tables_.back()->prefix_precedence[id] = {
+            .level = level, .fixity = fixity::PREFIX};
+        break;
+
+      default:
+        throw std::logic_error("unreachable");
+    }
   }
 
   subtask<Token, PatternPtr> consume_pattern() {
@@ -1202,7 +1349,7 @@ bool parser::requires_more_input() const {
 processor::processor<Token, Expected<TopDeclPtr>> parser::parse() {
   while (true) {
     Expected<TopDeclPtr> result;
-    next_token n;
+    next_token n{precedence_table_};
     next_token_ = &n;
     try {
       result = co_await n();

@@ -18,6 +18,7 @@
 #include <memory>
 #include <string>
 
+#include "emil/precedence.h"
 #include "emil/processor.h"
 #include "emil/token.h"
 
@@ -49,6 +50,7 @@ struct parser {
 
  private:
   next_token* next_token_ = nullptr;
+  precedence_table precedence_table_;
 };
 
 /**
