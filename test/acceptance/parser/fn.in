@@ -2,3 +2,7 @@ fn x => x;
 fn (0, bar) => bar
  | (1, bar) => (-) (bar, 1)
  | (_, bar) => Math.pow bar 2;
+infixr 5 ::;
+fn (_, nil) => 0
+ | (_, (_ :: nil)) => 1
+ | (f, (a :: b :: _)) => f (a, b);

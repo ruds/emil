@@ -69,6 +69,11 @@ bool is_op(const Token* t, bool allow_qualified) {
                (allow_qualified && t->type == TokenType::QUAL_ID_OP));
 }
 
+bool is_op_excluding_eq(const Token* t, bool allow_qualified) {
+  return t && (t->type == TokenType::ID_OP || t->type == TokenType::ASTERISK ||
+               (allow_qualified && t->type == TokenType::QUAL_ID_OP));
+}
+
 bool has_type(const Token* t, TokenType type) { return t && t->type == type; }
 
 [[noreturn]] void error(std::string message, const Location& location) {
@@ -1032,14 +1037,47 @@ struct next_token {
       co_return std::make_unique<TypedPattern>(id.location, make_id_pattern(id),
                                                std::move(type));
     }
-    auto pattern = co_await consume_left_pattern();
-    // TODO: support infix precedence
+    auto pattern = co_await consume_infix_pattern({-1, fixity::NONE});
     if (co_await match(TokenType::COLON)) {
       const Location& location = pattern->location;
       co_return std::make_unique<TypedPattern>(location, std::move(pattern),
                                                co_await consume_type());
     }
     co_return pattern;
+  }
+
+  subtask<Token, PatternPtr> consume_infix_pattern(precedence_t prev_prec) {
+    const Token* const first = co_await peek();
+    PatternPtr left;
+    if (is_op(first, false)) {
+      auto con = make_id_pattern(co_await advance(), true);
+      auto pat = co_await consume_infix_pattern(
+          lookup_precedence(con->identifier, true));
+      std::vector<PatternPtr> pats;
+      const Location& location = con->location;
+      left = std::make_unique<DatatypePattern>(location, std::move(con),
+                                               std::move(pat));
+    } else {
+      left = co_await consume_left_pattern();
+    }
+    const Token* next = co_await peek();
+    while (is_op_excluding_eq(next, false)) {
+      const auto prec = lookup_precedence(get<std::u8string>(next->aux), false);
+      if (should_continue(prev_prec, prec, next->location)) {
+        auto con = make_id_pattern(co_await advance(), false);
+        const Location& location = left->location;
+        std::vector<PatternPtr> tuple_pats;
+        tuple_pats.push_back(std::move(left));
+        tuple_pats.push_back(co_await consume_infix_pattern(prec));
+        left = std::make_unique<DatatypePattern>(
+            location, std::move(con),
+            std::make_unique<TuplePattern>(location, std::move(tuple_pats)));
+        next = co_await peek();
+      } else {
+        co_return left;
+      }
+    }
+    co_return left;
   }
 
   subtask<Token, PatternPtr> consume_left_pattern() {

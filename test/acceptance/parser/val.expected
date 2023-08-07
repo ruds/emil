@@ -658,6 +658,60 @@
                          :qualifiers
                          ()
                          :identifier
+                         "3A3A"
+                         :is_op
+                         true
+                         :is_prefix_op
+                         false)
+                     :arg
+                     (TuplePattern
+                         :patterns
+                         (
+                             (IdentifierPattern
+                                 :qualifiers
+                                 ()
+                                 :identifier
+                                 "666F6F"
+                                 :is_op
+                                 false
+                                 :is_prefix_op
+                                 false)
+                             (IdentifierPattern
+                                 :qualifiers
+                                 ()
+                                 :identifier
+                                 "626172"
+                                 :is_op
+                                 false
+                                 :is_prefix_op
+                                 false)
+                         )))
+                 :expr
+                 (IdentifierExpr
+                     :qualifiers
+                     ()
+                     :identifier
+                     "62617A"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false)
+                 :rec
+                 false))
+             :explicit_type_vars
+             ())))
+0017 (DeclTopDecl
+         :decls
+         ((ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (DatatypePattern
+                     :constructor
+                     (IdentifierPattern
+                         :qualifiers
+                         ()
+                         :identifier
                          "7E"
                          :is_op
                          true
@@ -687,12 +741,53 @@
                  false))
              :explicit_type_vars
              ())))
-0018 ERROR
-0019 ERROR
+0018 (DeclTopDecl
+         :decls
+         ((ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (DatatypePattern
+                     :constructor
+                     (IdentifierPattern
+                         :qualifiers
+                         ()
+                         :identifier
+                         "7E"
+                         :is_op
+                         true
+                         :is_prefix_op
+                         true)
+                     :arg
+                     (IdentifierPattern
+                         :qualifiers
+                         ()
+                         :identifier
+                         "666F6F"
+                         :is_op
+                         false
+                         :is_prefix_op
+                         false))
+                 :expr
+                 (IdentifierExpr
+                     :qualifiers
+                     ()
+                     :identifier
+                     "626172"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false)
+                 :rec
+                 false))
+             :explicit_type_vars
+             ())))
 0020 ERROR
 0021 ERROR
 0022 ERROR
-0023 (DeclTopDecl
+0023 ERROR
+0024 ERROR
+0025 (DeclTopDecl
          :decls
          ((ValDecl
              :bindings
@@ -731,7 +826,7 @@
                  false))
              :explicit_type_vars
              ())))
-0024 (DeclTopDecl
+0026 (DeclTopDecl
          :decls
          ((ValDecl
              :bindings
@@ -798,7 +893,7 @@
                  false))
              :explicit_type_vars
              ())))
-0025 (DeclTopDecl
+0027 (DeclTopDecl
          :decls
          ((ValDecl
              :bindings
@@ -864,7 +959,7 @@
                  false))
              :explicit_type_vars
              ())))
-0026 (DeclTopDecl
+0028 (DeclTopDecl
          :decls
          ((ValDecl
              :bindings
@@ -983,7 +1078,7 @@
                  false))
              :explicit_type_vars
              ())))
-0030 (DeclTopDecl
+0032 (DeclTopDecl
          :decls
          ((ValDecl
              :bindings
@@ -1061,7 +1156,7 @@
              )
              :explicit_type_vars
              ())))
-0031 (DeclTopDecl
+0033 (DeclTopDecl
          :decls
          ((ValDecl
              :bindings
@@ -1199,7 +1294,7 @@
                  true))
              :explicit_type_vars
              ())))
-0034 (DeclTopDecl
+0036 (DeclTopDecl
          :decls
          ((ValDecl
              :bindings
@@ -1373,7 +1468,7 @@
              )
              :explicit_type_vars
              ())))
-0036 (DeclTopDecl
+0038 (DeclTopDecl
          :decls
          ((ValDecl
              :bindings
@@ -1419,170 +1514,170 @@
                  false))
              :explicit_type_vars
              ("2761"))))
-0037 ERROR
-0038 (DeclTopDecl
-         :decls
-         ((ValDecl
-             :bindings
-             ((ValBind
-                 :pat
-                 (IdentifierPattern
-                     :qualifiers
-                     ()
-                     :identifier
-                     "70616972"
-                     :is_op
-                     false
-                     :is_prefix_op
-                     false)
-                 :expr
-                 (FnExpr
-                     :cases
-                     (((TuplePattern
-                         :patterns
-                         (
-                             (TypedPattern
-                                 :pattern
-                                 (IdentifierPattern
-                                     :qualifiers
-                                     ()
-                                     :identifier
-                                     "78"
-                                     :is_op
-                                     false
-                                     :is_prefix_op
-                                     false)
-                                 :type
-                                 (VarTypeExpr
-                                     :id
-                                     "2761"))
-                             (TypedPattern
-                                 :pattern
-                                 (IdentifierPattern
-                                     :qualifiers
-                                     ()
-                                     :identifier
-                                     "79"
-                                     :is_op
-                                     false
-                                     :is_prefix_op
-                                     false)
-                                 :type
-                                 (VarTypeExpr
-                                     :id
-                                     "2762"))
-                         ))
-                       . (TupleExpr
-                             :exprs
-                             (
-                                 (IdentifierExpr
-                                     :qualifiers
-                                     ()
-                                     :identifier
-                                     "78"
-                                     :is_op
-                                     false
-                                     :is_prefix_op
-                                     false)
-                                 (IdentifierExpr
-                                     :qualifiers
-                                     ()
-                                     :identifier
-                                     "79"
-                                     :is_op
-                                     false
-                                     :is_prefix_op
-                                     false)
-                             )))))
-                 :rec
-                 false))
-             :explicit_type_vars
-             (
-                 "2761"
-                 "2762"
-             ))))
-0039 (DeclTopDecl
-         :decls
-         ((ValDecl
-             :bindings
-             ((ValBind
-                 :pat
-                 (IdentifierPattern
-                     :qualifiers
-                     ()
-                     :identifier
-                     "70616972"
-                     :is_op
-                     false
-                     :is_prefix_op
-                     false)
-                 :expr
-                 (FnExpr
-                     :cases
-                     (((TuplePattern
-                         :patterns
-                         (
-                             (TypedPattern
-                                 :pattern
-                                 (IdentifierPattern
-                                     :qualifiers
-                                     ()
-                                     :identifier
-                                     "78"
-                                     :is_op
-                                     false
-                                     :is_prefix_op
-                                     false)
-                                 :type
-                                 (VarTypeExpr
-                                     :id
-                                     "2761"))
-                             (TypedPattern
-                                 :pattern
-                                 (IdentifierPattern
-                                     :qualifiers
-                                     ()
-                                     :identifier
-                                     "79"
-                                     :is_op
-                                     false
-                                     :is_prefix_op
-                                     false)
-                                 :type
-                                 (VarTypeExpr
-                                     :id
-                                     "2762"))
-                         ))
-                       . (TupleExpr
-                             :exprs
-                             (
-                                 (IdentifierExpr
-                                     :qualifiers
-                                     ()
-                                     :identifier
-                                     "78"
-                                     :is_op
-                                     false
-                                     :is_prefix_op
-                                     false)
-                                 (IdentifierExpr
-                                     :qualifiers
-                                     ()
-                                     :identifier
-                                     "79"
-                                     :is_op
-                                     false
-                                     :is_prefix_op
-                                     false)
-                             )))))
-                 :rec
-                 false))
-             :explicit_type_vars
-             (
-                 "2761"
-                 "2762"
-             ))))
+0039 ERROR
 0040 (DeclTopDecl
+         :decls
+         ((ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
+                     :qualifiers
+                     ()
+                     :identifier
+                     "70616972"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false)
+                 :expr
+                 (FnExpr
+                     :cases
+                     (((TuplePattern
+                         :patterns
+                         (
+                             (TypedPattern
+                                 :pattern
+                                 (IdentifierPattern
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "78"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                                 :type
+                                 (VarTypeExpr
+                                     :id
+                                     "2761"))
+                             (TypedPattern
+                                 :pattern
+                                 (IdentifierPattern
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "79"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                                 :type
+                                 (VarTypeExpr
+                                     :id
+                                     "2762"))
+                         ))
+                       . (TupleExpr
+                             :exprs
+                             (
+                                 (IdentifierExpr
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "78"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                                 (IdentifierExpr
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "79"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                             )))))
+                 :rec
+                 false))
+             :explicit_type_vars
+             (
+                 "2761"
+                 "2762"
+             ))))
+0041 (DeclTopDecl
+         :decls
+         ((ValDecl
+             :bindings
+             ((ValBind
+                 :pat
+                 (IdentifierPattern
+                     :qualifiers
+                     ()
+                     :identifier
+                     "70616972"
+                     :is_op
+                     false
+                     :is_prefix_op
+                     false)
+                 :expr
+                 (FnExpr
+                     :cases
+                     (((TuplePattern
+                         :patterns
+                         (
+                             (TypedPattern
+                                 :pattern
+                                 (IdentifierPattern
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "78"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                                 :type
+                                 (VarTypeExpr
+                                     :id
+                                     "2761"))
+                             (TypedPattern
+                                 :pattern
+                                 (IdentifierPattern
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "79"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                                 :type
+                                 (VarTypeExpr
+                                     :id
+                                     "2762"))
+                         ))
+                       . (TupleExpr
+                             :exprs
+                             (
+                                 (IdentifierExpr
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "78"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                                 (IdentifierExpr
+                                     :qualifiers
+                                     ()
+                                     :identifier
+                                     "79"
+                                     :is_op
+                                     false
+                                     :is_prefix_op
+                                     false)
+                             )))))
+                 :rec
+                 false))
+             :explicit_type_vars
+             (
+                 "2761"
+                 "2762"
+             ))))
+0042 (DeclTopDecl
          :decls
          ((ValDecl
              :bindings
@@ -1716,8 +1811,8 @@
              )
              :explicit_type_vars
              ("2761"))))
-0042 ERROR
-0043 (DeclTopDecl
+0044 ERROR
+0045 (DeclTopDecl
          :decls
          ((ValDecl
              :bindings
@@ -1746,7 +1841,7 @@
                  false))
              :explicit_type_vars
              ())))
-0044 (DeclTopDecl
+0046 (DeclTopDecl
          :decls
          ((ValDecl
              :bindings
@@ -1788,9 +1883,9 @@
                  false))
              :explicit_type_vars
              ())))
-0045 ERROR
-0046 ERROR
-0047 (DeclTopDecl
+0047 ERROR
+0048 ERROR
+0049 (DeclTopDecl
          :decls
          ((ValDecl
              :bindings
@@ -1913,7 +2008,7 @@
              )
              :explicit_type_vars
              ())))
-0048 (DeclTopDecl
+0050 (DeclTopDecl
          :decls
          (
              (ValDecl
@@ -1971,4 +2066,4 @@
                  :explicit_type_vars
                  ())
          ))
-0049 (EndOfFileTopDecl)
+0051 (EndOfFileTopDecl)

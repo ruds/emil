@@ -461,8 +461,8 @@ value constructors from ~Cards~.
   pattern -> word-id [':' type] 'as' pattern
            | infix-pattern [':' type]
 
-  infix-pattern -> left-pattern qual-op-id infix-pattern
-                 | qual-op-id infix-pattern
+  infix-pattern -> left-pattern op-id infix-pattern
+                 | op-id infix-pattern
                  | infix-pattern
 
   left-pattern -> '(' ['prefix'] qual-op-id ')' atomic-pattern
@@ -488,6 +488,9 @@ if a value matches a pattern, and if so to (optionally) bind
 identifiers to various parts of the value. Match patterns are used in
 value bindings, exception handlers, function values, and case
 expressions. No pattern may bind the same identifier multiple times.
+
+Inline operators are handled as in expressions; their precedence and
+associativity are controlled by [[*Fixity Declarations][fixity declarations]].
 
 **** Atomic Patterns
 

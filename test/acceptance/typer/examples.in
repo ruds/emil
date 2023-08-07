@@ -7,7 +7,7 @@
 (* dummy definitions *)
 val (:=) = fn (_ : 'a ref, a : 'a) => ref a infix 2 :=;
 val (prefix !) = fn (ref a) => a;
-val hd = fn ((::) (a, _)) => a;
+val hd = fn (a :: _) => a;
 
 (* Expansive: can't generalize *)
 val x = ref nil;
@@ -33,7 +33,7 @@ val g = f 3;
 val g = (fn y => (f 3) y);
 val g = fn y => f 3 y;
 
-val f = fn ((::) (x, l)) => (fn y => y);
+val f = fn (x :: l) => (fn y => y);
 val g = f nil;
 val g = fn y => f nil y;
 
