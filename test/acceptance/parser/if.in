@@ -1,0 +1,9 @@
+if foo then bar else baz;
+if if foo then bar else baz then quux else waldo;
+if foo then if bar then baz else quux else waldo;
+if foo then bar else if baz then quux else waldo;
+if then bar else baz; (* error: missing condition *)
+if foo then else baz; (* error: missing true branch *)
+if foo then bar else; (* error: missing false branch *)
+if foo bar else baz; (* error: missing then *)
+if foo then bar; (* error: missing else *)

@@ -111,6 +111,7 @@ const std::vector<Category> CATEGORIES{
          {"List", {"[Expr*] exprs"}},
          {"Let", {"[Decl*] decls", "[Expr*] exprs"}},
          {"Application", {"[Expr*] exprs"}},
+         {"If", {"Expr* cond", "Expr* true_branch", "Expr* false_branch"}},
          {"Case", {"Expr* expr", "[Pattern*->Expr*] cases"}},
          {"Fn", {"[Pattern*->Expr*] cases"}},
          {"Typed", {"Expr* expr", "TypeExpr* type"}},

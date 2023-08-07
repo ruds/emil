@@ -606,6 +606,32 @@ void TApplicationExpr::visit_texpr_subobjects(const ManagedVisitor& visitor) {
   exprs.accept(visitor);
 }
 
+TIfExpr::TIfExpr(const Location& location, managed_ptr<TExpr> cond,
+                 managed_ptr<TExpr> true_branch,
+                 managed_ptr<TExpr> false_branch)
+    : TExpr(location, true_branch->type, false),
+      cond(cond),
+      true_branch(true_branch),
+      false_branch(false_branch) {}
+
+managed_ptr<TExpr> TIfExpr::apply_substitutions(
+    typing::Substitutions substitutions,
+    bool enforce_timing_constraints) const {
+  return make_managed<TIfExpr>(
+      location,
+      cond->apply_substitutions(substitutions, enforce_timing_constraints),
+      true_branch->apply_substitutions(substitutions,
+                                       enforce_timing_constraints),
+      false_branch->apply_substitutions(substitutions,
+                                        enforce_timing_constraints));
+}
+
+void TIfExpr::visit_texpr_subobjects(const ManagedVisitor& visitor) {
+  cond.accept(visitor);
+  true_branch.accept(visitor);
+  false_branch.accept(visitor);
+}
+
 TCaseExpr::TCaseExpr(const Location& location, managed_ptr<TExpr> expr,
                      managed_ptr<match_t> match)
     : TExpr(location, match->result_type, false), expr(expr), match(match) {}

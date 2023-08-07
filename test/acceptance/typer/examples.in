@@ -81,28 +81,28 @@ val x = let datatype t2 = C2 in C2 end;
 let datatype t2 = C2 in C2 end;
 
 fn x => let datatype t3 = C3
-            val _ = case true of true => x | _ => C3
+            val _ = if true then x else C3
          in 5
         end;
 
 (* From http://mlton.org/TypeVariableScope *)
 val f = fn x =>
   let
-    val g = fn (y: 'a) => case true of true => x | false => y
+    val g = fn (y: 'a) => if true then x else y
   in
     g x
   end;
 
 val f = fn x =>
   let
-    val 'a g = fn (y: 'a) => case true of true => x | false => y
+    val 'a g = fn (y: 'a) => if true then x else y
   in
     g x
   end;
 
 val 'a f = fn x =>
   let
-    val g = fn (y: 'a) => case true of true => x | false => y
+    val g = fn (y: 'a) => if true then x else y
   in
     g x
   end;

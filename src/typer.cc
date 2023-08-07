@@ -428,6 +428,12 @@ class ExprVarScoper : public Expr::Visitor {
     }
   }
 
+  void visitIfExpr(const IfExpr &e) override {
+    e.cond->accept(*this);
+    e.true_branch->accept(*this);
+    e.false_branch->accept(*this);
+  }
+
   void visitCaseExpr(const CaseExpr &e) override {
     e.expr->accept(*this);
     for (const auto &c : e.cases) {
@@ -1356,6 +1362,9 @@ class LiteralExtractor : public Expr::Visitor {
   void visitApplicationExpr(const ApplicationExpr &) override {
     throw std::logic_error("Illegal expression in literal pattern.");
   }
+  void visitIfExpr(const IfExpr &) override {
+    throw std::logic_error("Illegal expression in literal pattern.");
+  }
   void visitCaseExpr(const CaseExpr &) override {
     throw std::logic_error("Illegal expression in literal pattern.");
   }
@@ -1938,6 +1947,7 @@ class GetIdentifierVisitor : public TExpr::Visitor {
   void visit(const TListExpr &) override { id = nullptr; }
   void visit(const TLetExpr &) override { id = nullptr; }
   void visit(const TApplicationExpr &) override { id = nullptr; }
+  void visit(const TIfExpr &) override { id = nullptr; }
   void visit(const TCaseExpr &) override { id = nullptr; }
   void visit(const TFnExpr &) override { id = nullptr; }
 };
@@ -2040,6 +2050,56 @@ void ExprElaborator::visitApplicationExpr(const ApplicationExpr &node) {
   const bool is_nonexpansive = is_nonexpansive_application(exprs, typer_);
   typed = make_managed<TApplicationExpr>(node.location, type, is_nonexpansive,
                                          exprs);
+}
+
+void ExprElaborator::visitIfExpr(const IfExpr &node) {
+  auto cond = typer_.elaborate_expr(C, *node.cond, substitutions_,
+                                    typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                    scopes_);
+  new_substitutions = new_substitutions | cond.new_substitutions;
+  typing::unification_t u_cond;
+  try {
+    u_cond = typing::unify(cond.expr->type, typer_.builtins().bool_type(),
+                           substitutions_);
+  } catch (typing::UnificationError &e) {
+    throw ElaborationError(e, node.location);
+  }
+  if (!u_cond.new_substitutions->empty()) {
+    cond.expr = cond.expr->apply_substitutions(u_cond.new_substitutions, true);
+    new_substitutions = new_substitutions | u_cond.new_substitutions;
+  }
+
+  auto tb = typer_.elaborate_expr(C, *node.true_branch, substitutions_,
+                                  typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                  scopes_);
+  if (!tb.new_substitutions->empty()) {
+    cond.expr = cond.expr->apply_substitutions(tb.new_substitutions, true);
+    new_substitutions = new_substitutions | tb.new_substitutions;
+  }
+
+  auto fb = typer_.elaborate_expr(C, *node.false_branch, substitutions_,
+                                  typing::NO_ADDITIONAL_TYPE_NAME_RESTRICTION,
+                                  scopes_);
+  if (!fb.new_substitutions->empty()) {
+    cond.expr = cond.expr->apply_substitutions(fb.new_substitutions, true);
+    tb.expr = tb.expr->apply_substitutions(fb.new_substitutions, true);
+    new_substitutions = new_substitutions | fb.new_substitutions;
+  }
+
+  typing::unification_t u;
+  try {
+    u = typing::unify(tb.expr->type, fb.expr->type, substitutions_);
+  } catch (typing::UnificationError &e) {
+    throw ElaborationError(e, node.location);
+  }
+  if (!u.new_substitutions->empty()) {
+    cond.expr = cond.expr->apply_substitutions(u.new_substitutions, true);
+    tb.expr = tb.expr->apply_substitutions(u.new_substitutions, true);
+    fb.expr = fb.expr->apply_substitutions(u.new_substitutions, true);
+    new_substitutions = new_substitutions | u.new_substitutions;
+  }
+
+  typed = make_managed<TIfExpr>(node.location, cond.expr, tb.expr, fb.expr);
 }
 
 void ExprElaborator::visitCaseExpr(const CaseExpr &node) {

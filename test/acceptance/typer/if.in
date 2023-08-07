@@ -1,0 +1,4 @@
+if true then 1 else 2;
+if 1 then 2 else 3; (* condition must be bool *)
+if true then 1 else "hi"; (* branches must unify *)
+val f = fn (a, b) => if a then b else "hi";

@@ -556,7 +556,7 @@ struct next_token {
     const Token* first = co_await peek();
     switch (first->type) {
       case TokenType::KW_IF:
-        error("Not implemented", *first);
+        co_return co_await consume_if_expr();
 
       case TokenType::KW_CASE:
         co_return co_await consume_case_expr();
@@ -778,6 +778,18 @@ struct next_token {
     precedence_tables_.pop_back();
     co_return std::make_unique<LetExpr>(location, std::move(decls),
                                         std::move(exprs));
+  }
+
+  subtask<Token, ExprPtr> consume_if_expr() {
+    const Location& location =
+        (co_await consume(TokenType::KW_IF, "if expression")).get().location;
+    auto cond = co_await consume_expr();
+    co_await consume(TokenType::KW_THEN, "if expression");
+    auto t = co_await consume_expr();
+    co_await consume(TokenType::KW_ELSE, "if expression");
+    auto f = co_await consume_expr();
+    co_return std::make_unique<IfExpr>(location, std::move(cond), std::move(t),
+                                       std::move(f));
   }
 
   subtask<Token, std::unique_ptr<CaseExpr>> consume_case_expr() {

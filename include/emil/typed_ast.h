@@ -302,6 +302,7 @@ class TSequencedExpr;
 class TListExpr;
 class TLetExpr;
 class TApplicationExpr;
+class TIfExpr;
 class TCaseExpr;
 class TFnExpr;
 
@@ -346,6 +347,7 @@ class TExpr : public Managed {
     virtual void visit(const TListExpr& v) = 0;
     virtual void visit(const TLetExpr& v) = 0;
     virtual void visit(const TApplicationExpr& v) = 0;
+    virtual void visit(const TIfExpr& v) = 0;
     virtual void visit(const TCaseExpr& v) = 0;
     virtual void visit(const TFnExpr& v) = 0;
   };
@@ -715,6 +717,26 @@ class TApplicationExpr : public TExpr {
   std::size_t managed_size() const noexcept override {
     return sizeof(TApplicationExpr);
   }
+};
+
+/** An if expression. Expansive. */
+class TIfExpr : public TExpr {
+ public:
+  managed_ptr<TExpr> cond;
+  managed_ptr<TExpr> true_branch;
+  managed_ptr<TExpr> false_branch;
+
+  TIfExpr(const Location& location, managed_ptr<TExpr> cond,
+          managed_ptr<TExpr> true_branch, managed_ptr<TExpr> false_branch);
+
+  void accept(Visitor& visitor) const override { visitor.visit(*this); }
+
+  managed_ptr<TExpr> apply_substitutions(
+      typing::Substitutions substitutions,
+      bool enforce_timing_constraints) const override;
+
+  void visit_texpr_subobjects(const ManagedVisitor& visitor) override;
+  std::size_t managed_size() const noexcept override { return sizeof(TIfExpr); }
 };
 
 /** A case expression. Expansive. */

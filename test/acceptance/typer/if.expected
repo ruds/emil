@@ -1,0 +1,7 @@
+@0001:
+val it : bigint
+@0002: ERROR
+@0003: ERROR
+@0004:
+val f : (bool * string) -> string
+@0005:

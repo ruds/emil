@@ -693,6 +693,17 @@ pattern: ~_ => raise Match~.
 Identifiers bound in a pattern are scoped to the result expression
 corresponding to that pattern.
 
+**** Other Control Structure Expressions
+
+#+begin_src bnf
+  if-expr -> 'if' expr 'then' expr 'else' expr
+#+end_src
+
+If expressions must always have an else, since the expression
+evaluates to the expression in the branch corresponding to the
+condition's value. The types of the expressions in true branch and
+false branch must unify.
+
 *** Declarations
 
 #+begin_src bnf
