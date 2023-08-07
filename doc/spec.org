@@ -744,6 +744,9 @@ operator with any binary operator at the same precedence level is an
 error, as is mixing left- and right-associative operators at the same
 precedence level.
 
+The default precedence of a prefix operator is 9. By default, binary
+operators are left-associative with a precedence of 0.
+
 ** Modules
 
 ** Programs

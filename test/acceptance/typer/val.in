@@ -25,11 +25,11 @@ val (+) = fn (a : bigint, _ : bigint) => a;
 val (-) = fn (a : bigint, _ : bigint) => a;
 val rec f = fn 0 => 1
              | 1 => 1
-             | x => (+) (f ((-) (x, 1)), f ((-) (x, 2)));
+             | x => f (x - 1) + f (x - 2);
 val map = fn f =>
     let
         val rec g = fn nil => nil
-                     | ((::) (el, rest)) => (::) (f el, g rest)
+                     | ((::) (el, rest)) => f el :: g rest
     in
         g
     end;
@@ -37,8 +37,8 @@ val rec foldl = fn f => fn z =>
             fn nil => z
              | ((::) (x, xs)) => foldl f (f (z, x)) xs;
 val sum = foldl (+) 0;
-val rec even = fn 0 => true | n => odd ((-) (n, 1))
-    and odd  = fn 0 => false | n => even ((-) (n, 1));
+val rec even = fn 0 => true | n => odd (n - 1)
+    and odd  = fn 0 => false | n => even (n - 1);
 val 'a id = fn (z: 'a) => z;
 val ('a, 'b) pair = fn (x: 'a, y: 'b) => (x, y);
 val 'a foo = nil : 'a list

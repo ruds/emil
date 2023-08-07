@@ -5,8 +5,8 @@
  *)
 
 (* dummy definitions *)
-val ar = fn (_ : 'a ref, a : 'a) => ref a;
-val dr = fn (ref a) => a;
+val (:=) = fn (_ : 'a ref, a : 'a) => ref a infix 2 :=;
+val (prefix !) = fn (ref a) => a;
 val hd = fn ((::) (a, _)) => a;
 
 (* Expansive: can't generalize *)
@@ -15,8 +15,8 @@ val x : int list ref = ref nil;
 
 (* Unifies *)
 let val x = ref nil
- in ar (x, [3]);
-    hd (dr x)
+ in x := [3];
+    hd (!x)
 end;
 
 (* Generalizes *)
@@ -24,8 +24,8 @@ val f = fn y => let val x = ref nil in x end;
 
 (* Instantiates *)
 let val y = let val x = ref nil in x end
- in ar (y, [true]);
-    hd (dr y)
+ in y := [true];
+    hd (!y)
 end;
 
 val f = fn x => fn y => y;
@@ -40,26 +40,26 @@ val g = fn y => f nil y;
 val counter = ref(ref 0);
 val mkCountF = fn f =>
     let val x = ref 0
-        val f2 = fn z => (ar (x, dr x); f z)
-     in ar (counter, x);
+        val f2 = fn z => (x := !x; f z)
+     in counter := x;
         f2
      end;
 val pair = fn x => (x, x);
 val cpair = mkCountF pair;
-val cpairCalls = dr counter;
+val cpairCalls = !counter;
 val cpair' = (fn y => mkCountF pair y);
 
 let val r = ref(fn x => x)
- in (dr r) 5
+ in (!r) 5
 end;
 
 let val r = ref(fn x => x)
- in (dr r) 5; (dr r) true
+ in (!r) 5; (!r) true
 end;
 
 val f = fn () =>
     let val r = ref(fn x => x)
-     in (dr r)
+     in !r
     end;
 
 val x = ref(fn x => x);
@@ -110,10 +110,10 @@ val 'a f = fn x =>
 (* From HaMLet S: To Become Or  Not To Become Successor ML :-)
  * Section 5.6 *)
 
-let val r = ref [] in (ar (r, [C1])) end;
+let val r = ref [] in r := [C1] end;
 
 let val r = ref []
     datatype t4 = C4
  in
-    (ar (r, [C4]))
+    r := [C4]
 end;

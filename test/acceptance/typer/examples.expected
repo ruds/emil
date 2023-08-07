@@ -1,7 +1,7 @@
 @0008:
-val ar : ('a ref * 'a) -> 'a ref
+val (:=) : ('a ref * 'a) -> 'a ref
 @0009:
-val dr : 'a ref -> 'a
+val (prefix !) : 'a ref -> 'a
 @0010: WARNING
 @0010:
 val hd : 'a list -> 'a
