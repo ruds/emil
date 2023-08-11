@@ -190,7 +190,7 @@ TEST(ManagedArrayTest, FromInitializerList) {
   auto i3 = tc.root.add_root(mi(3));
 
   auto arr = tc.root.add_root(make_array({i1, i2, i3}));
-  auto force_gc = mi(4);
+  mi(4);  // force gc
   EXPECT_FALSE(arr->empty());
   EXPECT_EQ(arr->size(), 3);
   EXPECT_EQ((*arr)[0], 1);
@@ -207,7 +207,7 @@ TEST(ManagedArrayTest, FromTuples) {
   TestContext tc;
   auto arr = tc.root.add_root(make_array<ManagedInt>(
       std::make_tuple(1), std::make_tuple(2), std::make_tuple(3)));
-  auto force_gc = mi(4);
+  mi(4);  // force gc
   EXPECT_FALSE(arr->empty());
   EXPECT_EQ(arr->size(), 3);
   EXPECT_EQ((*arr)[0], 1);

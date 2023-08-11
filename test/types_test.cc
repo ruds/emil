@@ -1219,7 +1219,6 @@ TEST_F(UnifyTest, Constructed) {
 
 TEST_F(UnifyTest, Undetermined) {
   const auto list_ute1 = list_type(ute1);
-  const auto list_utl1 = list_type(utl1);
   const auto pair_int_float = pair_type(int_type, float_type);
 
   auto hold = tc.mgr.acquire_hold();

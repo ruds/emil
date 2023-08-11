@@ -132,7 +132,6 @@ concept OptionalManagedType = ManagedType<T> || std::is_same_v<T, void>;
  */
 class managed_ptr_base {
  public:
-  ~managed_ptr_base();
   Managed& operator*() { return *val_; }
   const Managed& operator*() const { return *val_; }
   Managed* operator->() { return val_; }
@@ -159,6 +158,7 @@ class managed_ptr_base {
 };
 
 static_assert(sizeof(managed_ptr_base) == sizeof(void*));
+static_assert(std::is_trivially_destructible_v<managed_ptr_base>);
 
 /**
  * A pointer to a managed object.
@@ -171,13 +171,22 @@ class managed_ptr : public managed_ptr_base {
  public:
   managed_ptr() noexcept : managed_ptr(nullptr) {}
   // cppcheck-suppress noExplicitConstructor
-  managed_ptr(std::nullptr_t) noexcept : managed_ptr_base(nullptr) {}
+  managed_ptr(std::nullptr_t) noexcept : managed_ptr_base(nullptr) {
+    static_assert(ManagedType<T>);
+    static_assert(sizeof(managed_ptr) == sizeof(void*));
+    static_assert(std::is_trivially_destructible_v<managed_ptr>);
+  }
+
+  managed_ptr(managed_ptr&&) noexcept = default;
+  managed_ptr& operator=(managed_ptr&&) noexcept = default;
+  managed_ptr(const managed_ptr&) noexcept = default;
+  managed_ptr& operator=(const managed_ptr&) noexcept = default;
 
   template <BaseManagedType<T> U>
   // cppcheck-suppress noExplicitConstructor
-  managed_ptr(managed_ptr<U>&& o) noexcept : managed_ptr_base(o.val_) {}
-
-  ~managed_ptr() { static_assert(ManagedType<T>); }
+  managed_ptr(managed_ptr<U>&& o) noexcept : managed_ptr_base(o.val_) {
+    static_assert(ManagedType<T>);
+  }
 
   template <BaseManagedType<T> U>
   managed_ptr& operator=(managed_ptr<U>&& o) noexcept {

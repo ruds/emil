@@ -667,7 +667,7 @@ class DeclChangeDescriber : public TDecl::Visitor {
         // apply the substitutions to `Pair`'s param type.
         if (gf.fn) {
           auto subs = typing::Substitutions::dflt();
-          auto u = typing::unify(gf.fn->result(), t.second->fn()->t(), subs);
+          typing::unify(gf.fn->result(), t.second->fn()->t(), subs);
           auto param_type = typing::apply_substitutions(gf.fn->param(), subs);
           fmt::format_to(it, "{} of {}", cit->first,
                          to_std_string(typing::print_type(param_type)));

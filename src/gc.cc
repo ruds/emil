@@ -54,7 +54,6 @@ Managed* Managed::next_managed() const {
 }
 
 managed_ptr_base::managed_ptr_base(Managed* val) noexcept : val_(val) {}
-managed_ptr_base::~managed_ptr_base() = default;
 
 void managed_ptr_base::accept(const ManagedVisitor& visitor) const {
   if (visitor.visit(*this)) val_->visit_subobjects(visitor);

@@ -1382,9 +1382,9 @@ TEST(BigintTest, DISABLED_Overflow) {
   EXPECT_EQ(BigintTestAccessor::size(*sum),
             std::numeric_limits<std::int32_t>::max());
 
-  EXPECT_THROW(auto t = *max_bigint + 1, std::overflow_error);
-  EXPECT_THROW(auto t = *max_bit << 1, std::overflow_error);
-  EXPECT_THROW(auto t = *max_bit * 2, std::overflow_error);
+  EXPECT_THROW(*max_bigint + 1, std::overflow_error);
+  EXPECT_THROW(*max_bit << 1, std::overflow_error);
+  EXPECT_THROW(*max_bit * 2, std::overflow_error);
 }
 
 TEST(BigintTest, DivisionWithZeros) {
