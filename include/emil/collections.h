@@ -268,6 +268,8 @@ class ManagedSet : public ManagedWithSelfPtr<ManagedSet<T, Comp>> {
     return s ? const_iterator(std::move(s), *comp_) : cend();
   }
 
+  const_iterator find(managed_ptr<T> needle) const { return find(*needle); }
+
   template <typename U>
   bool contains(const U& needle) const {
     return static_cast<bool>(trees::find(tree_, needle, *comp_));
@@ -515,6 +517,8 @@ class ManagedMap : public ManagedWithSelfPtr<ManagedMap<K, V, Comp>> {
     auto s = trees::find(tree_, key, *comp_);
     return s ? const_iterator(std::move(s), *comp_) : cend();
   }
+
+  const_iterator find(managed_ptr<K> key) const { return find(*key); }
 
   template <typename U>
   bool contains(const U& key) const {
