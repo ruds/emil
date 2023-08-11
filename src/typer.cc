@@ -1191,6 +1191,7 @@ managed_ptr<typing::TypeEnv> seed_type_env(
 struct elaborate_dtype_bind_t {
   managed_ptr<typing::TypeEnv> TE = typing::TypeEnv::empty();
   managed_ptr<typing::ValEnv> VE = typing::ValEnv::empty();
+  managed_ptr<typing::ConstructedType> canonical_type;
 };
 
 /** Elaborate a single DtypeBind. */
@@ -1232,21 +1233,77 @@ elaborate_dtype_bind_t elaborate_dtype_bind(TyperImpl &typer, ContextPtr C,
 
   auto g = typing::TypeScheme::generalize(C, type);
   assert(g->undetermined_types()->empty() && g->free_variables()->empty());
+  r.canonical_type = g->t().cast<typing::ConstructedType>();
+  r.canonical_type->set_constructors(r.VE);
   r.TE = r.TE->add_binding(
       make_string(binding.identifier),
       make_managed<typing::TypeFunction>(g->t(), g->bound()), r.VE, false);
   return r;
 }
 
+class TypeCanonicalizer : public typing::TypeVisitor {
+ public:
+  explicit TypeCanonicalizer(
+      collections::MapPtr<typing::Stamp, typing::ConstructedType> canon)
+      : canon_(canon) {}
+
+  void visit(const typing::TypeWithAgeRestriction &t) override {
+    t.type()->accept(*this);
+  }
+
+  void visit(const typing::TypeVar &) override {}
+
+  void visit(const typing::UndeterminedType &) override {}
+
+  void visit(const typing::TupleType &t) override {
+    for (const auto &type : *t.types()) type->accept(*this);
+  }
+
+  void visit(const typing::RecordType &t) override {
+    for (const auto &row : *t.rows()) row.second->accept(*this);
+  }
+
+  void visit(const typing::FunctionType &t) override {
+    t.param()->accept(*this);
+    t.result()->accept(*this);
+  }
+
+  void visit(const typing::ConstructedType &t) override {
+    for (const auto &type : *t.types()) type->accept(*this);
+    auto it = canon_->find(t.name()->stamp());
+    if (it != canon_->end()) {
+      t.set_constructors(it->second->constructors());
+    }
+  }
+
+ private:
+  collections::MapPtr<typing::Stamp, typing::ConstructedType> canon_;
+};
+
+void canonicalize_types(
+    collections::MapPtr<typing::Stamp, typing::ConstructedType> canon) {
+  TypeCanonicalizer v{canon};
+  for (const auto &mapping : *canon) {
+    for (const auto &binding : *mapping.second->constructors()->env()) {
+      binding.second->scheme()->t()->accept(v);
+    }
+  }
+}
+
 void DeclElaborator::visitDtypeDecl(const DtypeDecl &node) {
   auto C_seed = C + seed_type_env(typer_, node.bindings);
   auto VE = typing::ValEnv::empty();
   auto TE = typing::TypeEnv::empty();
+  auto canon =
+      collections::managed_map<typing::Stamp, typing::ConstructedType>({});
   for (const auto &binding : node.bindings) {
     auto r = elaborate_dtype_bind(typer_, C_seed, *binding);
     VE = VE + r.VE;
     TE = TE + r.TE;
+    canon = canon->insert(r.canonical_type->name()->stamp(), r.canonical_type)
+                .first;
   }
+  canonicalize_types(canon);
   env = env + make_managed<typing::Env>(typing::StrEnv::empty(), TE, VE);
   decl = make_managed<TDtypeDecl>(node.location, env);
 }

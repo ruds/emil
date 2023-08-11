@@ -366,6 +366,8 @@ class FunctionType : public Type {
   }
 };
 
+class ValEnv;
+
 /** A constructed type: a type constructor and its type parameters. */
 class ConstructedType : public Type {
  public:
@@ -374,12 +376,16 @@ class ConstructedType : public Type {
   std::u8string_view name_str() const { return name_->name(); }
   managed_ptr<TypeName> name() const { return name_; }
   const TypeList& types() const { return types_; }
+  managed_ptr<ValEnv> constructors() const;
 
   void accept(TypeVisitor& v) const override { v.visit(*this); }
+
+  void set_constructors(managed_ptr<ValEnv> constructors) const;
 
  private:
   managed_ptr<TypeName> name_;
   const TypeList types_;
+  mutable managed_ptr<ValEnv> constructors_;
 
   void visit_additional_subobjects(const ManagedVisitor& visitor) override;
   std::size_t managed_size() const noexcept override {
@@ -528,8 +534,6 @@ class TypeScheme : public TypeObj {
     return sizeof(TypeScheme);
   }
 };
-
-class ValEnv;
 
 /**
  * @brief The type structure that a type constructor is bound to.

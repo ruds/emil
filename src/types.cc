@@ -281,6 +281,15 @@ ConstructedType::ConstructedType(managed_ptr<TypeName> name, TypeList types)
   assert(types_->size() == name_->arity());
 }
 
+managed_ptr<ValEnv> ConstructedType::constructors() const {
+  assert(constructors_);
+  return constructors_;
+}
+
+void ConstructedType::set_constructors(managed_ptr<ValEnv> constructors) const {
+  constructors_ = constructors;
+}
+
 void ConstructedType::visit_additional_subobjects(
     const ManagedVisitor& visitor) {
   name_.accept(visitor);
