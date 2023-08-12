@@ -97,7 +97,8 @@ add_library(treewalk STATIC evaluator.cc treewalk.cc value.cc)
 add_emil_options(treewalk)
 target_include_directories(treewalk PUBLIC ../include)
 target_link_libraries(treewalk
-  PUBLIC bigint runtime)
+  PUBLIC bigint runtime
+  PRIVATE utf8cpp)
 
 add_library(interpreter STATIC interpreter.cc)
 add_emil_options(interpreter)

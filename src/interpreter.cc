@@ -64,9 +64,10 @@ struct root : public Root {
    * root objects, then initialize them once the garbage collector is
    * up and running.
    */
-  void initialize(Reporter& reporter) {
-    auto hold = ctx().mgr->acquire_hold();
+  void initialize(RuntimeContext& rc, Reporter& reporter) {
+    auto hold = rc.mgr->acquire_hold();
     typer = std::make_unique<Typer>(reporter);
+    rc.builtin_types = &typer->builtins();
     evaluator = std::make_unique<Treewalk>();
     B = typer->initial_basis();
   }
@@ -150,7 +151,7 @@ class InterpreterImpl {
  public:
   explicit InterpreterImpl(Reporter& reporter) : reporter_(reporter) {
     ContextManager::get()->install_context(rc_);
-    root_.initialize(reporter_);
+    root_.initialize(rc_, reporter_);
   }
 
   bool process_line(std::string line) {
@@ -161,6 +162,7 @@ class InterpreterImpl {
         auto e = root_.typer->elaborate(root_.B, *ast);
         root_.B = e.B;
         root_.current_topdecl = e.topdecl;
+        auto hold = ctx().mgr->acquire_hold();
         auto exc = root_.evaluator->evaluate(*e.topdecl);
         reporter_.report_info(exc ? report_results(*exc)
                                   : report_results(*e.topdecl));
@@ -202,7 +204,7 @@ class InterpreterImpl {
   std::unique_ptr<Evaluator> evaluator_;
   root root_;
   MemoryManager mgr_{root_};
-  RuntimeContext rc_{.mgr = &mgr_};
+  RuntimeContext rc_{.mgr = &mgr_, .builtin_types = nullptr};
   lexer lexer_{"<stdin>"};
   parser parser_;
   processor::processor<std::string,
