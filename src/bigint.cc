@@ -23,6 +23,7 @@
 #include <cstring>
 #include <functional>  // IWYU pragma: keep
 #include <iomanip>
+#include <iterator>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
@@ -94,10 +95,11 @@ bigint::bigint(token, PrivateBuffer buf, std::int32_t size) noexcept
 
 bigint::~bigint() { free_buffer(); }
 
-std::string bigint::to_std_string() const {
-  if (!size_) return "0";
+std::string bigint::to_std_string(bool with_prefix) const {
+  if (!size_) return with_prefix ? "0X0" : "0";
   std::ostringstream os;
   if (size_ < 0) os << "-";
+  if (with_prefix) os << "0X";
   os << std::hex << std::uppercase;
   if (!capacity_) {
     os << s_.value;
@@ -136,12 +138,13 @@ void print_hex(std::u8string& out, std::uint64_t n) {
 
 }  // namespace
 
-std::u8string bigint::to_string() const {
-  if (!size_) return u8"0";
+std::u8string bigint::to_string(bool with_prefix) const {
+  if (!size_) return with_prefix ? u8"0X0" : u8"0";
   std::u8string out;
   auto len = uabs(size_);
-  out.reserve(len * 16 + (size_ < 0));
+  out.reserve(len * 16 + (size_ < 0) + with_prefix * 2);
   if (size_ < 0) out += u8"-";
+  if (with_prefix) out += u8"0X";
   if (!capacity_) {
     print_hex(out, s_.value);
     return out;
@@ -150,6 +153,27 @@ std::u8string bigint::to_string() const {
   for (std::uint_fast32_t i = len - 1; i > 0; --i) {
     print_hex16(out, s_.data[i - 1]);
   }
+  return out;
+}
+
+std::string bigint::print_value() const {
+  if (!size_) return "0";
+  if (uabs(size_) > 2) return to_std_string(true);
+  std::string out;
+  __int128 val = 0;
+  if (capacity_) {
+    val = s_.data[1];
+    val <<= 64;
+    val += s_.data[0];
+  } else {
+    val = s_.value;
+  }
+  while (val) {
+    out += '0' + val % 10;
+    val /= 10;
+  }
+  if (size_ < 0) out += "-";
+  std::reverse(begin(out), end(out));
   return out;
 }
 

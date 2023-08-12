@@ -83,6 +83,7 @@ TEST(BigintTest, Zeros) {
   EXPECT_EQ(*b1, *b4);
   EXPECT_EQ(*b1, 0);
   EXPECT_EQ(b1->to_std_string(), "0");
+  EXPECT_EQ(b1->print_value(), "0");
 
   EXPECT_EQ(*b2, *b1);
   EXPECT_EQ(*b2, *b2);
@@ -265,10 +266,15 @@ TEST(BigintTest, Addition) {
   auto bigneg = tc.root.add_root(*smallneg + *smallneg);
 
   EXPECT_EQ(zero->to_std_string(), "0");
+  EXPECT_EQ(zero->print_value(), "0");
   EXPECT_EQ(smallpos->to_std_string(), "8000000000000000");
+  EXPECT_EQ(smallpos->print_value(), "9223372036854775808");
   EXPECT_EQ(smallneg->to_std_string(), "-8000000000000000");
+  EXPECT_EQ(smallneg->print_value(), "-9223372036854775808");
   EXPECT_EQ(bigpos->to_std_string(), "10000000000000000");
+  EXPECT_EQ(bigpos->print_value(), "18446744073709551616");
   EXPECT_EQ(bigneg->to_std_string(), "-10000000000000000");
+  EXPECT_EQ(bigneg->print_value(), "-18446744073709551616");
 
   // adding zero
   auto sum = tc.root.add_root(*zero + *zero);
@@ -898,6 +904,7 @@ TEST(BigintTest, Multiplication) {
 
   prod = tc.root.replace_root(prod, *smallpos * *bigpos);
   EXPECT_EQ(prod->to_std_string(), "100000000000000000000000000000000");
+  EXPECT_EQ(prod->print_value(), "0X100000000000000000000000000000000");
   EXPECT_EQ(BigintTestAccessor::size(*prod), 3);
   EXPECT_EQ(BigintTestAccessor::capacity(*prod), 3);
 
@@ -916,6 +923,7 @@ TEST(BigintTest, Multiplication) {
 
   prod = tc.root.replace_root(prod, *smallpos * *bigneg);
   EXPECT_EQ(prod->to_std_string(), "-100000000000000000000000000000000");
+  EXPECT_EQ(prod->print_value(), "-0X100000000000000000000000000000000");
   EXPECT_EQ(BigintTestAccessor::size(*prod), -3);
   EXPECT_EQ(BigintTestAccessor::capacity(*prod), 3);
 
@@ -1054,6 +1062,7 @@ TEST(BigintTest, LeftShift) {
 
   r = tc.root.replace_root(r, *tinypos << 58);
   EXPECT_EQ(r->to_std_string(), "1A400000000000000");
+  EXPECT_EQ(r->print_value(), "30264189495929733120");
   EXPECT_EQ(BigintTestAccessor::size(*r), 2);
   EXPECT_EQ(BigintTestAccessor::capacity(*r), 2);
 
@@ -1069,6 +1078,7 @@ TEST(BigintTest, LeftShift) {
 
   r = tc.root.replace_root(r, *tinyneg << 58);
   EXPECT_EQ(r->to_std_string(), "-1A400000000000000");
+  EXPECT_EQ(r->print_value(), "-30264189495929733120");
   EXPECT_EQ(BigintTestAccessor::size(*r), -2);
   EXPECT_EQ(BigintTestAccessor::capacity(*r), 2);
 

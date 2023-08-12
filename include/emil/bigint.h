@@ -78,9 +78,21 @@ class bigint : public Managed {
 
   ~bigint();
 
-  /** Produces the value of this bigint in hex. */
-  std::string to_std_string() const;
-  std::u8string to_string() const;
+  /**
+   * Produces the value of this bigint in hex.
+   *
+   * If with_prefix is true, prints "0X" before the digits.
+   */
+  std::string to_std_string(bool with_prefix = false) const;
+  std::u8string to_string(bool with_prefix = false) const;
+
+  /**
+   * Prints "small" numbers in decimal and large numbers in hex.
+   *
+   * When the magnitude is less than 2^128, produces the number as a decimal
+   * string. For larger numbers, produces a hex string (with "0X" prefix).
+   */
+  std::string print_value() const;
 
   friend bool operator==(const bigint& l, const bigint& r) noexcept;
   friend bool operator==(std::int64_t l, const bigint& r) noexcept;
