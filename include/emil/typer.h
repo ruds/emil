@@ -82,6 +82,8 @@ class Typer {
 
   void visit_root(const ManagedVisitor& visitor);
 
+  const typing::BuiltinTypes& builtins() const;
+
   typing::StampGenerator& stamper();
 
  private:

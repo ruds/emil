@@ -2570,4 +2570,8 @@ void Typer::visit_root(const ManagedVisitor &visitor) {
 
 typing::StampGenerator &Typer::stamper() { return impl_->stamper(); }
 
+const typing::BuiltinTypes &Typer::builtins() const {
+  return impl_->builtins();
+}
+
 }  // namespace emil
