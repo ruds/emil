@@ -93,11 +93,17 @@ target_link_libraries(typer
   PUBLIC ast typed_ast runtime
   PRIVATE parser)
 
+add_library(treewalk STATIC evaluator.cc treewalk.cc value.cc)
+add_emil_options(treewalk)
+target_include_directories(treewalk PUBLIC ../include)
+target_link_libraries(treewalk
+  PUBLIC bigint runtime)
+
 add_library(interpreter STATIC interpreter.cc)
 add_emil_options(interpreter)
 target_include_directories(interpreter PUBLIC ../include)
 target_link_libraries(interpreter
-  PRIVATE ast lexer parser runtime typed_ast typer fmt::fmt utf8cpp)
+  PRIVATE ast lexer parser runtime treewalk typed_ast typer fmt::fmt utf8cpp)
 
 add_executable(repl repl.cc)
 add_emil_options(repl)
