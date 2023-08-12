@@ -559,7 +559,8 @@ class DeclChangeDescriber : public TDecl::Visitor {
   }
 
   void visit(const TDtypeDecl &decl) override {
-    print_dtypes(*decl.env->type_env());
+    describe_datatype_declarations(*decl.env->type_env(), typer_.stamper(),
+                                   out_);
     print_vals(*decl.env->val_env());
   }
 
@@ -574,56 +575,6 @@ class DeclChangeDescriber : public TDecl::Visitor {
                      to_std_string(print_type(
                          b.second->scheme()->t(),
                          typing::CanonicalizeUndeterminedTypes::YES)));
-    }
-  }
-
-  void print_dtypes(const typing::TypeEnv &TE) {
-    auto it = std::back_inserter(out_);
-    for (const auto &t : *TE.env()) {
-      out_ += "datatype ";
-      const auto &bound = *t.second->fn()->bound();
-      if (bound.size() == 1) {
-        out_ += to_std_string(*bound[0]);
-        out_ += " ";
-      } else if (bound.size() > 1) {
-        out_ += "(";
-        for (std::size_t i = 0; i < bound.size(); ++i) {
-          if (i) out_ += ", ";
-          out_ += to_std_string(*bound[i]);
-        }
-        out_ += ") ";
-      }
-      out_ += to_std_string(*t.first);
-      out_ += " = ";
-      const auto &constructors = t.second->env()->env();
-      for (auto cit = constructors->begin(); cit != constructors->end();
-           ++cit) {
-        if (cit != constructors->begin()) out_ += " | ";
-        auto c_type = cit->second->scheme()->instantiate(typer_.stamper());
-        auto fn = get_function(c_type);
-        // If the constructor takes a parameter, we must unify the
-        // result with the "canonical" type of the datatype to make
-        // sure the variables match up.
-        //
-        // For example, take the declaration:
-        //     datatype ('b, 'a) pair = Pair of ('a * 'b);
-        // `pair` will be canonicalized and stored in the type environment as
-        // "Λ('a, 'b).('a, 'b) pair", and `Pair` will be canonicalized and
-        // stored in the value environment as "Θ('a, 'b).('a * 'b) -> ('b, 'a)
-        // pair". To get everything to print correctly, we need to instantiate
-        // `Pair`'s type, unify its result type with `pair`'s base type, and
-        // apply the substitutions to `Pair`'s param type.
-        if (fn) {
-          auto subs = typing::Substitutions::dflt();
-          typing::unify(fn->result(), t.second->fn()->t(), subs);
-          auto param_type = typing::apply_substitutions(fn->param(), subs);
-          fmt::format_to(it, "{} of {}", cit->first,
-                         to_std_string(typing::print_type(param_type)));
-        } else {
-          out_ += to_std_string(*cit->first);
-        }
-      }
-      out_ += "\n";
     }
   }
 };
@@ -647,6 +598,57 @@ class TopDeclChangeDescriber : public TTopDecl::Visitor {
 };
 
 }  // namespace
+
+void describe_datatype_declarations(const typing::TypeEnv &TE,
+                                    typing::StampGenerator &stamper,
+                                    std::string &out) {
+  auto it = std::back_inserter(out);
+  for (const auto &t : *TE.env()) {
+    out += "datatype ";
+    const auto &bound = *t.second->fn()->bound();
+    if (bound.size() == 1) {
+      out += to_std_string(*bound[0]);
+      out += " ";
+    } else if (bound.size() > 1) {
+      out += "(";
+      for (std::size_t i = 0; i < bound.size(); ++i) {
+        if (i) out += ", ";
+        out += to_std_string(*bound[i]);
+      }
+      out += ") ";
+    }
+    out += to_std_string(*t.first);
+    out += " = ";
+    const auto &constructors = t.second->env()->env();
+    for (auto cit = constructors->begin(); cit != constructors->end(); ++cit) {
+      if (cit != constructors->begin()) out += " | ";
+      auto c_type = cit->second->scheme()->instantiate(stamper);
+      auto fn = get_function(c_type);
+      // If the constructor takes a parameter, we must unify the
+      // result with the "canonical" type of the datatype to make
+      // sure the variables match up.
+      //
+      // For example, take the declaration:
+      //     datatype ('b, 'a) pair = Pair of ('a * 'b);
+      // `pair` will be canonicalized and stored in the type environment as
+      // "Λ('a, 'b).('a, 'b) pair", and `Pair` will be canonicalized and
+      // stored in the value environment as "Θ('a, 'b).('a * 'b) -> ('b, 'a)
+      // pair". To get everything to print correctly, we need to instantiate
+      // `Pair`'s type, unify its result type with `pair`'s base type, and
+      // apply the substitutions to `Pair`'s param type.
+      if (fn) {
+        auto subs = typing::Substitutions::dflt();
+        typing::unify(fn->result(), t.second->fn()->t(), subs);
+        auto param_type = typing::apply_substitutions(fn->param(), subs);
+        fmt::format_to(it, "{} of {}", cit->first,
+                       to_std_string(typing::print_type(param_type)));
+      } else {
+        out += to_std_string(*cit->first);
+      }
+    }
+    out += "\n";
+  }
+}
 
 std::string Typer::describe_basis_updates(const TTopDecl &topdecl) {
   auto hold = ctx().mgr->acquire_hold();

@@ -88,4 +88,13 @@ class Typer {
   std::unique_ptr<TyperImpl> impl_;
 };
 
+/**
+ * Describes datatype declarations in `out`.
+ *
+ * `TE` should contain only datatype declarations.
+ */
+void describe_datatype_declarations(const typing::TypeEnv& TE,
+                                    typing::StampGenerator& stamper,
+                                    std::string& out);
+
 }  // namespace emil
