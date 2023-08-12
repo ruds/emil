@@ -14,11 +14,15 @@
 
 #include "emil/value.h"
 
+#include <iterator>
+#include <map>
 #include <new>
+#include <stdexcept>
 #include <utility>
 
 #include "emil/gc.h"
 #include "emil/runtime.h"
+#include "emil/types.h"
 
 namespace emil {
 
@@ -30,6 +34,62 @@ value_t& value_t::operator=(value_t&&) noexcept = default;
 value_t::~value_t() = default;
 
 namespace {
+
+std::uint64_t id(const typing::ConstructedType& t) {
+  return t.name()->stamp()->id();
+}
+
+void load_value_tag_map(std::map<std::uint64_t, value_tag>& m) {
+  const auto* b = ctx().builtin_types;
+  m[id(*b->bool_type())] = value_tag::BOOL;
+  m[id(*b->byte_type())] = value_tag::BYTE;
+  m[id(*b->int_type())] = value_tag::INT;
+  m[id(*b->bigint_type())] = value_tag::BIGINT;
+  m[id(*b->float_type())] = value_tag::FLOAT;
+  m[id(*b->string_type())] = value_tag::STRING;
+}
+
+class TagVisitor : public typing::TypeVisitor {
+ public:
+  value_tag tag;
+
+  void visit(const typing::TypeWithAgeRestriction& t) override {
+    t.type()->accept(*this);
+  }
+
+  void visit(const typing::TypeVar&) override {
+    throw std::logic_error("shouldn't have a typevar here");
+  }
+
+  void visit(const typing::UndeterminedType&) override {
+    throw std::logic_error("shouldn't have an undetermined type here");
+  }
+
+  void visit(const typing::TupleType&) override { tag = value_tag::TUPLE; }
+
+  void visit(const typing::RecordType&) override { tag = value_tag::TUPLE; }
+
+  void visit(const typing::FunctionType&) override {
+    tag = value_tag::FUNCTION;
+  }
+
+  void visit(const typing::ConstructedType& t) override {
+    // Can't initialize statically because ctx().builtin_types isn't available.
+    if (type_tags_.empty()) load_value_tag_map(type_tags_);
+
+    auto it = type_tags_.find(id(t));
+    if (it == end(type_tags_)) {
+      tag = value_tag::CONSTRUCTED;
+    } else {
+      tag = it->second;
+    }
+  }
+
+ private:
+  static std::map<std::uint64_t, value_tag> type_tags_;
+};
+
+std::map<std::uint64_t, value_tag> TagVisitor::type_tags_;
 
 void visit(const value_t& value, value_tag tag, const ManagedVisitor& visitor) {
   switch (tag) {
@@ -67,6 +127,12 @@ void visit(const value_t& value, value_tag tag, const ManagedVisitor& visitor) {
 }
 
 }  // namespace
+
+value_tag compute_tag(typing::TypePtr type) {
+  TagVisitor v;
+  type->accept(v);
+  return v.tag;
+}
 
 ManagedValue::ManagedValue(value_t value, value_tag tag)
     : value_(value), tag_(tag) {}

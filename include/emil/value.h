@@ -70,6 +70,8 @@ enum class value_tag {
   EXCEPTION_PACK,
 };
 
+value_tag compute_tag(typing::TypePtr type);
+
 using result_t = std::variant<value_t, managed_ptr<ExceptionPack>>;
 
 class ManagedValue : public Managed {
