@@ -142,7 +142,7 @@ class FunctionValue : public Managed {
  public:
   ~FunctionValue() override;
 
-  virtual result_t apply(value_t arg) const = 0;
+  virtual result_t apply(value_t arg, typing::TypePtr type) const = 0;
 };
 
 class TupleValue : public Managed {
