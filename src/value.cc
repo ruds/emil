@@ -46,6 +46,7 @@ void load_value_tag_map(std::map<std::uint64_t, value_tag>& m) {
   m[id(*b->int_type())] = value_tag::INT;
   m[id(*b->bigint_type())] = value_tag::BIGINT;
   m[id(*b->float_type())] = value_tag::FLOAT;
+  m[id(*b->char_type())] = value_tag::CHAR;
   m[id(*b->string_type())] = value_tag::STRING;
 }
 

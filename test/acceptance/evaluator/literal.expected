@@ -1,0 +1,11 @@
+val it = 123 : bigint
+val it = -123i : int
+val it = 1.23 : float
+val it = NaN : float
+val it = -Inf : float
+val it = #"a" : char
+val it = "ab cd  ef" : string
+val it = "this is a test.\nThis is only a test.\nIn case of emergency 😱 \"you hear?\"\n" : string
+val it = "\nraw\nstrings\ncan\nbe\nfun\n" : string
+val it = 123 : bigint
+val it = "foo" : string

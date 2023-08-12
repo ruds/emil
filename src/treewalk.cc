@@ -19,6 +19,7 @@
 #include <utf8.h>
 
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <functional>
 #include <iterator>
@@ -168,6 +169,9 @@ std::string to_schar(char32_t c) {
     case '\v':
       return "\\v";
 
+    case '"':
+      return "\\\"";
+
     default: {
       if (c < 32) {
         std::string out;
@@ -175,9 +179,21 @@ std::string to_schar(char32_t c) {
         out += c + 64;
         return out;
       }
-      std::u32string cstr{c, 1};
+      std::u32string cstr;
+      cstr += c;
       return utf8::utf32to8(cstr);
     }
+  }
+}
+
+std::string print_float(double f) {
+  switch (std::fpclassify(f)) {
+    case FP_INFINITE:
+      return f < 0 ? "-Inf" : "Inf";
+    case FP_NAN:
+      return "NaN";
+    default:
+      return fmt::to_string(f);
   }
 }
 
@@ -249,7 +265,7 @@ class ValuePrinter : public typing::TypeVisitor {
         break;
 
       case value_tag::FLOAT:
-        out += fmt::to_string(val_.fl);
+        out += print_float(val_.fl);
         break;
 
       case value_tag::CHAR:
@@ -302,8 +318,16 @@ struct match_result_t {
   managed_ptr<ExceptionPack> pack;
 };
 
-match_result_t evaluate_match(managed_ptr<match_t>, value_t, typing::TypePtr) {
-  throw std::logic_error("unimplemented");
+match_result_t evaluate_match(managed_ptr<match_t> match, value_t value,
+                              typing::TypePtr type) {
+  match_result_t result{.val_env = ValEnv::dflt()};
+  // TODO: implement this fully. For now we just bind top-level names.
+  for (auto name = (*match->outcomes)[0]->bind_rule->names; name;
+       name = name->cdr) {
+    result.val_env =
+        result.val_env->assign(name->car, value, compute_tag(type));
+  }
+  return result;
 }
 
 class ConstructorWithArg : public FunctionValue {

@@ -1,0 +1,21 @@
+123;
+-123i;
+1.23;
+NaN;
+-Inf;
+#"a";
+"ab cd \
+\ ef";
+"""this is a test.
+This is only a test.
+In case of emergency \U01F631 "you hear?"
+""";
+R"===(
+raw
+strings
+can
+be
+fun
+)===";
+123 : bigint;
+"foo" : string;

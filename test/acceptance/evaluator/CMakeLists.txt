@@ -22,3 +22,4 @@ macro(evaluator_golden_test TESTNAME)
 endmacro()
 
 evaluator_golden_test(empty)
+evaluator_golden_test(literal)
