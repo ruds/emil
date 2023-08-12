@@ -23,9 +23,14 @@ class DriverContextAccessor;
 class TestContextHolder;
 }  // namespace testing
 
+namespace typing {
+class BuiltinTypes;
+}
+
 /** Important context that must be available at runtime. */
 struct RuntimeContext {
   MemoryManager* mgr;
+  const typing::BuiltinTypes* builtin_types;
 };
 
 /** Get the shared context. */
