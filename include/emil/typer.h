@@ -82,6 +82,8 @@ class Typer {
 
   void visit_root(const ManagedVisitor& visitor);
 
+  typing::StampGenerator& stamper();
+
  private:
   std::unique_ptr<TyperImpl> impl_;
 };

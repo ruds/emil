@@ -883,4 +883,18 @@ subtype_unification_t unify_subtypes(TypeList ls, TypeList rs,
                                      std::uint64_t maximum_type_name_id_l,
                                      std::uint64_t maximum_type_name_id_r);
 
+/** If `t` is a function type, return it; otherwise return null. */
+managed_ptr<FunctionType> get_function(TypePtr t);
+
+struct get_function_with_substitutions_t {
+  managed_ptr<FunctionType> fn;
+  Substitutions new_substitutions;
+};
+
+/**
+ * If `t` can be unified with a function type, return it; otherwise return null.
+ */
+get_function_with_substitutions_t get_function_by_substituting(
+    TypePtr t, StampGenerator& stamper);
+
 }  // namespace emil::typing

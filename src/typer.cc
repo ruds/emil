@@ -548,58 +548,6 @@ ImplicitlyScopedVars scope_explicit_type_variables(const TypeExpr &ty) {
   return std::move(v.vars);
 }
 
-/** Used to implement `get_function`. */
-class GetFunctionVisitor : public typing::TypeVisitor {
- public:
-  const typing::FunctionType *fn = nullptr;
-  typing::Substitutions new_substitutions = typing::Substitutions::dflt();
-
-  explicit GetFunctionVisitor(TyperImpl &typer) : typer_(typer) {}
-
-  void visit(const typing::TypeWithAgeRestriction &t) override {
-    t.type()->accept(*this);
-  }
-
-  void visit(const typing::UndeterminedType &t) override {
-    auto p = typer_.undetermined_type();
-    auto r = typer_.undetermined_type();
-    auto fnptr = typer_.function_type(p, r);
-    new_substitutions = new_substitutions
-                            ->insert(t.stamp(), typer_.ensure_age_constraint(
-                                                    fnptr, t.stamp()->id()))
-                            .first;
-    fn = &*fnptr;
-  }
-
-  void visit(const typing::FunctionType &t) override { fn = &t; }
-
-  void visit(const typing::TypeVar &) override {}
-  void visit(const typing::TupleType &) override {}
-  void visit(const typing::RecordType &) override {}
-  void visit(const typing::ConstructedType &) override {}
-
- private:
-  TyperImpl &typer_;
-};
-
-struct get_function_t {
-  const typing::FunctionType *fn;
-  typing::Substitutions new_substitutions;
-};
-
-/**
- * Gets a pointer to a function type from t.
- *
- * If t is an undetermined type, introduces a substitution. If t
- * cannot be unified with a function type, the result's fn field will
- * be null.
- */
-get_function_t get_function(typing::TypePtr t, TyperImpl &typer) {
-  GetFunctionVisitor v{typer};
-  t->accept(v);
-  return {v.fn, v.new_substitutions};
-}
-
 /** Used to implement `Typer::describe_basis_updates`. */
 class DeclChangeDescriber : public TDecl::Visitor {
  public:
@@ -652,7 +600,7 @@ class DeclChangeDescriber : public TDecl::Visitor {
            ++cit) {
         if (cit != constructors->begin()) out_ += " | ";
         auto c_type = cit->second->scheme()->instantiate(typer_.stamper());
-        auto gf = get_function(c_type, typer_);
+        auto fn = get_function(c_type);
         // If the constructor takes a parameter, we must unify the
         // result with the "canonical" type of the datatype to make
         // sure the variables match up.
@@ -665,10 +613,10 @@ class DeclChangeDescriber : public TDecl::Visitor {
         // pair". To get everything to print correctly, we need to instantiate
         // `Pair`'s type, unify its result type with `pair`'s base type, and
         // apply the substitutions to `Pair`'s param type.
-        if (gf.fn) {
+        if (fn) {
           auto subs = typing::Substitutions::dflt();
-          typing::unify(gf.fn->result(), t.second->fn()->t(), subs);
-          auto param_type = typing::apply_substitutions(gf.fn->param(), subs);
+          typing::unify(fn->result(), t.second->fn()->t(), subs);
+          auto param_type = typing::apply_substitutions(fn->param(), subs);
           fmt::format_to(it, "{} of {}", cit->first,
                          to_std_string(typing::print_type(param_type)));
         } else {
@@ -1612,15 +1560,13 @@ void PatternElaborator::visitDatatypePattern(const DatatypePattern &node) {
                     id_to_string(node.constructor->qualifiers, *con_id)),
         node.constructor->location);
   }
-  auto gf =
-      get_function((*binding)->scheme()->instantiate(typer_.stamper()), typer_);
-  if (!gf.fn) {
+  auto fn = get_function((*binding)->scheme()->instantiate(typer_.stamper()));
+  if (!fn) {
     throw ElaborationError(
         fmt::format("Expected type constructor to take an argument: {}",
                     id_to_string(node.constructor->qualifiers, *con_id)),
         node.constructor->location);
   }
-  assert(gf.new_substitutions->empty());
 
   node.arg->accept(*this);
 
@@ -1628,11 +1574,11 @@ void PatternElaborator::visitDatatypePattern(const DatatypePattern &node) {
       collections::managed_map<typing::Stamp, typing::Type>({});
   typing::unification_t u;
   try {
-    u = typing::unify(gf.fn->param(), type, subs);
+    u = typing::unify(fn->param(), type, subs);
   } catch (typing::UnificationError &e) {
     throw ElaborationError(e, node.location);
   }
-  type = gf.fn->result();
+  type = fn->result();
   if (!u.new_substitutions->empty()) {
     type = typing::apply_substitutions(type, u.new_substitutions);
     bindings = bindings->apply_substitutions(u.new_substitutions, true);
@@ -2035,9 +1981,9 @@ bool is_nonexpansive_application(collections::ArrayPtr<TExpr> exprs,
       return true;
 
     case typing::IdStatus::Constructor: {
-      auto gf = get_function(id->type, typer);
-      assert(gf.new_substitutions->empty());
-      auto name = get_type_name(gf.fn->result());
+      auto fn = get_function(id->type);
+      assert(fn);
+      auto name = get_type_name(fn->result());
       assert(name);
       return name->stamp()->id() != typer.builtins().ref_name()->stamp()->id();
     }
@@ -2061,7 +2007,7 @@ void ExprElaborator::visitApplicationExpr(const ApplicationExpr &node) {
       if (!new_subs->empty()) {
         type = typing::apply_substitutions(type, new_subs);
       }
-      auto gf = get_function(type, typer_);
+      auto gf = get_function_by_substituting(type, typer_.stamper());
       if (!gf.fn) {
         throw ElaborationError(
             fmt::format(
@@ -2619,5 +2565,7 @@ const typing::BuiltinTypes &TyperImpl::builtins() const { return *builtins_; }
 void Typer::visit_root(const ManagedVisitor &visitor) {
   impl_->visit_root(visitor);
 }
+
+typing::StampGenerator &Typer::stamper() { return impl_->stamper(); }
 
 }  // namespace emil

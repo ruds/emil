@@ -1757,4 +1757,61 @@ subtype_unification_t unify_subtypes(TypeList ls, TypeList rs,
   return result;
 }
 
+namespace {
+
+/** Used to implement `get_function`. */
+class GetFunctionVisitor : public typing::TypeVisitor {
+ public:
+  managed_ptr<FunctionType> fn = nullptr;
+  typing::Substitutions new_substitutions;
+
+  GetFunctionVisitor(TypePtr orig, StampGenerator* stamper)
+      : new_substitutions(stamper ? Substitutions::dflt() : nullptr),
+        ptr_(orig),
+        stamper_(stamper) {}
+
+  void visit(const TypeWithAgeRestriction& t) override {
+    ptr_ = t.type();
+    ptr_->accept(*this);
+  }
+
+  void visit(const FunctionType&) override { fn = ptr_.cast<FunctionType>(); }
+
+  void visit(const UndeterminedType& t) override {
+    if (!stamper_) return;
+    auto p = make_managed<UndeterminedType>(*stamper_);
+    auto r = make_managed<UndeterminedType>(*stamper_);
+    fn = make_managed<FunctionType>(p, r);
+    new_substitutions =
+        new_substitutions
+            ->insert(t.stamp(),
+                     make_managed<TypeWithAgeRestriction>(fn, t.stamp()->id()))
+            .first;
+  }
+
+  void visit(const typing::TypeVar&) override {}
+  void visit(const typing::TupleType&) override {}
+  void visit(const typing::RecordType&) override {}
+  void visit(const typing::ConstructedType&) override {}
+
+ private:
+  TypePtr ptr_;
+  StampGenerator* stamper_;
+};
+
+}  // namespace
+
+managed_ptr<FunctionType> get_function(TypePtr t) {
+  GetFunctionVisitor v{t, nullptr};
+  t->accept(v);
+  return v.fn;
+}
+
+get_function_with_substitutions_t get_function_by_substituting(
+    TypePtr t, StampGenerator& stamper) {
+  GetFunctionVisitor v{t, &stamper};
+  t->accept(v);
+  return {v.fn, v.new_substitutions};
+}
+
 }  // namespace emil::typing
