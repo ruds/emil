@@ -218,7 +218,7 @@ class ValuePrinter : public typing::TypeVisitor {
 
   void visit(const typing::TupleType& t) override {
     const auto& types = t.types();
-    auto tup = val_.tup;
+    auto tup = val_.tup();
     out += '(';
     for (std::size_t i = 0; i < types->size(); ++i) {
       if (i) out += ", ";
@@ -231,7 +231,7 @@ class ValuePrinter : public typing::TypeVisitor {
 
   void visit(const typing::RecordType& t) override {
     std::size_t i = 0;
-    auto tup = val_.tup;
+    auto tup = val_.tup();
     out += '{';
     for (const auto& row : *t.rows()) {
       if (i) out += ", ";
@@ -261,7 +261,7 @@ class ValuePrinter : public typing::TypeVisitor {
         break;
 
       case value_tag::BIGINT:
-        out += val_.bi->print_value();
+        out += val_.bi()->print_value();
         break;
 
       case value_tag::FLOAT:
@@ -274,7 +274,7 @@ class ValuePrinter : public typing::TypeVisitor {
 
       case value_tag::STRING: {
         out += '"';
-        std::u8string_view s = *val_.str;
+        std::u8string_view s = *val_.str();
         auto b = begin(s);
         auto e = end(s);
         while (b != e) {
@@ -285,7 +285,7 @@ class ValuePrinter : public typing::TypeVisitor {
       }
 
       case value_tag::CONSTRUCTED: {
-        auto con = val_.con;
+        auto con = val_.con();
         auto it = t.constructors()->env()->begin();
         std::advance(it, con->constructor());
         out += to_std_string(*it->first);
@@ -336,7 +336,8 @@ class ConstructorWithArg : public FunctionValue {
 
   result_t apply(value_t arg, typing::TypePtr type) const override {
     value_t val;
-    val.con = make_managed<ConstructedValue>(con_idx_, arg, compute_tag(type));
+    val.set_con(
+        make_managed<ConstructedValue>(con_idx_, arg, compute_tag(type)));
     return val;
   }
 
@@ -352,12 +353,13 @@ class ConstructorWithArg : public FunctionValue {
 class ExprEvaluator : public TExpr::Visitor {
  public:
   value_t val;
-  value_tag tag;
+  value_tag tag = value_tag::BOOL;
 
-  explicit ExprEvaluator(managed_ptr<ValEnv> val_env) : val_env_(val_env) {}
+  explicit ExprEvaluator(managed_ptr<ValEnv> val_env, typing::TypePtr type)
+      : val_env_(val_env), type_(type) {}
 
   void visit(const TBigintLiteralExpr& e) override {
-    val.bi = e.value;
+    val.set_bi(e.value);
     tag = value_tag::BIGINT;
   }
 
@@ -372,7 +374,7 @@ class ExprEvaluator : public TExpr::Visitor {
   }
 
   void visit(const TStringLiteralExpr& e) override {
-    val.str = e.value;
+    val.set_str(e.value);
     tag = value_tag::STRING;
   }
 
@@ -385,8 +387,13 @@ class ExprEvaluator : public TExpr::Visitor {
     throw std::logic_error("Not implemented");
   }
 
-  void visit(const TIdentifierExpr&) override {
-    throw std::logic_error("Not implemented");
+  void visit(const TIdentifierExpr& e) override {
+    if (!e.qualifiers->empty())
+      throw std::logic_error("qualified identifiers not yet supported");
+    auto v = val_env_->get(*e.canonical_identifier);
+    if (!v) throw std::logic_error("name not set");
+    val = *v;
+    tag = compute_tag(type_);
   }
 
   void visit(const TRecRowExpr&) override {
@@ -431,22 +438,23 @@ class ExprEvaluator : public TExpr::Visitor {
 
  private:
   managed_ptr<ValEnv> val_env_;
+  typing::TypePtr type_;
 };
 
 class ConstructorDefinitionVisitor : public ThrowingTypeVisitor {
  public:
   value_t val;
-  value_tag tag;
+  value_tag tag = value_tag::BOOL;
 
   explicit ConstructorDefinitionVisitor(std::size_t idx) : idx_(idx) {}
 
   void visit(const typing::FunctionType&) override {
-    val.fun = make_managed<ConstructorWithArg>(idx_);
+    val.set_fun(make_managed<ConstructorWithArg>(idx_));
     tag = value_tag::FUNCTION;
   }
 
   void visit(const typing::ConstructedType&) override {
-    val.con = make_managed<ConstructedValue>(idx_);
+    val.set_con(make_managed<ConstructedValue>(idx_));
     tag = value_tag::CONSTRUCTED;
   }
 
@@ -463,7 +471,7 @@ class DeclEvaluator : public TDecl::Visitor {
 
   void visit(const TValDecl& d) override {
     for (const auto& b : *d.bindings) {
-      ExprEvaluator v{val_env};
+      ExprEvaluator v{val_env, b->expr->type};
       b->expr->accept(v);
       auto m = evaluate_match(b->match, v.val, b->expr->type);
       if (m.pack) {
@@ -512,6 +520,19 @@ class TopdeclEvaluator : public TTopDecl::Visitor {
 
 class TreewalkImpl {
  public:
+  TreewalkImpl() {
+    value_t val;
+    val.b = true;
+    val_env_ = val_env_->assign(u8"true", val, value_tag::BOOL);
+    val.b = false;
+    val_env_ = val_env_->assign(u8"false", val, value_tag::BOOL);
+    val.set_fun(make_managed<ConstructorWithArg>(0));
+    val_env_ = val_env_->assign(u8"(::)", val, value_tag::FUNCTION)
+                   ->assign(u8"ref", val, value_tag::FUNCTION);
+    val.set_con(make_managed<ConstructedValue>(1));
+    val_env_ = val_env_->assign(u8"nil", val, value_tag::CONSTRUCTED);
+  }
+
   managed_ptr<ExceptionPack> evaluate(const TTopDecl& t) {
     auto hold = ctx().mgr->acquire_hold();
     TopdeclEvaluator v{val_env_};

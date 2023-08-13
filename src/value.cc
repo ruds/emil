@@ -26,12 +26,43 @@
 
 namespace emil {
 
-value_t::value_t() : b(false) {}
-value_t::value_t(const value_t&) noexcept = default;
-value_t& value_t::operator=(const value_t&) noexcept = default;
-value_t::value_t(value_t&&) noexcept = default;
-value_t& value_t::operator=(value_t&&) noexcept = default;
-value_t::~value_t() = default;
+managed_ptr<bigint> value_t::bi() const { return managed_ptr<bigint>{managed}; }
+
+void value_t::set_bi(managed_ptr<bigint> bi) { managed = bi.to_int(); }
+
+StringPtr value_t::str() const { return StringPtr{managed}; }
+
+void value_t::set_str(StringPtr str) { managed = str.to_int(); }
+
+managed_ptr<TupleValue> value_t::tup() const {
+  return managed_ptr<TupleValue>{managed};
+}
+
+void value_t::set_tup(managed_ptr<TupleValue> tup) { managed = tup.to_int(); }
+
+managed_ptr<ConstructedValue> value_t::con() const {
+  return managed_ptr<ConstructedValue>{managed};
+}
+
+void value_t::set_con(managed_ptr<ConstructedValue> con) {
+  managed = con.to_int();
+}
+
+managed_ptr<FunctionValue> value_t::fun() const {
+  return managed_ptr<FunctionValue>{managed};
+}
+
+void value_t::set_fun(managed_ptr<FunctionValue> fun) {
+  managed = fun.to_int();
+}
+
+managed_ptr<ExceptionPack> value_t::pack() const {
+  return managed_ptr<ExceptionPack>{managed};
+}
+
+void value_t::set_pack(managed_ptr<ExceptionPack> pack) {
+  managed = pack.to_int();
+}
 
 namespace {
 
@@ -102,27 +133,27 @@ void visit(const value_t& value, value_tag tag, const ManagedVisitor& visitor) {
       break;
 
     case value_tag::BIGINT:
-      value.bi.accept(visitor);
+      value.bi().accept(visitor);
       break;
 
     case value_tag::STRING:
-      value.str.accept(visitor);
+      value.str().accept(visitor);
       break;
 
     case value_tag::TUPLE:
-      value.tup.accept(visitor);
+      value.tup().accept(visitor);
       break;
 
     case value_tag::CONSTRUCTED:
-      value.con.accept(visitor);
+      value.con().accept(visitor);
       break;
 
     case value_tag::FUNCTION:
-      value.fun.accept(visitor);
+      value.fun().accept(visitor);
       break;
 
     case value_tag::EXCEPTION_PACK:
-      value.pack.accept(visitor);
+      value.pack().accept(visitor);
       break;
   }
 }

@@ -23,3 +23,4 @@ endmacro()
 
 evaluator_golden_test(empty)
 evaluator_golden_test(literal)
+evaluator_golden_test(identifier)

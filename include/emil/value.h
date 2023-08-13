@@ -37,21 +37,24 @@ union value_t {
   bool b;
   std::uint8_t byte;
   std::int64_t i;
-  managed_ptr<bigint> bi;
   double fl;
   char32_t c;
-  StringPtr str;
-  managed_ptr<TupleValue> tup;
-  managed_ptr<ConstructedValue> con;
-  managed_ptr<FunctionValue> fun;
-  managed_ptr<ExceptionPack> pack;
+  uintptr_t managed;
 
-  value_t();
-  value_t(const value_t&) noexcept;
-  value_t& operator=(const value_t&) noexcept;
-  value_t(value_t&&) noexcept;
-  value_t& operator=(value_t&&) noexcept;
-  ~value_t();
+  managed_ptr<bigint> bi() const;
+  void set_bi(managed_ptr<bigint> bi);
+  StringPtr str() const;
+  void set_str(StringPtr str);
+  managed_ptr<TupleValue> tup() const;
+  void set_tup(managed_ptr<TupleValue> tup);
+  managed_ptr<ConstructedValue> con() const;
+  void set_con(managed_ptr<ConstructedValue> con);
+  managed_ptr<FunctionValue> fun() const;
+  void set_fun(managed_ptr<FunctionValue> fun);
+  managed_ptr<ExceptionPack> pack() const;
+  void set_pack(managed_ptr<ExceptionPack> pack);
+
+  value_t() : managed(0) {}
 };
 
 static_assert(sizeof(value_t) == sizeof(void*));
@@ -144,6 +147,8 @@ class FunctionValue : public Managed {
 
   virtual result_t apply(value_t arg, typing::TypePtr type) const = 0;
 };
+
+static_assert(ManagedType<FunctionValue>);
 
 class TupleValue : public Managed {
  public:
