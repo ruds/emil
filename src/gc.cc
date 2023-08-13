@@ -55,6 +55,13 @@ Managed* Managed::next_managed() const {
 
 managed_ptr_base::managed_ptr_base(Managed* val) noexcept : val_(val) {}
 
+managed_ptr_base::managed_ptr_base(std::uintptr_t val) noexcept
+    : managed_ptr_base(reinterpret_cast<Managed*>(val)) {}
+
+std::uintptr_t managed_ptr_base::to_int() const {
+  return reinterpret_cast<std::uintptr_t>(val_);
+}
+
 void managed_ptr_base::accept(const ManagedVisitor& visitor) const {
   if (visitor.visit(*this)) val_->visit_subobjects(visitor);
 }

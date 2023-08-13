@@ -146,9 +146,14 @@ class managed_ptr_base {
   }
 
  protected:
+  friend union value_t;
+
   Managed* val_;
 
   explicit managed_ptr_base(Managed* val) noexcept;
+  explicit managed_ptr_base(std::uintptr_t val) noexcept;
+
+  std::uintptr_t to_int() const;
 
  private:
   friend class MemoryManager;
@@ -224,11 +229,13 @@ class managed_ptr : public managed_ptr_base {
   friend class MemoryManager;
   template <typename U>
   friend class managed_ptr;
+  friend union value_t;
 
   T* val() { return static_cast<T*>(val_); }
   const T* val() const { return static_cast<T*>(val_); }
 
   explicit managed_ptr(T* val) : managed_ptr_base(val) {}
+  explicit managed_ptr(std::uintptr_t ptr) noexcept : managed_ptr_base(ptr) {}
 };
 
 template <typename T>
