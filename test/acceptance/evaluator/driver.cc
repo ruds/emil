@@ -96,5 +96,6 @@ int main(int argc, char* argv[]) {
   std::string line;
   while (std::getline(instream, line)) {
     interpreter.process_line(line);
+    flush(outstream);
   }
 }
