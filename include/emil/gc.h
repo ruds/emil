@@ -23,6 +23,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "emil/misc.h"
 #include "emil/runtime.h"
 
 namespace emil {
@@ -257,6 +258,20 @@ class ManagedWithSelfPtr : public Managed {
   mutable std::unique_ptr<managed_ptr<T>> self_ = nullptr;
 };
 
+template <scalar T>
+class ManagedScalar : public Managed {
+ public:
+  T value;
+
+  explicit ManagedScalar(T value) : value(value) {}
+
+ private:
+  void visit_subobjects(const ManagedVisitor&) override {}
+  std::size_t managed_size() const noexcept override {
+    return sizeof(ManagedScalar);
+  }
+};
+
 class PrivateBuffer {
  public:
   PrivateBuffer();
@@ -435,6 +450,11 @@ managed_ptr<T> managed_ptr<T>::dflt() {
 template <ManagedType T, class... Args>
 managed_ptr<T> make_managed_from_tuple(std::tuple<Args...>&& args) {
   return std::apply(make_managed<T, Args...>, std::move(args));
+}
+
+template <scalar T>
+managed_ptr<ManagedScalar<T>> make_scalar(T value) {
+  return make_managed<ManagedScalar<T>>(value);
 }
 
 template <ManagedType T, class... Args>
