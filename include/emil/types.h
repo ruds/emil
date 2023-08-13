@@ -333,11 +333,13 @@ class RecordType : public Type {
 
   StringMap<Type> rows() const { return rows_; }
   bool has_wildcard() const { return has_wildcard_; }
+  std::size_t get_index(std::u8string_view label) const;
 
   void accept(TypeVisitor& v) const override { v.visit(*this); }
 
  private:
   const StringMap<Type> rows_;
+  const collections::MapPtr<ManagedString, ManagedScalar<std::size_t>> indices_;
   const bool has_wildcard_;
 
   void visit_additional_subobjects(const ManagedVisitor& visitor) override;

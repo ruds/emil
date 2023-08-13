@@ -251,14 +251,36 @@ void TupleType::visit_additional_subobjects(const ManagedVisitor& visitor) {
   types_.accept(visitor);
 }
 
+namespace {
+
+collections::MapPtr<ManagedString, ManagedScalar<std::size_t>> compute_indices(
+    StringMap<Type> rows) {
+  auto indices =
+      collections::MapPtr<ManagedString, ManagedScalar<std::size_t>>::dflt();
+
+  std::size_t i = 0;
+  for (const auto& e : *rows) {
+    indices = indices->insert(e.first, make_scalar(i++)).first;
+  }
+  return indices;
+}
+
+}  // namespace
+
 RecordType::RecordType(StringMap<Type> rows, bool has_wildcard)
     : Type(merge_free_variables(rows), merge_undetermined_types(rows),
            merge_type_names(rows)),
       rows_(std::move(rows)),
+      indices_(has_wildcard ? nullptr : compute_indices(rows_)),
       has_wildcard_(has_wildcard) {}
+
+std::size_t RecordType::get_index(std::u8string_view label) const {
+  return (*indices_->get(label))->value;
+}
 
 void RecordType::visit_additional_subobjects(const ManagedVisitor& visitor) {
   rows_.accept(visitor);
+  if (indices_) indices_.accept(visitor);
 }
 
 FunctionType::FunctionType(TypePtr param, TypePtr result)
