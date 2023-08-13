@@ -1,0 +1,3 @@
+val it = {bar="hi there", baz=2.3, foo=2} : {bar: string, baz: float, foo: bigint}
+val it = {a={bar="hi there", baz=2.3, foo=2}, b="that's a biggie"} : {a: {bar: string, baz: float, foo: bigint}, b: string}
+val it = {foo=23i} : {foo: int}

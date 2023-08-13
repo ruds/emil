@@ -240,6 +240,7 @@ class ValuePrinter : public typing::TypeVisitor {
       val_ = tup->get(i);
       ptr_ = row.second;
       ptr_->accept(*this);
+      ++i;
     }
     out += '}';
   }
@@ -401,8 +402,16 @@ class ExprEvaluator : public TExpr::Visitor {
     throw std::logic_error("Not implemented");
   }
 
-  void visit(const TRecordExpr&) override {
-    throw std::logic_error("Not implemented");
+  void visit(const TRecordExpr& e) override {
+    auto rec_type = type_.cast<typing::RecordType>();
+    auto rec = make_managed<TupleValue>(e.rows->size());
+    for (const auto& row : *e.rows) {
+      type_ = *rec_type->rows()->get(*row->label);
+      row->value->accept(*this);
+      rec->set(rec_type->get_index(*row->label), val, tag);
+    }
+    val.set_tup(rec);
+    tag = value_tag::TUPLE;
   }
 
   void visit(const TTupleExpr& e) override {
