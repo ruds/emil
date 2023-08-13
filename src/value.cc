@@ -125,6 +125,7 @@ std::map<std::uint64_t, value_tag> TagVisitor::type_tags_;
 
 void visit(const value_t& value, value_tag tag, const ManagedVisitor& visitor) {
   switch (tag) {
+    case value_tag::NONE:
     case value_tag::BOOL:
     case value_tag::BYTE:
     case value_tag::INT:
@@ -226,31 +227,40 @@ void ExceptionPack::visit_subobjects(const ManagedVisitor& visitor) {
 
 FunctionValue::~FunctionValue() = default;
 
-TupleValue::TupleValue(std::size_t count, value_tag tag)
-    : buf_(ctx().mgr->allocate_private_buffer(count * sizeof(value_t))),
-      tag_(tag) {
+TupleValue::TupleValue(std::size_t count)
+    : buf_(ctx().mgr->allocate_private_buffer(count * sizeof(element))) {
   for (std::size_t i = 0; i < count; ++i) {
-    new (data() + i) value_t;
+    new (data() + i) element;
   }
 }
 
 TupleValue::~TupleValue() = default;
 
-value_t& TupleValue::get(std::size_t i) { return *(data() + i); }
+void TupleValue::set(std::size_t i, value_t value, value_tag tag) {
+  auto* el = data() + i;
+  el->value = value;
+  el->tag = tag;
+}
 
-const value_t& TupleValue::get(std::size_t i) const { return *(data() + i); }
+value_tag TupleValue::get_tag(std::size_t i) const { return (data() + i)->tag; }
 
-std::size_t TupleValue::size() const { return buf_.size() / sizeof(value_t); }
+const value_t& TupleValue::get(std::size_t i) const {
+  return (data() + i)->value;
+}
 
-value_t* TupleValue::data() { return reinterpret_cast<value_t*>(buf_.buf()); }
+std::size_t TupleValue::size() const { return buf_.size() / sizeof(element); }
 
-const value_t* TupleValue::data() const {
-  return reinterpret_cast<const value_t*>(buf_.buf());
+TupleValue::element* TupleValue::data() {
+  return reinterpret_cast<element*>(buf_.buf());
+}
+
+const TupleValue::element* TupleValue::data() const {
+  return reinterpret_cast<const element*>(buf_.buf());
 }
 
 void TupleValue::visit_subobjects(const ManagedVisitor& visitor) {
   for (std::size_t i = 0; i < size(); ++i) {
-    visit(get(i), tag_, visitor);
+    visit(get(i), get_tag(i), visitor);
   }
 }
 

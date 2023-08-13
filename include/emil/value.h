@@ -60,6 +60,7 @@ union value_t {
 static_assert(sizeof(value_t) == sizeof(void*));
 
 enum class value_tag {
+  NONE,
   BOOL,
   BYTE,
   INT,
@@ -152,20 +153,25 @@ static_assert(ManagedType<FunctionValue>);
 
 class TupleValue : public Managed {
  public:
-  TupleValue(std::size_t count, value_tag tag);
+  explicit TupleValue(std::size_t count);
   ~TupleValue() override;
 
-  value_t& get(std::size_t i);
+  void set(std::size_t i, value_t value, value_tag tag);
+  value_tag get_tag(std::size_t i) const;
   const value_t& get(std::size_t i) const;
 
   std::size_t size() const;
 
  private:
-  PrivateBuffer buf_;
-  value_tag tag_;
+  struct element {
+    value_t value;
+    value_tag tag = value_tag::NONE;
+  };
 
-  value_t* data();
-  const value_t* data() const;
+  PrivateBuffer buf_;
+
+  element* data();
+  const element* data() const;
 
   void visit_subobjects(const ManagedVisitor& visitor) override;
   std::size_t managed_size() const noexcept override {

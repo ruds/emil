@@ -1,0 +1,5 @@
+val it = () : ()
+val it = 2 : bigint
+val it = (2, "43") : (bigint * string)
+val it = ((2, "43"), ((2, "43"), "foo")) : ((bigint * string) * ((bigint * string) * string))
+val it = (14i, "43") : (int * string)

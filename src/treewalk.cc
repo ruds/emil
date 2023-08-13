@@ -301,6 +301,7 @@ class ValuePrinter : public typing::TypeVisitor {
         break;
       }
 
+      case value_tag::NONE:
       case value_tag::TUPLE:
       case value_tag::FUNCTION:
       case value_tag::EXCEPTION_PACK:
@@ -353,7 +354,7 @@ class ConstructorWithArg : public FunctionValue {
 class ExprEvaluator : public TExpr::Visitor {
  public:
   value_t val;
-  value_tag tag = value_tag::BOOL;
+  value_tag tag = value_tag::NONE;
 
   explicit ExprEvaluator(managed_ptr<ValEnv> val_env, typing::TypePtr type)
       : val_env_(val_env), type_(type) {}
@@ -404,8 +405,16 @@ class ExprEvaluator : public TExpr::Visitor {
     throw std::logic_error("Not implemented");
   }
 
-  void visit(const TTupleExpr&) override {
-    throw std::logic_error("Not implemented");
+  void visit(const TTupleExpr& e) override {
+    auto tup_type = type_.cast<typing::TupleType>();
+    auto tup = make_managed<TupleValue>(e.exprs->size());
+    for (std::size_t i = 0; i < e.exprs->size(); ++i) {
+      type_ = (*tup_type->types())[i];
+      (*e.exprs)[i]->accept(*this);
+      tup->set(i, val, tag);
+    }
+    val.set_tup(tup);
+    tag = value_tag::TUPLE;
   }
 
   void visit(const TSequencedExpr&) override {
@@ -444,7 +453,7 @@ class ExprEvaluator : public TExpr::Visitor {
 class ConstructorDefinitionVisitor : public ThrowingTypeVisitor {
  public:
   value_t val;
-  value_tag tag = value_tag::BOOL;
+  value_tag tag = value_tag::NONE;
 
   explicit ConstructorDefinitionVisitor(std::size_t idx) : idx_(idx) {}
 
