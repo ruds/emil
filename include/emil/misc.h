@@ -14,6 +14,9 @@
 
 #pragma once
 
+#include <concepts>
+#include <type_traits>
+
 namespace emil {
 
 template <typename... Ts>
@@ -23,5 +26,8 @@ struct overloaded : Ts... {
 
 template <typename... Ts>
 overloaded(Ts...) -> overloaded<Ts...>;
+
+template <typename T>
+concept scalar = std::is_scalar_v<T>;
 
 }  // namespace emil

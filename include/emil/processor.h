@@ -276,9 +276,6 @@ struct input_traits {
   static peek_type from_pointer(const In* in) { return in; }
 };
 
-template <typename T>
-concept scalar = std::is_scalar_v<T>;
-
 template <scalar In>
 struct input_traits<In> {
   using peek_type = std::optional<In>;
