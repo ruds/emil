@@ -426,8 +426,11 @@ class ExprEvaluator : public TExpr::Visitor {
     tag = value_tag::TUPLE;
   }
 
-  void visit(const TSequencedExpr&) override {
-    throw std::logic_error("Not implemented");
+  void visit(const TSequencedExpr& e) override {
+    for (const auto& expr : *e.exprs) {
+      type_ = expr->type;
+      expr->accept(*this);
+    }
   }
 
   void visit(const TListExpr&) override {
