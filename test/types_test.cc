@@ -75,10 +75,11 @@ class TypesTestBase : public ::testing::Test {
  protected:
   TestContext tc;
   StampGenerator stamper;
+  managed_ptr<BuiltinTypes> builtins =
+      tc.root.add_root(BuiltinTypes::create(stamper));
 
-  TypePtr int_type = constructed_type(u8"int", {}, INFINITE_SPAN);
-  TypePtr float_type = constructed_type(u8"float", {}, INFINITE_SPAN);
-  managed_ptr<TypeName> list_name = type_name(u8"list", 1, 2);
+  TypePtr int_type = builtins->int_type();
+  TypePtr float_type = builtins->float_type();
 
   managed_ptr<TypeVar> type_variable(std::u8string_view name) {
     return tc.root.add_root(make_managed<TypeVar>(name));
@@ -114,25 +115,25 @@ class TypesTestBase : public ::testing::Test {
     return tc.root.add_root(make_managed<TypeName>(name, stamper, arity, span));
   }
 
-  TypePtr constructed_type(managed_ptr<TypeName> name,
-                           std::initializer_list<TypePtr> types) {
+  managed_ptr<ConstructedType> constructed_type(
+      managed_ptr<TypeName> name, std::initializer_list<TypePtr> types) {
     auto hold = tc.mgr.acquire_hold();
-    return tc.root.add_root(
+    auto ct = tc.root.add_root(
         make_managed<ConstructedType>(name, make_array(types)));
+    ct->set_constructors(ValEnv::empty());
+    return ct;
   }
 
   /** Creates a constructed type with a fresh name. */
-  TypePtr constructed_type(std::u8string_view name,
-                           std::initializer_list<TypePtr> types,
-                           std::size_t span) {
+  managed_ptr<ConstructedType> constructed_type(
+      std::u8string_view name, std::initializer_list<TypePtr> types,
+      std::size_t span) {
     auto hold = tc.mgr.acquire_hold();
     return tc.root.add_root(make_managed<ConstructedType>(
         type_name(name, types.size(), span), make_array(types)));
   }
 
-  TypePtr list_type(TypePtr el_type) {
-    return constructed_type(list_name, {el_type});
-  }
+  TypePtr list_type(TypePtr el_type) { return builtins->list_type(el_type); }
 };
 
 using TypeFunctionTest = TypesTestBase;
@@ -154,6 +155,7 @@ TEST_F(TypeFunctionTest, Instantiate) {
   auto c = type_variable(u8"'c");
   auto ut0 = undetermined_type();
   auto contype = constructed_type(u8"contype", {}, 0);
+  contype->set_constructors(ValEnv::empty());
   auto ut1var = undetermined_type();
   auto ut1 = make_managed<TypeWithAgeRestriction>(ut1var, ut0->stamp()->id());
   auto ut2 = undetermined_type();
@@ -201,6 +203,7 @@ TEST_F(TypeSchemeTest, Instantiate) {
   auto c = type_variable(u8"'c");
   auto ut0 = undetermined_type();
   auto contype = constructed_type(u8"contype", {}, 0);
+  contype->set_constructors(ValEnv::empty());
   auto ut1var = undetermined_type();
   auto ut1 = make_managed<TypeWithAgeRestriction>(ut1var, ut0->stamp()->id());
   auto ut2 = undetermined_type();
