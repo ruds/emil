@@ -502,7 +502,8 @@ class Context;
  */
 class TypeScheme : public TypeObj {
  public:
-  TypeScheme(TypePtr t, collections::ArrayPtr<ManagedString> bound);
+  TypeScheme(TypePtr t, collections::ArrayPtr<ManagedString> bound =
+                            collections::ArrayPtr<ManagedString>::dflt());
 
   TypePtr t() const { return t_; }
   const collections::ArrayPtr<ManagedString>& bound() const { return bound_; }
