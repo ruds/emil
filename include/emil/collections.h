@@ -53,13 +53,11 @@ class ManagedArray : public Managed {
   using pointer = managed_ptr<T>*;
   using const_pointer = const managed_ptr<T>*;
 
-  ManagedArray() : buf_() {}
-
   /** Create an array of `len` nullptrs. */
   explicit ManagedArray(std::size_t len)
       : ManagedArray(len, [](std::size_t) { return nullptr; }) {}
 
-  ManagedArray(std::initializer_list<managed_ptr<T>> els)
+  ManagedArray(std::initializer_list<managed_ptr<T>> els = {})
       : ManagedArray(els.size(),
                      [&els](std::size_t i) { return std::data(els)[i]; }) {}
 
