@@ -1,0 +1,5 @@
+val it = nil : 'a list
+val it = (::) (1, (::) (2, (::) (3, (::) (4, nil)))) : bigint list
+val it = (::) ((1, "foo"), (::) ((2, "bar"), (::) ((3, "baz"), nil))) : (bigint * string) list
+val it = nil : int list
+val it = (::) (1, (::) (2, (::) (3, (::) (4, nil)))) : bigint list

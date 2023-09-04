@@ -24,8 +24,10 @@
 #include <functional>
 #include <iterator>
 #include <optional>
+#include <ranges>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 #include "emil/bigint.h"
 #include "emil/collections.h"
@@ -433,8 +435,30 @@ class ExprEvaluator : public TExpr::Visitor {
     }
   }
 
-  void visit(const TListExpr&) override {
-    throw std::logic_error("Not implemented");
+  void visit(const TListExpr& e) override {
+    auto list_type = type_.cast<typing::ConstructedType>();
+    assert(list_type->name()->stamp()->id() ==
+           ctx().builtin_types->list_name()->stamp()->id());
+    assert(list_type->types()->size() == 1);
+    std::vector<value_t> values;
+    values.reserve(e.exprs->size());
+    for (const auto& expr : *e.exprs) {
+      type_ = (*list_type->types())[0];
+      expr->accept(*this);
+      values.push_back(std::move(val));
+    }
+    // Building up the list from the end.
+    val.set_con(make_managed<ConstructedValue>(1));
+    for (auto& v : values | std::ranges::views::reverse) {
+      auto tup = make_managed<TupleValue>(2);
+      tup->set(0, std::move(v), tag);
+      tup->set(1, std::move(val), value_tag::CONSTRUCTED);
+      value_t l;
+      l.set_tup(tup);
+      val.set_con(
+          make_managed<ConstructedValue>(0, std::move(l), value_tag::TUPLE));
+    }
+    tag = value_tag::CONSTRUCTED;
   }
 
   void visit(const TLetExpr&) override {
