@@ -133,7 +133,9 @@ class TypesTestBase : public ::testing::Test {
         type_name(name, types.size(), span), make_array(types)));
   }
 
-  TypePtr list_type(TypePtr el_type) { return builtins->list_type(el_type); }
+  TypePtr list_type(TypePtr el_type) {
+    return tc.root.add_root(builtins->list_type(el_type));
+  }
 };
 
 using TypeFunctionTest = TypesTestBase;
@@ -231,7 +233,18 @@ TEST_F(TypeSchemeTest, Instantiate) {
       instance, managed_map<Stamp, Type>({{ut2->stamp(), contype}})));
 }
 
-TEST_F(TypeSchemeTest, Generalize) {
+TEST_F(TypeSchemeTest, Generalize0) {
+  auto hold = tc.mgr.acquire_hold();
+  auto ut0 = undetermined_type();
+
+  auto type = list_type(ut0);
+  auto C = Context::empty();
+  auto scheme = TypeScheme::generalize(C, type);
+  EXPECT_THAT(*scheme->bound(), ::testing::ElementsAre(Pointee(Eq(u8"'a"))));
+  EXPECT_THAT(scheme->t(), PrintsAs(u8"'a list"));
+}
+
+TEST_F(TypeSchemeTest, Generalize1) {
   // {k0: '~0,
   //  k1: ('~1 * 'b),
   //  k2: {bar: 'd, foo: '~0} list -> ('~1 * 'c * '~2),
@@ -291,55 +304,56 @@ TEST_F(PrintTypeTest, BasicOperation) {
   EXPECT_THAT(b, PrintsCorrectly(std::ref(tc), u8"'b", u8"'b"));
 
   TypePtr ut1 = undetermined_type();
-  EXPECT_THAT(ut1, PrintsCorrectly(std::ref(tc), u8"'~4", u8"'~0"));
+  EXPECT_THAT(ut1, PrintsCorrectly(std::ref(tc), u8"'~10", u8"'~0"));
 
   TypePtr ut2 = undetermined_type();
-  EXPECT_THAT(ut2, PrintsCorrectly(std::ref(tc), u8"'~5", u8"'~0"));
+  EXPECT_THAT(ut2, PrintsCorrectly(std::ref(tc), u8"'~11", u8"'~0"));
 
   EXPECT_THAT(int_type, PrintsCorrectly(std::ref(tc), u8"int", u8"int"));
 
   EXPECT_THAT(list_type(int_type),
               PrintsCorrectly(std::ref(tc), u8"int list", u8"int list"));
   EXPECT_THAT(list_type(ut2),
-              PrintsCorrectly(std::ref(tc), u8"'~5 list", u8"'~0 list"));
+              PrintsCorrectly(std::ref(tc), u8"'~11 list", u8"'~0 list"));
   EXPECT_THAT(
       list_type(list_type(ut2)),
-      PrintsCorrectly(std::ref(tc), u8"'~5 list list", u8"'~0 list list"));
+      PrintsCorrectly(std::ref(tc), u8"'~11 list list", u8"'~0 list list"));
 
   auto pair_name = type_name(u8"pair", 2, 1);
   EXPECT_THAT(
       constructed_type(pair_name, {int_type, int_type}),
       PrintsCorrectly(std::ref(tc), u8"(int, int) pair", u8"(int, int) pair"));
-  EXPECT_THAT(
-      constructed_type(pair_name, {ut2, ut1}),
-      PrintsCorrectly(std::ref(tc), u8"('~5, '~4) pair", u8"('~0, '~1) pair"));
+  EXPECT_THAT(constructed_type(pair_name, {ut2, ut1}),
+              PrintsCorrectly(std::ref(tc), u8"('~11, '~10) pair",
+                              u8"('~0, '~1) pair"));
   EXPECT_THAT(
       constructed_type(pair_name, {a, ut1}),
-      PrintsCorrectly(std::ref(tc), u8"('a, '~4) pair", u8"('a, '~0) pair"));
+      PrintsCorrectly(std::ref(tc), u8"('a, '~10) pair", u8"('a, '~0) pair"));
   EXPECT_THAT(constructed_type(pair_name, {list_type(list_type(ut2)), b}),
-              PrintsCorrectly(std::ref(tc), u8"('~5 list list, 'b) pair",
+              PrintsCorrectly(std::ref(tc), u8"('~11 list list, 'b) pair",
                               u8"('~0 list list, 'b) pair"));
 
   EXPECT_THAT(tuple_type({}), PrintsCorrectly(std::ref(tc), u8"()", u8"()"));
-  EXPECT_THAT(tuple_type({ut2, ut1}),
-              PrintsCorrectly(std::ref(tc), u8"('~5 * '~4)", u8"('~0 * '~1)"));
+  EXPECT_THAT(
+      tuple_type({ut2, ut1}),
+      PrintsCorrectly(std::ref(tc), u8"('~11 * '~10)", u8"('~0 * '~1)"));
   EXPECT_THAT(tuple_type({constructed_type(pair_name, {ut2, ut1}), a, ut2}),
-              PrintsCorrectly(std::ref(tc), u8"(('~5, '~4) pair * 'a * '~5)",
+              PrintsCorrectly(std::ref(tc), u8"(('~11, '~10) pair * 'a * '~11)",
                               u8"(('~0, '~1) pair * 'a * '~0)"));
 
   EXPECT_THAT(record_type({}), PrintsCorrectly(std::ref(tc), u8"{}", u8"{}"));
   EXPECT_THAT(record_type({}, true),
               PrintsCorrectly(std::ref(tc), u8"{...}", u8"{...}"));
   EXPECT_THAT(record_type({{u8"k0", ut2}}),
-              PrintsCorrectly(std::ref(tc), u8"{k0: '~5}", u8"{k0: '~0}"));
+              PrintsCorrectly(std::ref(tc), u8"{k0: '~11}", u8"{k0: '~0}"));
   EXPECT_THAT(
       record_type({{u8"k0", ut2}}, true),
-      PrintsCorrectly(std::ref(tc), u8"{k0: '~5, ...}", u8"{k0: '~0, ...}"));
+      PrintsCorrectly(std::ref(tc), u8"{k0: '~11, ...}", u8"{k0: '~0, ...}"));
   EXPECT_THAT(record_type({{u8"k0", ut2}, {u8"k1", ut1}}),
-              PrintsCorrectly(std::ref(tc), u8"{k0: '~5, k1: '~4}",
+              PrintsCorrectly(std::ref(tc), u8"{k0: '~11, k1: '~10}",
                               u8"{k0: '~0, k1: '~1}"));
   EXPECT_THAT(record_type({{u8"k0", ut2}, {u8"k1", ut1}}, true),
-              PrintsCorrectly(std::ref(tc), u8"{k0: '~5, k1: '~4, ...}",
+              PrintsCorrectly(std::ref(tc), u8"{k0: '~11, k1: '~10, ...}",
                               u8"{k0: '~0, k1: '~1, ...}"));
   EXPECT_THAT(
       record_type({{u8"k0", ut2},
@@ -349,21 +363,21 @@ TEST_F(PrintTypeTest, BasicOperation) {
                    {u8"k4", list_type(int_type)}}),
       PrintsCorrectly(
           std::ref(tc),
-          u8"{k0: '~5, k1: ('~5 * '~4), k2: 'a, k3: '~5, k4: int list}",
+          u8"{k0: '~11, k1: ('~11 * '~10), k2: 'a, k3: '~11, k4: int list}",
           u8"{k0: '~0, k1: ('~0 * '~1), k2: 'a, k3: '~0, k4: int list}"));
 
   EXPECT_THAT(function_type(ut2, ut1),
-              PrintsCorrectly(std::ref(tc), u8"'~5 -> '~4", u8"'~0 -> '~1"));
+              PrintsCorrectly(std::ref(tc), u8"'~11 -> '~10", u8"'~0 -> '~1"));
   EXPECT_THAT(function_type(b, record_type({}, true)),
               PrintsCorrectly(std::ref(tc), u8"'b -> {...}", u8"'b -> {...}"));
   EXPECT_THAT(function_type(function_type(ut2, ut1), function_type(a, b)),
-              PrintsCorrectly(std::ref(tc), u8"('~5 -> '~4) -> 'a -> 'b",
+              PrintsCorrectly(std::ref(tc), u8"('~11 -> '~10) -> 'a -> 'b",
                               u8"('~0 -> '~1) -> 'a -> 'b"));
   EXPECT_THAT(
       function_type(list_type(int_type), ut1),
-      PrintsCorrectly(std::ref(tc), u8"int list -> '~4", u8"int list -> '~0"));
+      PrintsCorrectly(std::ref(tc), u8"int list -> '~10", u8"int list -> '~0"));
   EXPECT_THAT(function_type(tuple_type({ut2, ut1}), ut1),
-              PrintsCorrectly(std::ref(tc), u8"('~5 * '~4) -> '~4",
+              PrintsCorrectly(std::ref(tc), u8"('~11 * '~10) -> '~10",
                               u8"('~0 * '~1) -> '~1"));
 }
 
@@ -464,7 +478,8 @@ TEST_F(ApplySubstitutionsTest, EmptySubs) {
 }
 
 TEST_F(ApplySubstitutionsTest, SingleSub) {
-  auto sub = managed_map<Stamp, Type>({{ut1->stamp(), list_int}});
+  auto sub =
+      tc.root.add_root(managed_map<Stamp, Type>({{ut1->stamp(), list_int}}));
   EXPECT_THAT(apply_substitutions(a, sub), PrintsAs(u8"'a"));
   EXPECT_THAT(apply_substitutions(b, sub), PrintsAs(u8"'b"));
   EXPECT_THAT(apply_substitutions(int_type, sub), PrintsAs(u8"int"));
@@ -507,8 +522,8 @@ TEST_F(ApplySubstitutionsTest, SingleSub) {
 }
 
 TEST_F(ApplySubstitutionsTest, TwoSubs) {
-  auto sub = managed_map<Stamp, Type>(
-      {{ut1->stamp(), list_int}, {ut2->stamp(), list_list_ut3}});
+  auto sub = tc.root.add_root(managed_map<Stamp, Type>(
+      {{ut1->stamp(), list_int}, {ut2->stamp(), list_list_ut3}}));
   EXPECT_THAT(apply_substitutions(a, sub), PrintsAs(u8"'a"));
   EXPECT_THAT(apply_substitutions(b, sub), PrintsAs(u8"'b"));
   EXPECT_THAT(apply_substitutions(int_type, sub), PrintsAs(u8"int"));

@@ -23,7 +23,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <initializer_list>
 #include <iterator>
 #include <map>
 #include <memory>
@@ -665,19 +664,10 @@ namespace {
  * Assumes that `t` and `constructors` have no stray free variables.
  */
 void add_type(managed_ptr<typing::TypeEnv> &TE, managed_ptr<typing::ValEnv> &VE,
-              managed_ptr<typing::ConstructedType> t,
-              std::initializer_list<std::pair<std::u8string, typing::TypePtr>>
-                  constructors = {}) {
+              managed_ptr<typing::ConstructedType> t) {
   auto theta =
       make_managed<typing::TypeFunction>(t, to_array(t->free_variables()));
-  auto type_VE = typing::ValEnv::empty();
-  for (const auto &con : constructors) {
-    auto &type = con.second;
-    type_VE = type_VE->add_binding(con.first,
-                                   make_managed<typing::TypeScheme>(
-                                       type, to_array(type->free_variables())),
-                                   typing::IdStatus::Constructor, false);
-  }
+  auto type_VE = t->constructors();
   VE = VE + type_VE;
   TE = TE->add_binding(t->name()->name_ptr(), theta, type_VE, false);
 }
@@ -696,18 +686,10 @@ managed_ptr<typing::Basis> Typer::initial_basis() const {
   add_type(TE, VE, b.float_type());
   add_type(TE, VE, b.char_type());
   add_type(TE, VE, b.string_type());
-  add_type(TE, VE, b.bool_type(),
-           {{u8"true", b.bool_type()}, {u8"false", b.bool_type()}});
+  add_type(TE, VE, b.bool_type());
   const auto a = make_managed<typing::TypeVar>(u8"'a");
-  add_type(
-      TE, VE, b.list_type(a),
-      {{u8"nil", b.list_type(a)},
-       {u8"(::)", make_managed<typing::FunctionType>(
-                      impl_->tuple_type(collections::make_array<typing::Type>(
-                          {a, b.list_type(a)})),
-                      b.list_type(a))}});
-  add_type(TE, VE, b.ref_type(a),
-           {{u8"ref", impl_->function_type(a, b.ref_type(a))}});
+  add_type(TE, VE, b.list_type(a, {a->name_ptr()}));
+  add_type(TE, VE, b.ref_type(a, {a->name_ptr()}));
   return make_managed<typing::Basis>(
       make_managed<typing::Env>(typing::StrEnv::empty(), TE, VE));
 }
@@ -777,14 +759,11 @@ typing::Substitutions compute_dummy_substitutions(TyperImpl &typer,
   auto subs = typing::Substitutions::dflt();
   std::uint64_t counter = 0;
   for (const auto &stamp : *env->undetermined_types()) {
-    subs =
-        subs->insert(
-                stamp,
-                typer.constructed_type(
-                    typer.type_name(
-                        u8"X" + to_u8string(std::to_string(++counter)), 0, 0),
-                    typing::TypeList::dflt()))
-            .first;
+    auto ct = typer.constructed_type(
+        typer.type_name(u8"X" + to_u8string(std::to_string(++counter)), 0, 0),
+        typing::TypeList::dflt());
+    ct->set_constructors(typing::ValEnv::empty());
+    subs = subs->insert(stamp, ct).first;
   }
   if (!subs->empty()) {
     typer.reporter().report_warning(
@@ -1119,13 +1098,12 @@ managed_ptr<typing::TypeEnv> seed_type_env(
           return make_managed<typing::TypeVar>((*type_var_names)[i]);
         });
     try {
+      auto ct = typer.constructed_type(
+          typer.type_name(name, db->types.size(), db->constructors.size()),
+          type_vars);
+      ct->set_constructors(typing::ValEnv::empty());
       TE = TE->add_binding(
-          name,
-          make_managed<typing::TypeFunction>(
-              typer.constructed_type(typer.type_name(name, db->types.size(),
-                                                     db->constructors.size()),
-                                     type_vars),
-              type_var_names),
+          name, make_managed<typing::TypeFunction>(ct, type_var_names),
           typing::ValEnv::empty(), false);
     } catch (typing::BindingError &err) {
       throw ElaborationError(

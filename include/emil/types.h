@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <initializer_list>
 #include <limits>
 #include <optional>
 #include <string>
@@ -419,9 +420,13 @@ class BuiltinTypes : public TypeObj {
   managed_ptr<ConstructedType> bool_type() const { return bo_; }
   managed_ptr<ConstructedType> char_type() const { return c_; }
   managed_ptr<ConstructedType> string_type() const { return s_; }
-  managed_ptr<ConstructedType> list_type(TypePtr type) const;
+  managed_ptr<ConstructedType> list_type(
+      TypePtr type,
+      std::initializer_list<StringPtr> bound_variables = {}) const;
   managed_ptr<TypeName> list_name() const { return l_; }
-  managed_ptr<ConstructedType> ref_type(TypePtr type) const;
+  managed_ptr<ConstructedType> ref_type(
+      TypePtr type,
+      std::initializer_list<StringPtr> bound_variables = {}) const;
   managed_ptr<TypeName> ref_name() const { return r_; }
 
   BuiltinTypes(managed_ptr<Stamp> bi, managed_ptr<Stamp> i,
@@ -429,6 +434,8 @@ class BuiltinTypes : public TypeObj {
                managed_ptr<Stamp> bo, managed_ptr<Stamp> c,
                managed_ptr<Stamp> s, managed_ptr<Stamp> l,
                managed_ptr<Stamp> r);
+
+  BuiltinTypes(StampGenerator& g);
 
  private:
   const StringPtr tru_;

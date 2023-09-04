@@ -23,6 +23,7 @@
 #include <iterator>
 #include <map>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -35,6 +36,8 @@
 #include "emil/strconvert.h"
 #include "emil/string.h"
 #include "emil/tree.h"
+
+// IWYU pragma: no_include <__tree>
 
 namespace emil::typing {
 
@@ -316,6 +319,7 @@ void ConstructedType::visit_additional_subobjects(
     const ManagedVisitor& visitor) {
   name_.accept(visitor);
   types_.accept(visitor);
+  if (constructors_) constructors_.accept(visitor);
 }
 
 namespace {
@@ -323,16 +327,38 @@ namespace {
 managed_ptr<ConstructedType> construct_type0(managed_ptr<Stamp>&& stamp,
                                              std::u8string_view name,
                                              std::size_t span = INFINITE_SPAN) {
-  return make_managed<ConstructedType>(
+  auto t = make_managed<ConstructedType>(
       make_managed<TypeName>(name, std::move(stamp), 0, span), type_list());
+  t->set_constructors(ValEnv::empty());
+  return t;
 }
 
 }  // namespace
 
 managed_ptr<BuiltinTypes> BuiltinTypes::create(StampGenerator& g) {
-  return make_managed<BuiltinTypes>(g(), g(), g(), g(), g(), g(), g(), g(),
-                                    g());
+  return make_managed<BuiltinTypes>(g);
 }
+
+BuiltinTypes::BuiltinTypes(StampGenerator& g)
+    : BuiltinTypes(g(), g(), g(), g(), g(), g(), g(), g(), g()) {}
+
+namespace {
+
+managed_ptr<TypeScheme> type_scheme(
+    TypePtr t, collections::ArrayPtr<ManagedString> bound_variables =
+                   collections::ArrayPtr<ManagedString>::dflt()) {
+  return make_managed<TypeScheme>(t, bound_variables);
+}
+
+TypePtr function_type(TypePtr p, TypePtr r) {
+  return make_managed<FunctionType>(p, r);
+}
+
+TypePtr tuple_type(std::initializer_list<TypePtr> types) {
+  return make_managed<TupleType>(collections::make_array(types));
+}
+
+}  // namespace
 
 BuiltinTypes::BuiltinTypes(managed_ptr<Stamp> bi, managed_ptr<Stamp> i,
                            managed_ptr<Stamp> by, managed_ptr<Stamp> fl,
@@ -354,14 +380,38 @@ BuiltinTypes::BuiltinTypes(managed_ptr<Stamp> bi, managed_ptr<Stamp> i,
       c_(construct_type0(std::move(c), u8"char")),
       s_(construct_type0(std::move(s), u8"string")),
       l_(make_managed<TypeName>(u8"list", l, 1, 2)),
-      r_(make_managed<TypeName>(u8"ref", r, 1, 1)) {}
-
-managed_ptr<ConstructedType> BuiltinTypes::list_type(TypePtr type) const {
-  return make_managed<ConstructedType>(l_, type_list({std::move(type)}));
+      r_(make_managed<TypeName>(u8"ref", r, 1, 1)) {
+  bo_->set_constructors(ValEnv::empty()
+                            ->add_binding(u8"true", type_scheme(bo_),
+                                          IdStatus::Constructor, false)
+                            ->add_binding(u8"false", type_scheme(bo_),
+                                          IdStatus::Constructor, false));
 }
 
-managed_ptr<ConstructedType> BuiltinTypes::ref_type(TypePtr type) const {
-  return make_managed<ConstructedType>(r_, type_list({std::move(type)}));
+managed_ptr<ConstructedType> BuiltinTypes::list_type(
+    TypePtr type, std::initializer_list<StringPtr> bound_variables) const {
+  auto hold = ctx().mgr->acquire_hold();
+  auto t = make_managed<ConstructedType>(l_, type_list({type}));
+  auto bv = collections::make_array(bound_variables);
+  t->set_constructors(
+      ValEnv::empty()
+          ->add_binding(
+              cons(), type_scheme(function_type(tuple_type({type, t}), t), bv),
+              IdStatus::Constructor, false)
+          ->add_binding(nil(), type_scheme(t, bv), IdStatus::Constructor,
+                        false));
+  return t;
+}
+
+managed_ptr<ConstructedType> BuiltinTypes::ref_type(
+    TypePtr type, std::initializer_list<StringPtr> bound_variables) const {
+  auto t = make_managed<ConstructedType>(r_, type_list({type}));
+  t->set_constructors(ValEnv::empty()->add_binding(
+      ref(),
+      type_scheme(function_type(type, t),
+                  collections::make_array(bound_variables)),
+      IdStatus::Constructor, false));
+  return t;
 }
 
 void BuiltinTypes::visit_additional_subobjects(const ManagedVisitor& visitor) {
@@ -389,6 +439,116 @@ TypeFunction::TypeFunction(TypePtr t,
       bound_(std::move(bound)) {}
 
 namespace {
+
+class ConstructorFixerUpper : public TypeVisitor {
+ public:
+  TypePtr type;
+  TypePtr orig;
+
+  ConstructorFixerUpper(std::uint64_t ct_orig,
+                        managed_ptr<ConstructedType> replacement)
+      : ct_orig_(ct_orig), replacement_(replacement) {}
+
+  void visit(const TypeWithAgeRestriction& t) override {
+    orig = t.type();
+    orig->accept(*this);
+    type = make_managed<TypeWithAgeRestriction>(type, t.birthdate());
+  }
+
+  void visit(const TypeVar&) override { type = orig; }
+
+  void visit(const UndeterminedType&) override { type = orig; }
+
+  void visit(const TupleType& t) override {
+    auto types = make_managed<collections::ManagedArray<Type>>(
+        t.types()->size(), [&](const std::size_t i) {
+          orig = (*t.types())[i];
+          orig->accept(*this);
+          return type;
+        });
+    type = make_managed<TupleType>(types);
+  }
+
+  void visit(const RecordType& t) override {
+    StringMap<Type> rows = StringMap<Type>::dflt();
+    for (const auto& entry : *t.rows()) {
+      orig = entry.second;
+      orig->accept(*this);
+      rows = rows->insert(entry.first, type).first;
+    }
+    type = make_managed<RecordType>(rows, t.has_wildcard());
+  }
+
+  void visit(const FunctionType& t) override {
+    orig = t.param();
+    orig->accept(*this);
+    auto param = type;
+    orig = t.result();
+    orig->accept(*this);
+    type = make_managed<FunctionType>(param, type);
+  }
+
+  void visit(const ConstructedType& t) override {
+    const auto id = t.name()->stamp()->id();
+    if (id == ct_orig_) {
+      type = replacement_;
+      return;
+    }
+    auto it = other_cts_.find(id);
+    if (it != other_cts_.end()) {
+      type = orig;
+      return;
+    }
+    it = other_cts_.insert(it, id);
+    auto types = make_managed<collections::ManagedArray<Type>>(
+        t.types()->size(), [&](const std::size_t i) {
+          orig = (*t.types())[i];
+          orig->accept(*this);
+          return type;
+        });
+    auto constructors = ValEnv::empty();
+    for (const auto& binding : *t.constructors()->env()) {
+      orig = binding.second->scheme()->t();
+      orig->accept(*this);
+      constructors = constructors->add_binding(
+          binding.first,
+          make_managed<TypeScheme>(type, binding.second->scheme()->bound()),
+          IdStatus::Constructor, false);
+    }
+    auto ct = make_managed<ConstructedType>(t.name(), types);
+    ct->set_constructors(constructors);
+    type = ct;
+    other_cts_.erase(it);
+  }
+
+ private:
+  const std::uint64_t ct_orig_;
+  std::set<std::uint64_t> other_cts_;
+  managed_ptr<ConstructedType> replacement_;
+};
+
+managed_ptr<ValEnv> fixup_constructors(
+    const ConstructedType& original, managed_ptr<ConstructedType> replacement) {
+  static std::set<std::uint64_t> in_progress;
+  const auto id = original.name()->stamp()->id();
+  auto it = in_progress.find(id);
+  if (it != in_progress.end()) {
+    return original.constructors();
+  }
+  it = in_progress.insert(it, id);
+  ConstructorFixerUpper v{id, replacement};
+  auto constructors = ValEnv::empty();
+  for (const auto& binding : *original.constructors()->env()) {
+    v.orig = binding.second->scheme()->t();
+    v.orig->accept(v);
+    constructors = constructors->add_binding(
+        binding.first,
+        make_managed<TypeScheme>(v.type, binding.second->scheme()->bound()),
+        IdStatus::Constructor, false);
+  }
+  in_progress.erase(it);
+  return constructors;
+}
 
 class TypeInstantiator : public TypeVisitor {
  public:
@@ -443,7 +603,19 @@ class TypeInstantiator : public TypeVisitor {
           (*t.types())[i]->accept(*this);
           return type;
         });
-    type = make_managed<ConstructedType>(t.name(), std::move(types));
+    auto ct = make_managed<ConstructedType>(t.name(), std::move(types));
+    ct->set_constructors(ValEnv::empty());
+    auto fixed_up_constructors = fixup_constructors(t, ct);
+    auto instantiated_constructors = ValEnv::empty();
+    for (const auto& binding : *fixed_up_constructors->env()) {
+      auto scheme = binding.second->scheme();
+      scheme->t()->accept(*this);
+      instantiated_constructors = instantiated_constructors->add_binding(
+          binding.first, make_managed<TypeScheme>(type, scheme->bound()),
+          IdStatus::Constructor, false);
+    }
+    ct->set_constructors(instantiated_constructors);
+    type = ct;
   }
 
  private:
@@ -582,13 +754,31 @@ class TypeGeneralizer : public TypeVisitor {
   }
 
   void visit(const ConstructedType& t) override {
+    const auto id = t.name()->stamp()->id();
+    if (!cts_in_progress_.insert(id).second) {
+      type = orig_;
+      return;
+    }
     auto types = make_managed<collections::ManagedArray<Type>>(
         t.types()->size(), [&](const std::size_t i) {
           orig_ = (*t.types())[i];
           orig_->accept(*this);
           return type;
         });
-    type = make_managed<ConstructedType>(t.name(), types);
+    auto ct = make_managed<ConstructedType>(t.name(), types);
+    auto fixed_up_constructors = fixup_constructors(t, ct);
+    auto generalized_constructors = ValEnv::empty();
+    for (const auto& binding : *fixed_up_constructors->env()) {
+      auto scheme = binding.second->scheme();
+      orig_ = scheme->t();
+      orig_->accept(*this);
+      generalized_constructors = generalized_constructors->add_binding(
+          binding.first, make_managed<TypeScheme>(type, scheme->bound()),
+          IdStatus::Constructor, false);
+    }
+    ct->set_constructors(generalized_constructors);
+    cts_in_progress_.erase(id);
+    type = ct;
   }
 
  private:
@@ -597,6 +787,7 @@ class TypeGeneralizer : public TypeVisitor {
   typing::StampSet uts_to_bind_;
   typing::TypePtr orig_;
   std::size_t next_var_cand_ = 1;
+  std::set<std::uint64_t> cts_in_progress_;
 
   managed_ptr<TypeVar> fresh_variable() {
     std::u8string name;
@@ -1214,8 +1405,12 @@ class Substitutor : public TypeVisitor {
   }
 
   void visit(const ConstructedType& t) override {
-    result = make_managed<ConstructedType>(
+    auto ct = make_managed<ConstructedType>(
         t.name(), apply_substitutions_to_list(t.types()));
+    ct->set_constructors(ValEnv::empty());
+    ct->set_constructors(fixup_constructors(t, ct)->apply_substitutions(
+        substitutions_, enforce_timing_constraints_));
+    result = ct;
   }
 
  private:
@@ -1623,8 +1818,12 @@ class ConstructedUnifier : public UnifierBase {
     assert(l_.types()->size() == r.types()->size());
     auto subtypes = unify_subtypes(l_.types(), r.types(), substitutions(),
                                    max_id_l(), max_id_r());
-    result.unified_type =
+    auto ct =
         make_managed<ConstructedType>(l_.name(), subtypes.unified_subtypes);
+    ct->set_constructors(ValEnv::empty());
+    ct->set_constructors(
+        fixup_constructors(r, ct)->apply_substitutions(substitutions()));
+    result.unified_type = ct;
     result.new_substitutions =
         result.new_substitutions | subtypes.new_substitutions;
   }
